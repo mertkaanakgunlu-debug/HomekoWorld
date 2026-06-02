@@ -1,0 +1,534 @@
+<UserControl x:Class="HomekoWorld.Views.Pages.OtoFarmPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+  <UserControl.Resources>
+    <!-- Mob card style -->
+    <Style x:Key="MobCard" TargetType="Border">
+      <Setter Property="Width"           Value="150"/>
+      <Setter Property="Height"          Value="160"/>
+      <Setter Property="Margin"          Value="6"/>
+      <Setter Property="CornerRadius"    Value="8"/>
+      <Setter Property="BorderThickness" Value="2"/>
+      <Setter Property="BorderBrush"     Value="{StaticResource Border1}"/>
+      <Setter Property="Background"      Value="{StaticResource BgPanel}"/>
+      <Setter Property="Cursor"          Value="Hand"/>
+    </Style>
+  </UserControl.Resources>
+
+  <Grid x:Name="PageRoot">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto"/>   <!-- Arama + kombo seçici -->
+      <RowDefinition Height="*"/>      <!-- Mob kataloğu -->
+      <RowDefinition Height="Auto"/>   <!-- Farm aksiyonları -->
+      <RowDefinition Height="Auto"/>   <!-- Gelişmiş expander -->
+    </Grid.RowDefinitions>
+
+    <!-- ── Arama + Kombo seçici ──────────────────────────────── -->
+    <Border Grid.Row="0" Padding="12,10"
+            BorderBrush="{StaticResource Divider}" BorderThickness="0,0,0,1"
+            Background="{StaticResource BgApp}">
+      <Grid>
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*"/>
+          <ColumnDefinition Width="12"/>
+          <ColumnDefinition Width="200"/>
+        </Grid.ColumnDefinitions>
+
+        <!-- Mob arama -->
+        <TextBox Grid.Column="0" Style="{StaticResource InputBase}"
+                 Text="{Binding FarmSearchText, UpdateSourceTrigger=PropertyChanged}"
+                 Tag="Mob ara…" FontSize="12" Padding="8,6"/>
+
+        <!-- Kombo seçici -->
+        <StackPanel Grid.Column="2">
+          <TextBlock FontSize="9" Foreground="{StaticResource TextDim}" Margin="0,0,0,2">
+            <Run Text="Kombo ("/>
+            <Run Text="{Binding CurrentClass}"/>
+            <Run Text=")"/>
+          </TextBlock>
+          <ComboBox Style="{StaticResource ComboBase}"
+                    FontSize="11"
+                    ItemsSource="{Binding FarmAvailableCombos}"
+                    SelectedValue="{Binding FarmSelectedComboId}"
+                    DisplayMemberPath="Name"
+                    SelectedValuePath="Id"/>
+        </StackPanel>
+      </Grid>
+    </Border>
+
+    <!-- ── Mob kataloğu ──────────────────────────────────────── -->
+    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto"
+                  HorizontalScrollBarVisibility="Disabled">
+      <ItemsControl ItemsSource="{Binding FarmMobsFiltered}" Margin="6,8,6,8">
+        <ItemsControl.ItemsPanel>
+          <ItemsPanelTemplate>
+            <WrapPanel/>
+          </ItemsPanelTemplate>
+        </ItemsControl.ItemsPanel>
+        <ItemsControl.ItemTemplate>
+          <DataTemplate>
+            <Border>
+              <!-- Altın kenarlık seçili mob için -->
+              <Border.Style>
+                <Style TargetType="Border" BasedOn="{StaticResource MobCard}">
+                  <Style.Triggers>
+                    <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                      <Setter Property="BorderBrush" Value="{StaticResource GoldDeep}"/>
+                      <Setter Property="Background"  Value="#1AD4A44A"/>
+                    </DataTrigger>
+                    <Trigger Property="IsMouseOver" Value="True">
+                      <Setter Property="Background" Value="{StaticResource BgHover}"/>
+                    </Trigger>
+                  </Style.Triggers>
+                </Style>
+              </Border.Style>
+              <!-- Tıklama → FarmSelectedMobName -->
+              <Border.InputBindings>
+                <MouseBinding MouseAction="LeftClick"
+                              Command="{Binding DataContext.SelectFarmMobCommand,
+                                        RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                              CommandParameter="{Binding NameEn}"/>
+              </Border.InputBindings>
+
+              <StackPanel>
+                <!-- Görsel alanı -->
+                <Border Height="100" CornerRadius="6,6,0,0" ClipToBounds="True"
+                        Background="{StaticResource BgPanel2}">
+                  <!-- Placeholder renk bandı — görsel yüklenemezse görünür -->
+                  <Grid>
+                    <Border Background="{Binding PlaceholderColor}" CornerRadius="6,6,0,0"/>
+                    <TextBlock Text="{Binding NameEn[0]}"
+                               FontSize="36" FontWeight="Bold"
+                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                               Foreground="#40FFFFFF">
+                      <TextBlock.Style>
+                        <Style TargetType="TextBlock">
+                          <Setter Property="Visibility" Value="Visible"/>
+                          <Style.Triggers>
+                            <DataTrigger Binding="{Binding HasImage}" Value="True">
+                              <Setter Property="Visibility" Value="Collapsed"/>
+                            </DataTrigger>
+                          </Style.Triggers>
+                        </Style>
+                      </TextBlock.Style>
+                    </TextBlock>
+                    <Image Source="{Binding ImagePath}" Stretch="UniformToFill">
+                      <Image.Style>
+                        <Style TargetType="Image">
+                          <Setter Property="Visibility" Value="Collapsed"/>
+                          <Style.Triggers>
+                            <DataTrigger Binding="{Binding HasImage}" Value="True">
+                              <Setter Property="Visibility" Value="Visible"/>
+                            </DataTrigger>
+                          </Style.Triggers>
+                        </Style>
+                      </Image.Style>
+                    </Image>
+                  </Grid>
+                </Border>
+
+                <!-- İsim -->
+                <StackPanel Margin="8,6,8,6">
+                  <TextBlock Text="{Binding NameTr}" FontSize="11" FontWeight="SemiBold"
+                             Foreground="{StaticResource TextSoft}"
+                             TextTrimming="CharacterEllipsis"/>
+                  <TextBlock Text="{Binding NameEn}" FontSize="9"
+                             Foreground="{StaticResource TextDim}"
+                             TextTrimming="CharacterEllipsis"/>
+                </StackPanel>
+              </StackPanel>
+            </Border>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </ScrollViewer>
+
+    <!-- ── Farm aksiyonları ───────────────────────────────────── -->
+    <Border Grid.Row="2" Padding="12,8"
+            BorderBrush="{StaticResource Divider}" BorderThickness="0,1,0,0"
+            Background="{StaticResource BgApp}">
+      <Grid>
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*"/>
+          <ColumnDefinition Width="12"/>
+          <ColumnDefinition Width="Auto"/>
+          <ColumnDefinition Width="8"/>
+          <ColumnDefinition Width="60"/>
+        </Grid.ColumnDefinitions>
+
+        <!-- Başlat/Durdur butonu -->
+        <Button Grid.Column="0" Command="{Binding ToggleFarmCommand}"
+                IsEnabled="{Binding FarmToggleEnabled}"
+                Padding="10,7" FontSize="13">
+          <Button.Style>
+            <Style TargetType="Button" BasedOn="{StaticResource BtnGhost}">
+              <Setter Property="Foreground"  Value="{StaticResource GreenBright}"/>
+              <Setter Property="BorderBrush" Value="{StaticResource Green}"/>
+              <Style.Triggers>
+                <DataTrigger Binding="{Binding FarmRunning}" Value="True">
+                  <Setter Property="Foreground"  Value="{StaticResource RedBright}"/>
+                  <Setter Property="BorderBrush" Value="{StaticResource Red}"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding FarmToggleEnabled}" Value="False">
+                  <Setter Property="Opacity" Value="0.4"/>
+                </DataTrigger>
+              </Style.Triggers>
+            </Style>
+          </Button.Style>
+          <StackPanel Orientation="Horizontal">
+            <Ellipse Width="7" Height="7" Margin="0,0,6,0" VerticalAlignment="Center">
+              <Ellipse.Style>
+                <Style TargetType="Ellipse">
+                  <Setter Property="Fill" Value="{StaticResource Green}"/>
+                  <Style.Triggers>
+                    <DataTrigger Binding="{Binding FarmRunning}" Value="True">
+                      <Setter Property="Fill" Value="{StaticResource Red}"/>
+                    </DataTrigger>
+                    <DataTrigger Binding="{Binding Active}" Value="False">
+                      <Setter Property="Fill" Value="{StaticResource TextDim}"/>
+                    </DataTrigger>
+                  </Style.Triggers>
+                </Style>
+              </Ellipse.Style>
+            </Ellipse>
+            <TextBlock Text="{Binding FarmStartLabel}" VerticalAlignment="Center" FontSize="13"/>
+          </StackPanel>
+        </Button>
+
+        <!-- Başlat/Durdur tuşu etiketi -->
+        <TextBlock Grid.Column="2" Text="Tuş" FontSize="10"
+                   Foreground="{StaticResource TextMuted}" VerticalAlignment="Center"/>
+
+        <!-- Başlat/Durdur tuşu input -->
+        <TextBox Grid.Column="4" Style="{StaticResource InputMono}" FontSize="11"
+                 Text="{Binding FarmHotKey, UpdateSourceTrigger=LostFocus}"
+                 VerticalAlignment="Center"
+                 ToolTip="Farm döngüsünü başlatıp durduracak tuş (örn: F9)"/>
+      </Grid>
+    </Border>
+
+    <!-- ── Geliştirilmiş Ayarlar (Expander) ──────────────────── -->
+    <Expander Grid.Row="3" Header="▾ Geliştirilmiş Ayarlar"
+              Foreground="{StaticResource TextMuted}"
+              FontSize="11" Margin="0">
+      <!-- İçerik sayfanın ~%60'ı ile sınırlanır ve kaydırılabilir; PageRoot sabit yükseklik
+           olduğu için layout feedback loop yok (içerik taşıp scroll edilememe sorunu giderildi). -->
+      <ScrollViewer VerticalScrollBarVisibility="Auto"
+                    HorizontalScrollBarVisibility="Disabled"
+                    MaxHeight="{Binding ActualHeight, ElementName=PageRoot,
+                                Converter={StaticResource Ratio}, ConverterParameter=0.6}">
+      <Border Padding="14,8,14,12"
+              BorderBrush="{StaticResource Divider}" BorderThickness="0,1,0,0"
+              Background="{StaticResource BgApp}">
+        <StackPanel>
+
+          <!-- Otomatik bul -->
+          <Button Command="{Binding AutoDiscoverFarmFilesCommand}"
+                  Style="{StaticResource BtnMuted}"
+                  Padding="6,4" FontSize="10" Margin="0,0,0,8"
+                  HorizontalAlignment="Left"
+                  ToolTip="mobs.json ve best.onnx dosyalarını otomatik bul">
+            <StackPanel Orientation="Horizontal">
+              <TextBlock Text="⟳ " FontSize="11" VerticalAlignment="Center"/>
+              <TextBlock Text="Dosyaları Otomatik Bul" VerticalAlignment="Center"/>
+            </StackPanel>
+          </Button>
+
+          <!-- mobs.json -->
+          <TextBlock Text="mobs.json" FontSize="10"
+                     Foreground="{StaticResource TextMuted}" Margin="0,0,0,2"/>
+          <Grid Margin="0,0,0,6">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="*"/>
+              <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <TextBox Grid.Column="0" Style="{StaticResource InputBase}"
+                     FontSize="10" IsReadOnly="True"
+                     Text="{Binding FarmMobsJsonPath, Mode=OneWay}"
+                     Padding="4,3" Margin="0,0,4,0"/>
+            <Button Grid.Column="1" Style="{StaticResource BtnMuted}"
+                    Command="{Binding BrowseMobsJsonCommand}"
+                    Padding="6,3" FontSize="10">Seç…</Button>
+          </Grid>
+
+          <!-- YOLO model -->
+          <TextBlock Text="YOLO Modeli (.onnx)" FontSize="10"
+                     Foreground="{StaticResource TextMuted}" Margin="0,0,0,2"/>
+          <Grid Margin="0,0,0,6">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="*"/>
+              <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <TextBox Grid.Column="0" Style="{StaticResource InputBase}"
+                     FontSize="10" IsReadOnly="True"
+                     Text="{Binding FarmModelPath, Mode=OneWay}"
+                     Padding="4,3" Margin="0,0,4,0"/>
+            <Button Grid.Column="1" Style="{StaticResource BtnMuted}"
+                    Command="{Binding BrowseModelCommand}"
+                    Padding="6,3" FontSize="10">Seç…</Button>
+          </Grid>
+
+          <!-- Model hazır badge -->
+          <Border Padding="6,3" CornerRadius="4" Margin="0,0,0,10"
+                  Background="{StaticResource BgPanel2}"
+                  BorderBrush="{StaticResource Border1}" BorderThickness="1">
+            <TextBlock Text="{Binding FarmStatus}"
+                       FontFamily="{StaticResource FontMono}"
+                       FontSize="10" Foreground="{StaticResource TextMuted}"
+                       TextWrapping="Wrap"/>
+          </Border>
+
+          <!-- Hedef HP Bar (ML ROI önizleme) -->
+          <Border Padding="8,7" BorderThickness="1" CornerRadius="5"
+                  BorderBrush="{StaticResource TextDim}"
+                  Background="#18FFFFFF" Margin="0,0,0,8">
+            <StackPanel>
+              <TextBlock Text="🎯 Hedef HP Bar" FontSize="10"
+                         Foreground="{StaticResource TextMuted}" Margin="0,0,0,6"/>
+
+              <!-- Tespit yöntemi: Hsv (varsayılan, hızlı) / Ml (ONNX) / ColorScan (RGB) -->
+              <Grid Margin="0,0,0,6">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="Auto"/>
+                  <ColumnDefinition Width="8"/>
+                  <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Text="Yöntem" FontSize="10" VerticalAlignment="Center"
+                           Foreground="{StaticResource TextMuted}"/>
+                <ComboBox Grid.Column="2" Style="{StaticResource ComboBase}" FontSize="10"
+                          ItemsSource="{Binding HpBarModeOptions}"
+                          SelectedItem="{Binding FarmHpBarMode}"
+                          ToolTip="Hsv: hızlı kırmızı-oran tespiti (varsayılan, önerilen). Ml: ONNX classifier (ROI kalibrasyonu gerekir). ColorScan: RGB renk taraması."/>
+              </Grid>
+
+              <!-- ML ROI önizleme görüntüsü -->
+              <Border Margin="0,0,0,4" BorderThickness="1"
+                      BorderBrush="{StaticResource Border1}"
+                      Visibility="{Binding HpColorScanPreviewVisible,
+                                   Converter={StaticResource BoolToVis}}">
+                <Image Source="{Binding HpColorScanPreview}"
+                       Stretch="Uniform" MaxHeight="80"
+                       RenderOptions.BitmapScalingMode="NearestNeighbor"/>
+              </Border>
+
+              <!-- ML ROI koordinatları -->
+              <TextBlock Text="{Binding HpBarRoiPreviewStatus}"
+                         FontSize="10" Margin="0,0,0,4" TextWrapping="Wrap"
+                         Foreground="{StaticResource Gold}"/>
+
+              <Grid>
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="*"/>
+                  <ColumnDefinition Width="6"/>
+                  <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <Button Grid.Column="0" Command="{Binding PreviewHpColorScanAreaCommand}"
+                        Style="{StaticResource BtnMuted}" Padding="5,3" FontSize="10"
+                        ToolTip="Ana kalibrasyon 4. adımın ML arama alanını göster">
+                  <TextBlock Text="📷 Önizle"/>
+                </Button>
+
+                <!-- Renk tarama fallback — küçük kırmızı buton -->
+                <Button Grid.Column="2" Command="{Binding CalibrateTargetHpColorCommand}"
+                        Padding="4,3" FontSize="9"
+                        Background="#33FF3333" BorderBrush="#66FF3333" Foreground="#FFCC6666"
+                        ToolTip="{Binding TargetHpColorCalibStatus}">
+                  <TextBlock Text="🔴"/>
+                </Button>
+              </Grid>
+            </StackPanel>
+          </Border>
+
+          <!-- Koruma Mobu İsim Rengi Kalibrasyonu -->
+          <Border Padding="8,7" BorderThickness="1" CornerRadius="5"
+                  BorderBrush="{StaticResource TextDim}"
+                  Background="#18FFFFFF" Margin="0,0,0,8">
+            <StackPanel>
+              <TextBlock Text="🛡 Koruma Mobu İsim Tespiti (HSV)" FontSize="10"
+                         Foreground="{StaticResource TextMuted}" Margin="0,0,0,6"/>
+
+              <!-- İsim bandı önizleme görüntüsü -->
+              <Border Margin="0,0,0,4" BorderThickness="1"
+                      BorderBrush="{StaticResource Border1}"
+                      Visibility="{Binding NameBandPreviewVisible,
+                                   Converter={StaticResource BoolToVis}}">
+                <Image Source="{Binding NameBandPreview}"
+                       Stretch="Uniform" MaxHeight="80"
+                       RenderOptions.BitmapScalingMode="NearestNeighbor"/>
+              </Border>
+
+              <!-- İsim bandı koordinatları -->
+              <TextBlock Text="{Binding NameBandCalibStatus}"
+                         FontSize="10" Margin="0,0,0,4" TextWrapping="Wrap"
+                         Foreground="{StaticResource Gold}"/>
+
+              <!-- Bant çiz + önizle (HP bar ROI kalibrasyonuyla aynı UX) -->
+              <Grid Margin="0,0,0,6">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="*"/>
+                  <ColumnDefinition Width="6"/>
+                  <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <Button Grid.Column="0" Command="{Binding CalibrateNameBandCommand}"
+                        Style="{StaticResource BtnMuted}" Padding="5,3" FontSize="10"
+                        ToolTip="İsim metninin üzerine dikdörtgen çiz — kırmızı tespiti bu bandı tarar">
+                  <TextBlock Text="🖊 İsim Bandını Çiz"/>
+                </Button>
+                <Button Grid.Column="2" Command="{Binding PreviewNameBandCommand}"
+                        Style="{StaticResource BtnMuted}" Padding="5,3" FontSize="10"
+                        ToolTip="Çizilen bandın doğru yeri kapsadığını gör">
+                  <TextBlock Text="📷 Önizle"/>
+                </Button>
+              </Grid>
+
+              <!-- Opsiyonel: RGB renk referansı (HSV tespiti için gerekmez) -->
+              <TextBlock Text="Opsiyonel renk referansı (HSV için gerekmez):" FontSize="9"
+                         Foreground="{StaticResource TextDim}" Margin="0,0,0,3"/>
+              <Grid Margin="0,0,0,4">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="*"/>
+                  <ColumnDefinition Width="6"/>
+                  <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <Button Grid.Column="0" Command="{Binding CalibrateNormalNameCommand}"
+                        Style="{StaticResource BtnMuted}"
+                        Padding="5,3" FontSize="10"
+                        ToolTip="Normal (mor) mob isminin üzerine tıklayın — renk referansı alınır">
+                  <TextBlock Text="📍 Normal (Mor)"/>
+                </Button>
+                <Button Grid.Column="2" Command="{Binding CalibrateGuardianNameCommand}"
+                        Style="{StaticResource BtnMuted}"
+                        Padding="5,3" FontSize="10"
+                        ToolTip="Koruma (kırmızı) mob isminin üzerine tıklayın — renk referansı alınır">
+                  <TextBlock Text="📍 Koruma (Kırmızı)"/>
+                </Button>
+              </Grid>
+              <TextBlock Text="{Binding NameplateCalibStatus}"
+                         FontSize="9" TextWrapping="Wrap"
+                         Foreground="{StaticResource TextDim}"/>
+            </StackPanel>
+          </Border>
+
+          <!-- Farm Davranışı -->
+          <Border Padding="8,7" BorderThickness="1" CornerRadius="5"
+                  BorderBrush="{StaticResource TextDim}"
+                  Background="#18FFFFFF" Margin="0,0,0,8">
+            <StackPanel>
+              <TextBlock Text="⚙ Farm Davranışı" FontSize="10"
+                         Foreground="{StaticResource TextMuted}" Margin="0,0,0,6"/>
+              <CheckBox IsChecked="{Binding FarmArcherMode}"
+                        Foreground="{StaticResource TextMuted}" FontSize="10"
+                        Margin="0,0,0,2"
+                        Content="🏹 Archer modu (yaklaş + yönelerek vur)"
+                        ToolTip="KAPALI (önerilen, archer dışı tüm sınıflar): hedef seçilince kombo hemen ateşlenir, oyun karakteri hedefe götürür. AÇIK (archer): AoE oklarının değmesi için moba yaklaşır (W sürekli basılı akıcı koşu) — hedef etrafında dönmeden menzile girince vurur."/>
+              <StackPanel Margin="18,2,0,4" IsEnabled="{Binding FarmArcherMode}">
+                <TextBlock FontSize="10" Foreground="{StaticResource TextMuted}">
+                  <Run Text="Yaklaşma mesafesi: "/><Run Text="{Binding FarmArcherRangePx}"/><Run Text=" px (küçük = daha yakın)"/>
+                </TextBlock>
+                <Slider Minimum="40" Maximum="220" Value="{Binding FarmArcherRangePx}"
+                        IsSnapToTickEnabled="True" TickFrequency="5" SmallChange="5" LargeChange="20"
+                        ToolTip="Archer komboya başlamadan önce moba ne kadar yaklaşsın (ekran px). 'Yeterince yaklaşmıyor' diyorsan KÜÇÜLT; 'çok dibine giriyor' diyorsan BÜYÜT. Çözünürlük/zoom'a göre test ederek ayarla."/>
+              </StackPanel>
+              <CheckBox IsChecked="{Binding FarmLootEnabled}"
+                        Foreground="{StaticResource TextMuted}" FontSize="10"
+                        Content="Loot topla (ölünce cesete git + F×3)"
+                        ToolTip="Kapalı (önerilen): oyun auto-loot ise her kill ~1 sn hızlanır. Açık: ölen mobun üstüne gidip loot tuşuna basar."/>
+              <CheckBox IsChecked="{Binding FarmShowDetectionOverlay}"
+                        Foreground="{StaticResource TextMuted}" FontSize="10"
+                        Margin="0,6,0,0"
+                        Content="🎯 Tespit kutularını göster (YOLO)"
+                        ToolTip="Açıkken farm çalışırken seçili mob türü için ekrana tespit kutuları + isim/güven çizilir; saldırılan hedef vurgulanır. Kutular tıklamayı engellemez (click-through)."/>
+              <CheckBox IsChecked="{Binding FarmRecordingMode}"
+                        Foreground="{StaticResource TextMuted}" FontSize="10"
+                        Margin="0,6,0,0"
+                        Content="🎥 Kayıt/Performans modu (OBS ile)"
+                        ToolTip="OBS ile ekran kaydı alırken aç: YOLO tespit hızını ~15 FPS'e düşürür → GPU'ya nefes verir, imleç takılmasını/çakışmayı azaltır. Kapalıyken tam hız."/>
+              <CheckBox IsChecked="{Binding FarmDxgiCapture}"
+                        Foreground="{StaticResource TextMuted}" FontSize="10"
+                        Margin="0,6,0,0"
+                        Content="⚡ DXGI hızlı yakalama (kapalı = GDI)"
+                        ToolTip="Açık (önerilen): ekran yakalama GPU üzerinden (~1-2ms) → daha akıcı tespit, daha az takılma. Kapalı: eski GDI yöntemi (~15-30ms). DXGI sorun çıkarırsa (siyah kare/uyumsuzluk) kapat. Değişiklik farm'ı durdurup tekrar başlatınca geçerli olur."/>
+
+              <!-- T1: YOLO güven eşiği — düşük = daha çok tespit (ağaç riski), yüksek = yalnız emin olunan moblar -->
+              <TextBlock FontSize="10" Foreground="{StaticResource TextMuted}" Margin="0,8,0,0">
+                <Run Text="🔍 YOLO güven eşiği: "/><Run Text="{Binding FarmConfidence, StringFormat=F2}"/><Run Text="  (düşük = çok kutu / yüksek = emin)"/>
+              </TextBlock>
+              <Slider Minimum="0.30" Maximum="0.90" Value="{Binding FarmConfidence}"
+                      IsSnapToTickEnabled="True" TickFrequency="0.05" SmallChange="0.05" LargeChange="0.10"
+                      ToolTip="Bu skorun altındaki YOLO tespitleri elenir. Ağaçları/yanlış nesneleri mob sanıyorsa BÜYÜT (0.55-0.65). Gerçek mobları kaçırıyorsa KÜÇÜLT. Değişiklik anında uygulanır (yeniden model yükleme gerekmez)."/>
+
+              <!-- T4: ONNX execution provider — Auto = GPU varsa DirectML, yoksa CPU -->
+              <Grid Margin="0,8,0,0">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="Auto"/>
+                  <ColumnDefinition Width="8"/>
+                  <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Text="⚙ İşlemci (EP)" FontSize="10" VerticalAlignment="Center"
+                           Foreground="{StaticResource TextMuted}"/>
+                <ComboBox Grid.Column="2" Style="{StaticResource ComboBase}" FontSize="10"
+                          ItemsSource="{Binding InferenceBackendOptions}"
+                          SelectedItem="{Binding FarmInferenceBackend}"
+                          ToolTip="Auto (önerilen): donanım GPU varsa DirectML, yoksa CPU. DirectML: zorla GPU (her DX12 GPU). Cpu: zorla CPU. Değişiklik yüklü modeli yeniden kurar."/>
+              </Grid>
+            </StackPanel>
+          </Border>
+
+          <!-- Test Click -->
+          <Border Padding="8,7" BorderThickness="1" CornerRadius="5"
+                  BorderBrush="{StaticResource TextDim}"
+                  Background="#18FFFFFF">
+            <StackPanel>
+              <TextBlock Text="🖱 Test Click" FontSize="10"
+                         Foreground="{StaticResource TextMuted}" Margin="0,0,0,6"/>
+              <Grid Margin="0,0,0,4">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="*"/>
+                  <ColumnDefinition Width="4"/>
+                  <ColumnDefinition Width="Auto"/>
+                  <ColumnDefinition Width="6"/>
+                  <ColumnDefinition Width="48"/>
+                </Grid.ColumnDefinitions>
+                <Button Grid.Column="0" Command="{Binding CalibrateTestClickCommand}"
+                        Style="{StaticResource BtnMuted}"
+                        Padding="5,3" FontSize="10"
+                        ToolTip="Ekranda bir noktaya tıkla — bot o koordinatı kaydeder">
+                  <TextBlock Text="📍 Nokta Seç"/>
+                </Button>
+                <Button Grid.Column="2" Command="{Binding RunTestClickCommand}"
+                        Style="{StaticResource BtnMuted}"
+                        Padding="5,3" FontSize="10"
+                        ToolTip="Kaydedilen noktaya bot tıklaması gönder">
+                  <TextBlock Text="▶ Test Et"/>
+                </Button>
+                <TextBox Grid.Column="4"
+                         Style="{StaticResource InputMono}" FontSize="10"
+                         Text="{Binding FarmTestClickKey, UpdateSourceTrigger=LostFocus}"
+                         ToolTip="Bu tuşa basınca test tıklaması tetiklenir (örn: F8)"/>
+              </Grid>
+              <TextBlock Text="{Binding TestClickStatus}"
+                         FontSize="10" TextWrapping="Wrap"
+                         Foreground="{StaticResource Gold}">
+                <TextBlock.Style>
+                  <Style TargetType="TextBlock">
+                    <Setter Property="Visibility" Value="Visible"/>
+                    <Style.Triggers>
+                      <DataTrigger Binding="{Binding TestClickStatus}" Value="">
+                        <Setter Property="Visibility" Value="Collapsed"/>
+                      </DataTrigger>
+                    </Style.Triggers>
+                  </Style>
+                </TextBlock.Style>
+              </TextBlock>
+            </StackPanel>
+          </Border>
+
+        </StackPanel>
+      </Border>
+      </ScrollViewer>
+    </Expander>
+
+  </Grid>
+</UserControl>

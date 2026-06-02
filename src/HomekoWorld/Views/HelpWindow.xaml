@@ -1,0 +1,177 @@
+<Window x:Class="HomekoWorld.Views.HelpWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Yardım — HomekoWorld"
+        Width="580" Height="520"
+        MinWidth="460" MinHeight="400"
+        WindowStartupLocation="CenterOwner"
+        Background="{StaticResource BgApp}"
+        BorderBrush="{StaticResource Border1}"
+        BorderThickness="1">
+
+  <Grid>
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="*"/>
+    </Grid.RowDefinitions>
+
+    <!-- Header -->
+    <Border Grid.Row="0" Padding="16,12"
+            Background="#FF0F0C08"
+            BorderBrush="{StaticResource Divider}" BorderThickness="0,0,0,1">
+      <TextBlock Text="Yardım"
+                 FontFamily="{StaticResource FontDisplay}"
+                 FontSize="16" Foreground="{StaticResource Gold}"/>
+    </Border>
+
+    <!-- Tabbed content -->
+    <TabControl Grid.Row="1" Background="Transparent"
+                BorderBrush="{StaticResource Border1}"
+                Padding="0">
+      <TabControl.Resources>
+        <Style TargetType="TabItem">
+          <Setter Property="Foreground"       Value="{StaticResource TextMuted}"/>
+          <Setter Property="Background"       Value="Transparent"/>
+          <Setter Property="BorderBrush"      Value="Transparent"/>
+          <Setter Property="FontSize"         Value="11"/>
+          <Setter Property="Padding"          Value="12,6"/>
+          <Style.Triggers>
+            <Trigger Property="IsSelected" Value="True">
+              <Setter Property="Foreground" Value="{StaticResource Gold}"/>
+            </Trigger>
+          </Style.Triggers>
+        </Style>
+      </TabControl.Resources>
+
+      <!-- Başlarken -->
+      <TabItem Header="Başlarken">
+        <ScrollViewer Padding="16,12" VerticalScrollBarVisibility="Auto">
+          <StackPanel>
+            <TextBlock Text="Hızlı Başlangıç" FontSize="14" FontWeight="SemiBold"
+                       Foreground="{StaticResource Gold}" Margin="0,0,0,10"/>
+
+            <TextBlock TextWrapping="Wrap" FontSize="11"
+                       Foreground="{StaticResource TextMuted}" LineHeight="20">
+              <Run FontWeight="SemiBold" Foreground="{StaticResource TextSoft}" Text="WiFi / USB modu:"/>
+            </TextBlock>
+            <TextBlock TextWrapping="Wrap" FontSize="11"
+                       Foreground="{StaticResource TextMuted}" LineHeight="20" Margin="0,4,0,12">
+              <Run Text="1. Telefon Bluetooth klavye olarak PC ile eşleştirilmeli."/>
+              <LineBreak/>
+              <Run Text="2. HomekoBridge uygulamasını telefonda aç."/>
+              <LineBreak/>
+              <Run Text="3. IP ve port gir → Bağlan'a tıkla."/>
+              <LineBreak/>
+              <Run Text="4. F12 (veya Ayarlar'da atadığın tuş) ile uygulamayı aktif et."/>
+              <LineBreak/>
+              <Run Text="5. Combo Assistant'ta kombo oluştur ve tuş ata → tuşa bas → kombo çalışır!"/>
+            </TextBlock>
+
+            <TextBlock TextWrapping="Wrap" FontSize="11"
+                       Foreground="{StaticResource TextMuted}" LineHeight="20">
+              <Run FontWeight="SemiBold" Foreground="{StaticResource TextSoft}" Text="Local modu (telefon gerekmez):"/>
+            </TextBlock>
+            <TextBlock TextWrapping="Wrap" FontSize="11"
+                       Foreground="{StaticResource TextMuted}" LineHeight="20" Margin="0,4,0,12">
+              <Run Text="1. Mod butonuna tıkla → Local seç."/>
+              <LineBreak/>
+              <Run Text="2. F12 ile aktif et."/>
+              <LineBreak/>
+              <Run Text="3. Kombo tuşuna bas → SendInput ile direkt PC'ye gönderilir."/>
+            </TextBlock>
+
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+
+      <!-- Combo Assistant -->
+      <TabItem Header="Combo Assistant">
+        <ScrollViewer Padding="16,12" VerticalScrollBarVisibility="Auto">
+          <StackPanel>
+            <TextBlock Text="Combo Assistant" FontSize="14" FontWeight="SemiBold"
+                       Foreground="{StaticResource Gold}" Margin="0,0,0,10"/>
+
+            <TextBlock TextWrapping="Wrap" FontSize="11"
+                       Foreground="{StaticResource TextMuted}" LineHeight="20">
+              <Run FontWeight="SemiBold" Foreground="{StaticResource TextSoft}" Text="Sınıf seçimi:"/>
+              <LineBreak/>
+              <Run Text="Sol mini-sidebar'dan oynadığın karakterin sınıfını seç. Seçili sınıfın combo'ları görünür ve yalnızca o sınıfın tuşları aktif olur."/>
+              <LineBreak/><LineBreak/>
+              <Run FontWeight="SemiBold" Foreground="{StaticResource TextSoft}" Text="Kombo oluşturma:"/>
+              <LineBreak/>
+              <Run Text="+ Ekle butonuna bas → adım adım skill sırası gir → Kaydet."/>
+              <LineBreak/><LineBreak/>
+              <Run FontWeight="SemiBold" Foreground="{StaticResource TextSoft}" Text="Tuş atama:"/>
+              <LineBreak/>
+              <Run Text="Sağ rail'deki Atamalar panelinden combo'ya tuş ata (F1-F12, A-Z, vb.)."/>
+              <LineBreak/><LineBreak/>
+              <Run FontWeight="SemiBold" Foreground="{StaticResource TextSoft}" Text="Skill bar kalibrasyonu:"/>
+              <LineBreak/>
+              <Run Text="Sağ rail'deki 'Skill Bar / HUD' kartından skill barlarını tanıt → hangi beceri hangi slotta."/>
+            </TextBlock>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+
+      <!-- Oto Farm -->
+      <TabItem Header="Oto Farm">
+        <ScrollViewer Padding="16,12" VerticalScrollBarVisibility="Auto">
+          <StackPanel>
+            <TextBlock Text="Oto Farm" FontSize="14" FontWeight="SemiBold"
+                       Foreground="{StaticResource Gold}" Margin="0,0,0,10"/>
+
+            <TextBlock TextWrapping="Wrap" FontSize="11"
+                       Foreground="{StaticResource TextMuted}" LineHeight="20">
+              <Run FontWeight="SemiBold" Foreground="{StaticResource TextSoft}" Text="Kurulum:"/>
+              <LineBreak/>
+              <Run Text="1. 'Geliştirilmiş Ayarlar' bölümünden mobs.json ve YOLO model (.onnx) dosyalarını seç."/>
+              <LineBreak/>
+              <Run Text="2. Sağ rail'deki 'Kalibrasyon' kartından 4 adımlı kalibrasyonu tamamla."/>
+              <LineBreak/>
+              <Run Text="3. Mob kataloğundan hedef mobu seç."/>
+              <LineBreak/>
+              <Run Text="4. Kombo dropdown'dan kullanılacak komboyu seç."/>
+              <LineBreak/>
+              <Run Text="5. F12 ile aktif et → 'Farm Başlat' butonuna bas."/>
+              <LineBreak/><LineBreak/>
+              <Run FontWeight="SemiBold" Foreground="{StaticResource TextSoft}" Text="Oto Pot:"/>
+              <LineBreak/>
+              <Run Text="Sağ rail'deki 'Oto Pot' kartından HP/MP eşiklerini ve pot tuşlarını ayarla. F12 aktifken farm ile paralel çalışır."/>
+            </TextBlock>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+
+      <!-- SSS -->
+      <TabItem Header="SSS">
+        <ScrollViewer Padding="16,12" VerticalScrollBarVisibility="Auto">
+          <StackPanel>
+            <TextBlock Text="Sık Sorulan Sorular" FontSize="14" FontWeight="SemiBold"
+                       Foreground="{StaticResource Gold}" Margin="0,0,0,10"/>
+
+            <TextBlock TextWrapping="Wrap" FontSize="11"
+                       Foreground="{StaticResource TextMuted}" LineHeight="20">
+              <Run FontWeight="SemiBold" Foreground="{StaticResource TextSoft}" Text="Kombo çalışmıyor?"/>
+              <LineBreak/>
+              <Run Text="• F12 ile aktif et. Bağlantı durumu sağ üstte yeşil yanıyor mu?"/>
+              <LineBreak/>
+              <Run Text="• Moda bak: WiFi/USB ise bağlı mısın?"/>
+              <LineBreak/>
+              <Run Text="• Aktif sınıfla combo sınıfı eşleşiyor mu?"/>
+              <LineBreak/><LineBreak/>
+              <Run FontWeight="SemiBold" Foreground="{StaticResource TextSoft}" Text="Farm başlamıyor?"/>
+              <LineBreak/>
+              <Run Text="• Uygulama aktif mi (F12)?"/>
+              <LineBreak/>
+              <Run Text="• mobs.json ve .onnx model yüklü mu? 'Model hazır (N sınıf)' ibaresi görünüyor mu?"/>
+              <LineBreak/>
+              <Run Text="• 4 adımlı kalibrasyon tamamlandı mı?"/>
+              <LineBreak/><LineBreak/>
+            </TextBlock>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+
+    </TabControl>
+  </Grid>
+</Window>

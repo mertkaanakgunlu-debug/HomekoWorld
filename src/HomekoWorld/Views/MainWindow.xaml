@@ -1,0 +1,955 @@
+<Window x:Class="HomekoWorld.Views.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ctrl="clr-namespace:HomekoWorld.Views.Controls"
+        xmlns:pages="clr-namespace:HomekoWorld.Views.Pages"
+        xmlns:sys="clr-namespace:System;assembly=mscorlib"
+        Title="Combo Assistant"
+        Width="1100" Height="700"
+        MinWidth="900" MinHeight="560"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
+        ResizeMode="CanResizeWithGrip"
+        WindowStartupLocation="CenterScreen">
+
+
+  <!-- Main app background -->
+  <Border CornerRadius="0" ClipToBounds="True"
+          Background="{StaticResource BgApp}"
+          BorderBrush="{StaticResource Border1}"
+          BorderThickness="1">
+
+    <!-- Stone grain overlay (SVG noise via VisualBrush) -->
+    <Grid>
+      <!-- Subtle top glow -->
+      <Border VerticalAlignment="Top" Height="200" IsHitTestVisible="False">
+        <Border.Background>
+          <RadialGradientBrush Center="0.5,0" RadiusX="0.8" RadiusY="0.5">
+            <GradientStop Color="#0AD4A44A" Offset="0"/>
+            <GradientStop Color="#00000000" Offset="1"/>
+          </RadialGradientBrush>
+        </Border.Background>
+      </Border>
+
+      <Grid>
+        <Grid.RowDefinitions>
+          <RowDefinition Height="Auto"/>  <!-- Title bar -->
+          <RowDefinition Height="Auto"/>  <!-- Toolbar -->
+          <RowDefinition Height="*"/>     <!-- Main content -->
+          <RowDefinition Height="Auto"/>  <!-- Status bar -->
+        </Grid.RowDefinitions>
+
+        <!-- ===== Title bar ===== -->
+        <ctrl:TitleBar Grid.Row="0"/>
+
+        <!-- ===== Toolbar ===== -->
+        <Border Grid.Row="1" Height="44"
+                Background="#FF0F0C08"
+                BorderBrush="{StaticResource Divider}"
+                BorderThickness="0,0,0,1">
+          <Grid Margin="10,0">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="Auto"/>  <!-- 0: Mod toggle -->
+              <ColumnDefinition Width="6"/>     <!-- 1: spacer -->
+              <ColumnDefinition Width="Auto"/>  <!-- 2: Phone IP -->
+              <ColumnDefinition Width="8"/>     <!-- 3: spacer -->
+              <ColumnDefinition Width="80"/>    <!-- 4: Port -->
+              <ColumnDefinition Width="8"/>     <!-- 5: spacer -->
+              <ColumnDefinition Width="Auto"/>  <!-- 6: Connect -->
+              <ColumnDefinition Width="*"/>     <!-- 7: divider flex -->
+              <ColumnDefinition Width="Auto"/>  <!-- 8: Active toggle -->
+              <ColumnDefinition Width="8"/>     <!-- 9: spacer -->
+              <ColumnDefinition Width="Auto"/>  <!-- 10: Stop loop -->
+            </Grid.ColumnDefinitions>
+
+            <!-- Connection mode toggle: WiFi → USB → Local (3-way cycle) -->
+            <Button Grid.Column="0" VerticalAlignment="Center"
+                    Command="{Binding ToggleConnectionModeCommand}"
+                    Padding="8,4" FontSize="11" Cursor="Hand"
+                    ToolTip="Bağlantı modunu değiştir (WiFi → USB → Local döngüsü).&#x0a;WiFi: telefon IP/port ile TCP bağlantısı.&#x0a;USB: USB Tethering aktifken telefon gateway IP'si.&#x0a;Local: SendInput ile direkt PC'ye input.">
+              <Button.Style>
+                <Style TargetType="Button">
+                  <Setter Property="Background"       Value="Transparent"/>
+                  <Setter Property="BorderBrush"      Value="{StaticResource Border2}"/>
+                  <Setter Property="BorderThickness"  Value="1"/>
+                  <Setter Property="Foreground"       Value="{StaticResource TextMuted}"/>
+                  <Setter Property="Template">
+                    <Setter.Value>
+                      <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="3" Padding="{TemplateBinding Padding}">
+                          <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                      </ControlTemplate>
+                    </Setter.Value>
+                  </Setter>
+                  <Style.Triggers>
+                    <DataTrigger Binding="{Binding IsUsbMode}" Value="True">
+                      <Setter Property="Background"  Value="#1A2A6A14"/>
+                      <Setter Property="BorderBrush" Value="#FF4A8A2A"/>
+                      <Setter Property="Foreground"  Value="#FF7ACC50"/>
+                    </DataTrigger>
+                    <DataTrigger Binding="{Binding IsLocalMode}" Value="True">
+                      <Setter Property="Background"  Value="#1A1A0A6A"/>
+                      <Setter Property="BorderBrush" Value="{StaticResource Blue}"/>
+                      <Setter Property="Foreground"  Value="#FF9A79D0"/>
+                    </DataTrigger>
+                    <Trigger Property="IsMouseOver" Value="True">
+                      <Setter Property="BorderBrush" Value="{StaticResource TextSoft}"/>
+                    </Trigger>
+                  </Style.Triggers>
+                </Style>
+              </Button.Style>
+              <TextBlock FontFamily="{StaticResource FontMono}" FontSize="11" VerticalAlignment="Center">
+                <TextBlock.Style>
+                  <Style TargetType="TextBlock">
+                    <Setter Property="Text"       Value="WiFi"/>
+                    <Setter Property="Foreground" Value="{StaticResource TextMuted}"/>
+                    <Style.Triggers>
+                      <DataTrigger Binding="{Binding IsUsbMode}" Value="True">
+                        <Setter Property="Text"       Value="USB"/>
+                        <Setter Property="Foreground" Value="#FF7ACC50"/>
+                      </DataTrigger>
+                      <DataTrigger Binding="{Binding IsLocalMode}" Value="True">
+                        <Setter Property="Text"       Value="Local"/>
+                        <Setter Property="Foreground" Value="#FF9A79D0"/>
+                      </DataTrigger>
+                    </Style.Triggers>
+                  </Style>
+                </TextBlock.Style>
+              </TextBlock>
+            </Button>
+
+            <!-- Phone IP — hidden in Local/Kernel mode -->
+            <TextBox Grid.Column="2" Width="140" VerticalAlignment="Center"
+                     Text="{Binding PhoneHost, UpdateSourceTrigger=PropertyChanged}"
+                     ToolTip="Android telefon IP adresi. USB tethering aktifken telefonun gateway IP'sini gir (ipconfig ile kontrol et).">
+              <TextBox.Style>
+                <Style TargetType="TextBox" BasedOn="{StaticResource InputBase}">
+                  <Style.Triggers>
+                    <DataTrigger Binding="{Binding IsLocalMode}" Value="True">
+                      <Setter Property="Visibility" Value="Collapsed"/>
+                    </DataTrigger>
+                  </Style.Triggers>
+                </Style>
+              </TextBox.Style>
+            </TextBox>
+
+            <!-- Local mode badge — shown in place of IP/Port/Connect -->
+            <TextBlock Grid.Column="2" Grid.ColumnSpan="5"
+                       VerticalAlignment="Center"
+                       FontFamily="{StaticResource FontMono}" FontSize="11">
+              <TextBlock.Style>
+                <Style TargetType="TextBlock">
+                  <Setter Property="Visibility" Value="Collapsed"/>
+                  <Setter Property="Foreground" Value="#FF9A79D0"/>
+                  <Setter Property="Text"       Value="Local — PC (SendInput)"/>
+                  <Style.Triggers>
+                    <DataTrigger Binding="{Binding IsLocalMode}" Value="True">
+                      <Setter Property="Visibility" Value="Visible"/>
+                      <Setter Property="Text"       Value="Local — PC (SendInput)"/>
+                      <Setter Property="Foreground" Value="#FF9A79D0"/>
+                    </DataTrigger>
+                  </Style.Triggers>
+                </Style>
+              </TextBlock.Style>
+            </TextBlock>
+
+            <!-- Port — hidden in Local/Kernel mode -->
+            <TextBox Grid.Column="4" VerticalAlignment="Center"
+                     Text="{Binding PhonePort, UpdateSourceTrigger=PropertyChanged}"
+                     ToolTip="TCP port (varsayılan 5556)">
+              <TextBox.Style>
+                <Style TargetType="TextBox" BasedOn="{StaticResource InputMono}">
+                  <Style.Triggers>
+                    <DataTrigger Binding="{Binding IsLocalMode}" Value="True">
+                      <Setter Property="Visibility" Value="Collapsed"/>
+                    </DataTrigger>
+                  </Style.Triggers>
+                </Style>
+              </TextBox.Style>
+            </TextBox>
+
+            <!-- Connect / Disconnect toggle — hidden in Local mode -->
+            <Button Grid.Column="6" VerticalAlignment="Center"
+                    Command="{Binding ConnectToggleCommand}"
+                    Padding="10,5" FontSize="12">
+              <Button.Style>
+                <Style TargetType="Button" BasedOn="{StaticResource BtnBase}">
+                  <Setter Property="Content"    Value="Bağlan"/>
+                  <Setter Property="Foreground" Value="{StaticResource GoldBright}"/>
+                  <Setter Property="BorderBrush" Value="{StaticResource GoldDeep}"/>
+                  <Setter Property="Background">
+                    <Setter.Value>
+                      <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                        <GradientStop Color="#FF8B6914" Offset="0"/>
+                        <GradientStop Color="#FF6A4E10" Offset="1"/>
+                      </LinearGradientBrush>
+                    </Setter.Value>
+                  </Setter>
+                  <Style.Triggers>
+                    <DataTrigger Binding="{Binding IsConnected}" Value="True">
+                      <Setter Property="Content"     Value="Bağlantıyı Kes"/>
+                      <Setter Property="Foreground"  Value="{StaticResource TextSoft}"/>
+                      <Setter Property="BorderBrush" Value="{StaticResource Border2}"/>
+                      <Setter Property="Background"  Value="Transparent"/>
+                    </DataTrigger>
+                    <DataTrigger Binding="{Binding IsLocalMode}" Value="True">
+                      <Setter Property="Visibility" Value="Collapsed"/>
+                    </DataTrigger>
+                  </Style.Triggers>
+                </Style>
+              </Button.Style>
+            </Button>
+
+            <!-- Divider -->
+            <Rectangle Grid.Column="7" Width="1" Height="20"
+                       Fill="{StaticResource Border1}"
+                       HorizontalAlignment="Left" Margin="10,0,0,0"/>
+
+            <!-- F12 Active toggle -->
+            <Button Grid.Column="8" VerticalAlignment="Center"
+                    Command="{Binding ToggleActiveCommand}"
+                    Width="90" Height="30">
+              <Button.Style>
+                <Style TargetType="Button" BasedOn="{StaticResource BtnGhost}">
+                  <Style.Triggers>
+                    <DataTrigger Binding="{Binding Active}" Value="True">
+                      <Setter Property="Background">
+                        <Setter.Value>
+                          <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                            <GradientStop Color="#FF2A4A1A" Offset="0"/>
+                            <GradientStop Color="#FF1A3410" Offset="1"/>
+                          </LinearGradientBrush>
+                        </Setter.Value>
+                      </Setter>
+                      <Setter Property="BorderBrush" Value="{StaticResource Green}"/>
+                    </DataTrigger>
+                  </Style.Triggers>
+                </Style>
+              </Button.Style>
+              <StackPanel Orientation="Horizontal">
+                <Ellipse Width="6" Height="6" Margin="0,0,5,0">
+                  <Ellipse.Style>
+                    <Style TargetType="Ellipse">
+                      <Setter Property="Fill" Value="{StaticResource TextDim}"/>
+                      <Style.Triggers>
+                        <DataTrigger Binding="{Binding Active}" Value="True">
+                          <Setter Property="Fill" Value="{StaticResource Green}"/>
+                        </DataTrigger>
+                      </Style.Triggers>
+                    </Style>
+                  </Ellipse.Style>
+                </Ellipse>
+                <TextBlock FontSize="12">
+                  <TextBlock.Style>
+                    <Style TargetType="TextBlock">
+                      <Setter Property="Text" Value="Başlat"/>
+                      <Setter Property="Foreground" Value="{StaticResource TextMuted}"/>
+                      <Style.Triggers>
+                        <DataTrigger Binding="{Binding Active}" Value="True">
+                          <Setter Property="Text" Value="Aktif"/>
+                          <Setter Property="Foreground" Value="{StaticResource GreenBright}"/>
+                        </DataTrigger>
+                      </Style.Triggers>
+                    </Style>
+                  </TextBlock.Style>
+                </TextBlock>
+              </StackPanel>
+            </Button>
+
+            <!-- Loop durdur butonu — sadece loop çalışırken görünür -->
+            <Button Grid.Column="10" VerticalAlignment="Center"
+                    Command="{Binding StopLoopCommand}"
+                    Padding="8,5" FontSize="11"
+                    ToolTip="Çalışan loop makroyu durdur">
+              <Button.Style>
+                <Style TargetType="Button" BasedOn="{StaticResource BtnGhost}">
+                  <Setter Property="Visibility" Value="Collapsed"/>
+                  <Setter Property="BorderBrush" Value="#FF8B1414"/>
+                  <Setter Property="Foreground"  Value="#FFFF6B6B"/>
+                  <Style.Triggers>
+                    <DataTrigger Binding="{Binding IsLoopRunning}" Value="True">
+                      <Setter Property="Visibility" Value="Visible"/>
+                    </DataTrigger>
+                  </Style.Triggers>
+                </Style>
+              </Button.Style>
+              <StackPanel Orientation="Horizontal">
+                <TextBlock Text="■" Margin="0,0,4,0" VerticalAlignment="Center"/>
+                <TextBlock Text="Durdur" VerticalAlignment="Center"/>
+              </StackPanel>
+            </Button>
+
+          </Grid>
+        </Border>
+
+        <!-- ===== Main 3-column layout ===== -->
+        <Grid Grid.Row="2">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto"/>    <!-- Sidebar -->
+            <ColumnDefinition Width="*"/>       <!-- Workspace -->
+            <ColumnDefinition Width="220"/>     <!-- Rail -->
+          </Grid.ColumnDefinitions>
+
+          <!-- Left sidebar -->
+          <ctrl:Sidebar Grid.Column="0"/>
+
+          <!-- Center workspace — page router -->
+          <Grid Grid.Column="1">
+            <!-- Combo Assistant page -->
+            <pages:ComboAssistantPage>
+              <pages:ComboAssistantPage.Style>
+                <Style TargetType="UserControl">
+                  <Setter Property="Visibility" Value="Collapsed"/>
+                  <Style.Triggers>
+                    <DataTrigger Binding="{Binding CurrentPage}" Value="combo">
+                      <Setter Property="Visibility" Value="Visible"/>
+                    </DataTrigger>
+                  </Style.Triggers>
+                </Style>
+              </pages:ComboAssistantPage.Style>
+            </pages:ComboAssistantPage>
+            <!-- Oto Farm page -->
+            <pages:OtoFarmPage>
+              <pages:OtoFarmPage.Style>
+                <Style TargetType="UserControl">
+                  <Setter Property="Visibility" Value="Collapsed"/>
+                  <Style.Triggers>
+                    <DataTrigger Binding="{Binding CurrentPage}" Value="farm">
+                      <Setter Property="Visibility" Value="Visible"/>
+                    </DataTrigger>
+                  </Style.Triggers>
+                </Style>
+              </pages:OtoFarmPage.Style>
+            </pages:OtoFarmPage>
+          </Grid>
+
+          <!-- Right rail -->
+          <ScrollViewer Grid.Column="2" VerticalScrollBarVisibility="Auto"
+                        Background="{StaticResource BgPanel}"
+                        BorderBrush="{StaticResource Border1}"
+                        BorderThickness="1,0,0,0">
+            <StackPanel Margin="10,12,10,12">
+
+              <!-- ═══════════════════════════════════════════════════════
+                   GLOBAL SECTION — görünür her sayfada
+                   ═══════════════════════════════════════════════════════ -->
+
+              <!-- Connection indicator -->
+              <Border Style="{StaticResource PanelCard}" Padding="10" Margin="0,0,0,6">
+                <StackPanel>
+                  <TextBlock Text="BAĞLANTI" Style="{StaticResource SectionHeader}" Margin="0,0,0,6"/>
+                  <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <Ellipse Width="8" Height="8" Margin="0,0,6,0">
+                      <Ellipse.Style>
+                        <Style TargetType="Ellipse">
+                          <Setter Property="Fill" Value="{StaticResource Red}"/>
+                          <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsConnected}" Value="True">
+                              <Setter Property="Fill" Value="{StaticResource Green}"/>
+                            </DataTrigger>
+                          </Style.Triggers>
+                        </Style>
+                      </Ellipse.Style>
+                    </Ellipse>
+                    <TextBlock Text="{Binding ConnectStatus}" FontSize="11"
+                               Foreground="{StaticResource TextSoft}" TextWrapping="Wrap"/>
+                  </StackPanel>
+                </StackPanel>
+              </Border>
+
+              <!-- Kalibrasyon (global — 4 adım) -->
+              <Border Style="{StaticResource PanelCard}" Padding="10" Margin="0,0,0,6">
+                <StackPanel>
+                  <TextBlock Text="KALİBRASYON" Style="{StaticResource SectionHeader}" Margin="0,0,0,6"/>
+                  <TextBlock FontSize="10" Foreground="{StaticResource TextDim}" TextWrapping="Wrap"
+                             Margin="0,0,0,6"
+                             Text="HP/MP barı, karakter merkezi ve hedef HP barını öğret. Combo + Farm + WtM tarafından paylaşılır."/>
+                  <Button Command="{Binding CalibrateFarmCenterCommand}"
+                          Style="{StaticResource BtnGhost}"
+                          Padding="6,4" FontSize="11"
+                          ToolTip="4 adım:&#x0a;1) Karakterini çerçevele (merkez)&#x0a;2) Kendi HP barını çiz (dolu iken)&#x0a;3) Kendi MP barını çiz (dolu iken)&#x0a;4) Hedef HP bar panelini sürükle (ML ROI)">
+                    <StackPanel Orientation="Horizontal">
+                      <TextBlock Text="⊕ " FontSize="12" VerticalAlignment="Center"/>
+                      <TextBlock Text="Kalibre Et (4 adım)" VerticalAlignment="Center"/>
+                    </StackPanel>
+                  </Button>
+                  <TextBlock Text="{Binding FarmCalibrationState}"
+                             FontSize="10" Foreground="{StaticResource Gold}"
+                             TextWrapping="Wrap" Margin="0,4,0,0">
+                    <TextBlock.Style>
+                      <Style TargetType="TextBlock">
+                        <Setter Property="Visibility" Value="Visible"/>
+                        <Style.Triggers>
+                          <DataTrigger Binding="{Binding FarmCalibrationState}" Value="">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                          </DataTrigger>
+                        </Style.Triggers>
+                      </Style>
+                    </TextBlock.Style>
+                  </TextBlock>
+                </StackPanel>
+              </Border>
+
+              <!-- Otomatik Pot (global) -->
+              <Border Style="{StaticResource PanelCard}" Padding="10" Margin="0,0,0,6">
+                <StackPanel>
+                  <!-- Başlık + ana switch -->
+                  <Grid Margin="0,0,0,8">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="*"/>
+                      <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Text="OTO POT" Style="{StaticResource SectionHeader}"/>
+                    <CheckBox Grid.Column="1" IsChecked="{Binding AutoPotEnabled}"
+                              VerticalAlignment="Center"
+                              ToolTip="F12 (Aktif) açıkken paralel olarak HP/MP barlarını izler."/>
+                  </Grid>
+                  <!-- AutoPot başlatma tuşu -->
+                  <Grid Margin="0,0,0,4">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="*"/>
+                      <ColumnDefinition Width="6"/>
+                      <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0">
+                      <TextBlock Text="Başlatma Tuşu" FontSize="9" Foreground="{StaticResource TextMuted}" Margin="0,0,0,2"/>
+                      <TextBox Style="{StaticResource InputMono}" FontSize="11"
+                               Text="{Binding AutoPotStartKey, UpdateSourceTrigger=LostFocus}"
+                               ToolTip="AutoPot aç/kapa tuşu (default F11)"/>
+                    </StackPanel>
+                    <Button Grid.Column="2" Command="{Binding ToggleAutoPotCommand}"
+                            Style="{StaticResource BtnMuted}"
+                            VerticalAlignment="Bottom" Padding="8,4"
+                            Content="Aç/Kapa"
+                            ToolTip="AutoPot başlat / durdur (veya başlatma tuşuna bas)"/>
+                  </Grid>
+
+                  <!-- HP Pot satırı -->
+                  <StackPanel>
+                    <StackPanel.Style>
+                      <Style TargetType="StackPanel">
+                        <Setter Property="Visibility" Value="Collapsed"/>
+                        <Style.Triggers>
+                          <DataTrigger Binding="{Binding AutoPotEnabled}" Value="True">
+                            <Setter Property="Visibility" Value="Visible"/>
+                          </DataTrigger>
+                        </Style.Triggers>
+                      </Style>
+                    </StackPanel.Style>
+
+                    <Grid Margin="0,0,0,2">
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                      </Grid.ColumnDefinitions>
+                      <CheckBox Grid.Column="0" IsChecked="{Binding AutoPotHpEnabled}"
+                                VerticalAlignment="Center" Margin="0,0,6,0"/>
+                      <TextBlock Grid.Column="1" Text="HP Pot" FontSize="10"
+                                 Foreground="{StaticResource TextMuted}" VerticalAlignment="Center"/>
+                    </Grid>
+                    <Grid Margin="0,0,0,6">
+                      <Grid.Style>
+                        <Style TargetType="Grid">
+                          <Style.Triggers>
+                            <DataTrigger Binding="{Binding AutoPotHpEnabled}" Value="False">
+                              <Setter Property="Opacity" Value="0.4"/>
+                              <Setter Property="IsEnabled" Value="False"/>
+                            </DataTrigger>
+                          </Style.Triggers>
+                        </Style>
+                      </Grid.Style>
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="8"/>
+                        <ColumnDefinition Width="*"/>
+                      </Grid.ColumnDefinitions>
+                      <StackPanel Grid.Column="0">
+                        <TextBlock Text="% Eşik" FontSize="9" Foreground="{StaticResource TextMuted}" Margin="0,0,0,2"/>
+                        <TextBox Style="{StaticResource InputMono}" FontSize="11"
+                                 Text="{Binding AutoPotHpPercent, UpdateSourceTrigger=LostFocus}"/>
+                      </StackPanel>
+                      <StackPanel Grid.Column="2">
+                        <TextBlock Text="Tuş" FontSize="9" Foreground="{StaticResource TextMuted}" Margin="0,0,0,2"/>
+                        <TextBox Style="{StaticResource InputMono}" FontSize="11"
+                                 Text="{Binding AutoPotHpKey, UpdateSourceTrigger=LostFocus}"/>
+                      </StackPanel>
+                    </Grid>
+
+                    <!-- MP Pot satırı -->
+                    <Grid Margin="0,0,0,2">
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                      </Grid.ColumnDefinitions>
+                      <CheckBox Grid.Column="0" IsChecked="{Binding AutoPotMpEnabled}"
+                                VerticalAlignment="Center" Margin="0,0,6,0"/>
+                      <TextBlock Grid.Column="1" Text="MP Pot" FontSize="10"
+                                 Foreground="{StaticResource TextMuted}" VerticalAlignment="Center"/>
+                    </Grid>
+                    <Grid Margin="0,0,0,0">
+                      <Grid.Style>
+                        <Style TargetType="Grid">
+                          <Style.Triggers>
+                            <DataTrigger Binding="{Binding AutoPotMpEnabled}" Value="False">
+                              <Setter Property="Opacity" Value="0.4"/>
+                              <Setter Property="IsEnabled" Value="False"/>
+                            </DataTrigger>
+                          </Style.Triggers>
+                        </Style>
+                      </Grid.Style>
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="8"/>
+                        <ColumnDefinition Width="*"/>
+                      </Grid.ColumnDefinitions>
+                      <StackPanel Grid.Column="0">
+                        <TextBlock Text="% Eşik" FontSize="9" Foreground="{StaticResource TextMuted}" Margin="0,0,0,2"/>
+                        <TextBox Style="{StaticResource InputMono}" FontSize="11"
+                                 Text="{Binding AutoPotMpPercent, UpdateSourceTrigger=LostFocus}"/>
+                      </StackPanel>
+                      <StackPanel Grid.Column="2">
+                        <TextBlock Text="Tuş" FontSize="9" Foreground="{StaticResource TextMuted}" Margin="0,0,0,2"/>
+                        <TextBox Style="{StaticResource InputMono}" FontSize="11"
+                                 Text="{Binding AutoPotMpKey, UpdateSourceTrigger=LostFocus}"/>
+                      </StackPanel>
+                    </Grid>
+
+                  </StackPanel>
+                </StackPanel>
+              </Border>
+
+              <!-- Adaptif Gecikme (global) -->
+              <Border Style="{StaticResource PanelCard}" Padding="10" Margin="0,0,0,6">
+                <StackPanel>
+                  <TextBlock Text="ADAPTİF GECİKME" Style="{StaticResource SectionHeader}" Margin="0,0,0,8"/>
+
+                  <!-- Ping adaptation toggle -->
+                  <Grid Margin="0,0,0,4">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="*"/>
+                      <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" FontSize="11" Foreground="{StaticResource TextSoft}"
+                               Text="Ping adaptasyonu"
+                               ToolTip="Adaptif işaretli adımların bekleme süresine&#x0a;currentPing × çarpan eklenir.&#x0a;Araştırma: 'delay &gt; ping olmalı, aksi hâlde sunucu reddeder'."/>
+                    <CheckBox Grid.Column="1" IsChecked="{Binding AdaptPingEnabled}"
+                              VerticalAlignment="Center"/>
+                  </Grid>
+
+                  <!-- Ping multiplier (visible only when ping adapt on) -->
+                  <StackPanel Margin="0,0,0,6">
+                    <StackPanel.Style>
+                      <Style TargetType="StackPanel">
+                        <Setter Property="Visibility" Value="Collapsed"/>
+                        <Style.Triggers>
+                          <DataTrigger Binding="{Binding AdaptPingEnabled}" Value="True">
+                            <Setter Property="Visibility" Value="Visible"/>
+                          </DataTrigger>
+                        </Style.Triggers>
+                      </Style>
+                    </StackPanel.Style>
+                    <TextBlock Text="Ping çarpanı" FontSize="10"
+                               Foreground="{StaticResource TextMuted}" Margin="0,0,0,2"
+                               ToolTip="delay += ping × çarpan. 1.0 = tam ping eklenir (güvenli). 0.5 = yarım ping."/>
+                    <Grid>
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                      </Grid.ColumnDefinitions>
+                      <TextBox Grid.Column="0" Style="{StaticResource InputMono}"
+                               Text="{Binding PingMultiplier, UpdateSourceTrigger=LostFocus,
+                                              StringFormat={}{0:F2}}"
+                               ToolTip="Ondalıklı sayı (örn. 1.0, 0.5, 2.0)"/>
+                      <TextBlock Grid.Column="1" Text="×" FontSize="11"
+                                 Foreground="{StaticResource TextMuted}"
+                                 VerticalAlignment="Center" Margin="4,0,0,0"/>
+                    </Grid>
+                  </StackPanel>
+
+                  <!-- FPS adaptation toggle -->
+                  <Grid Margin="0,0,0,4">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="*"/>
+                      <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" FontSize="11" Foreground="{StaticResource TextSoft}"
+                               Text="FPS adaptasyonu"
+                               ToolTip="Delay'ler kalibrasyon FPS'ine göre ayarlanmıştı.&#x0a;Mevcut FPS farklıysa aynı sayıda frame geçmesi için ölçekler.&#x0a;Formül: delay × (kalibrasyon / mevcut)"/>
+                    <CheckBox Grid.Column="1" IsChecked="{Binding AdaptFpsEnabled}"
+                              VerticalAlignment="Center"/>
+                  </Grid>
+
+                  <!-- FPS inputs (visible only when FPS adapt on) -->
+                  <StackPanel Margin="0,0,0,4">
+                    <StackPanel.Style>
+                      <Style TargetType="StackPanel">
+                        <Setter Property="Visibility" Value="Collapsed"/>
+                        <Style.Triggers>
+                          <DataTrigger Binding="{Binding AdaptFpsEnabled}" Value="True">
+                            <Setter Property="Visibility" Value="Visible"/>
+                          </DataTrigger>
+                        </Style.Triggers>
+                      </Style>
+                    </StackPanel.Style>
+
+                    <TextBlock Text="Kalibrasyon FPS" FontSize="10"
+                               Foreground="{StaticResource TextMuted}" Margin="0,0,0,2"
+                               ToolTip="Delay değerlerini yazarken oyunun kaç FPS'te çalıştığını girin."/>
+                    <Grid Margin="0,0,0,4">
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                      </Grid.ColumnDefinitions>
+                      <TextBox Grid.Column="0" Style="{StaticResource InputMono}"
+                               Text="{Binding CalibrationFps, UpdateSourceTrigger=LostFocus}"/>
+                      <TextBlock Grid.Column="1" Text="FPS" FontSize="10"
+                                 Foreground="{StaticResource TextMuted}"
+                                 VerticalAlignment="Center" Margin="4,0,0,0"/>
+                    </Grid>
+
+                    <TextBlock Text="Mevcut FPS" FontSize="10"
+                               Foreground="{StaticResource TextMuted}" Margin="0,0,0,2"
+                               ToolTip="Şu an oyunun kaç FPS'te çalıştığını girin.&#x0a;Aralık girilebilir: '30-60' → ortalama 45 kullanılır."/>
+                    <Grid>
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                      </Grid.ColumnDefinitions>
+                      <TextBox Grid.Column="0" Style="{StaticResource InputMono}"
+                               Text="{Binding CurrentFpsInput, UpdateSourceTrigger=LostFocus}"
+                               Tag="örn. 60 veya 30-60"/>
+                      <TextBlock Grid.Column="1" Text="FPS" FontSize="10"
+                                 Foreground="{StaticResource TextMuted}"
+                                 VerticalAlignment="Center" Margin="4,0,0,0"/>
+                    </Grid>
+                  </StackPanel>
+
+                  <!-- Live preview (only when at least one adapt is on) -->
+                  <Border Margin="0,4,0,0" Padding="6,4" CornerRadius="3"
+                          Background="{StaticResource BgPanel2}"
+                          BorderBrush="{StaticResource Border1}" BorderThickness="1">
+                    <Border.Style>
+                      <Style TargetType="Border">
+                        <Setter Property="Visibility" Value="Collapsed"/>
+                        <Style.Triggers>
+                          <DataTrigger Binding="{Binding AdaptPingEnabled}" Value="True">
+                            <Setter Property="Visibility" Value="Visible"/>
+                          </DataTrigger>
+                          <DataTrigger Binding="{Binding AdaptFpsEnabled}" Value="True">
+                            <Setter Property="Visibility" Value="Visible"/>
+                          </DataTrigger>
+                        </Style.Triggers>
+                      </Style>
+                    </Border.Style>
+                    <TextBlock Text="{Binding AdaptPreview}"
+                               FontFamily="{StaticResource FontMono}"
+                               FontSize="10" Foreground="{StaticResource TextMuted}"
+                               TextWrapping="Wrap"/>
+                  </Border>
+
+                </StackPanel>
+              </Border>
+
+              <!-- ═══════════════════════════════════════════════════════
+                   COMBO ASSISTANT — sadece combo sayfasında görünür
+                   ═══════════════════════════════════════════════════════ -->
+              <StackPanel>
+                <StackPanel.Style>
+                  <Style TargetType="StackPanel">
+                    <Setter Property="Visibility" Value="Collapsed"/>
+                    <Style.Triggers>
+                      <DataTrigger Binding="{Binding CurrentPage}" Value="combo">
+                        <Setter Property="Visibility" Value="Visible"/>
+                      </DataTrigger>
+                    </Style.Triggers>
+                  </Style>
+                </StackPanel.Style>
+
+                <!-- Skill Bar + HUD kombine kartı -->
+                <Border Style="{StaticResource PanelCard}" Padding="10" Margin="0,0,0,6">
+                  <StackPanel>
+                    <TextBlock Text="SKILL BAR / HUD" Style="{StaticResource SectionHeader}" Margin="0,0,0,8"/>
+
+                    <!-- HUD toggle — birleşik Ana HUD (combo + farm tek pencerede) -->
+                    <Button Command="{Binding ToggleFarmHudCommand}"
+                            Margin="0,0,0,4" Padding="7,4" FontSize="11"
+                            ToolTip="Oyun üstü birleşik Ana HUD'u aç/kapat (combo + farm).">
+                      <Button.Style>
+                        <Style TargetType="Button" BasedOn="{StaticResource BtnGhost}">
+                          <Style.Triggers>
+                            <DataTrigger Binding="{Binding FarmHudVisible}" Value="True">
+                              <Setter Property="BorderBrush" Value="{StaticResource GoldDeep}"/>
+                              <Setter Property="Foreground"  Value="{StaticResource Gold}"/>
+                            </DataTrigger>
+                          </Style.Triggers>
+                        </Style>
+                      </Button.Style>
+                      <TextBlock Text="⬛ Ana HUD Göster / Gizle" FontSize="10"/>
+                    </Button>
+
+                    <!-- Skill bar calibration -->
+                    <Button Command="{Binding OpenCalibrationCommand}"
+                            Margin="0,0,0,4" Padding="7,4" FontSize="11"
+                            ToolTip="Skill barlarını tanıt — hangi beceri hangi F-bar/slot'ta.">
+                      <Button.Style>
+                        <Style TargetType="Button" BasedOn="{StaticResource BtnGhost}">
+                          <Style.Triggers>
+                            <DataTrigger Binding="{Binding CalibrationStatus[0]}" Value="✓">
+                              <Setter Property="BorderBrush" Value="{StaticResource GoldDeep}"/>
+                            </DataTrigger>
+                          </Style.Triggers>
+                        </Style>
+                      </Button.Style>
+                      <TextBlock Text="{Binding CalibrationStatus}" FontSize="10"/>
+                    </Button>
+
+                    <!-- Reset calibration — sadece kalibre edilmişken görünür -->
+                    <Button Command="{Binding ResetCalibrationCommand}"
+                            Visibility="{Binding IsCalibrated, Converter={StaticResource BoolToVis}}"
+                            Padding="7,4" FontSize="11"
+                            ToolTip="Tüm slot-skill eşleştirmelerini sil.">
+                      <Button.Style>
+                        <Style TargetType="Button" BasedOn="{StaticResource BtnGhost}">
+                          <Setter Property="Foreground" Value="{StaticResource TextMuted}"/>
+                          <Style.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                              <Setter Property="BorderBrush" Value="{StaticResource Red}"/>
+                              <Setter Property="Foreground"  Value="{StaticResource RedBright}"/>
+                            </Trigger>
+                          </Style.Triggers>
+                        </Style>
+                      </Button.Style>
+                      <TextBlock Text="✕ Kalibrasyonu Sıfırla" FontSize="10"/>
+                    </Button>
+                  </StackPanel>
+                </Border>
+
+                <!-- Atamalar -->
+                <ctrl:BindingsPanel/>
+
+                <!-- İstatistikler -->
+                <Border Style="{StaticResource PanelCard}" Padding="10" Margin="0,0,0,6">
+                  <StackPanel>
+                    <TextBlock Text="İSTATİSTİKLER" Style="{StaticResource SectionHeader}" Margin="0,0,0,8"/>
+                    <Grid Margin="0,0,0,4">
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="34"/>
+                        <ColumnDefinition Width="46"/>
+                      </Grid.ColumnDefinitions>
+                      <TextBlock Grid.Column="0" Text="Kombo" FontSize="9" Foreground="{StaticResource TextDim}"/>
+                      <TextBlock Grid.Column="1" Text="Cast" FontSize="9" Foreground="{StaticResource TextDim}" TextAlignment="Right"/>
+                      <TextBlock Grid.Column="2" Text="Ort ms" FontSize="9" Foreground="{StaticResource TextDim}" TextAlignment="Right"/>
+                    </Grid>
+                    <ItemsControl ItemsSource="{Binding Combos}">
+                      <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                          <Border Margin="0,0,0,2" CornerRadius="3" Padding="4,3">
+                            <Border.Style>
+                              <Style TargetType="Border">
+                                <Setter Property="Background" Value="Transparent"/>
+                                <Style.Triggers>
+                                  <DataTrigger Binding="{Binding IsFiring}" Value="True">
+                                    <Setter Property="Background" Value="#1A8B6914"/>
+                                  </DataTrigger>
+                                </Style.Triggers>
+                              </Style>
+                            </Border.Style>
+                            <Grid>
+                              <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="34"/>
+                                <ColumnDefinition Width="46"/>
+                              </Grid.ColumnDefinitions>
+                              <TextBlock Grid.Column="0" Text="{Binding Name}" FontSize="10"
+                                         Foreground="{StaticResource TextSoft}"
+                                         TextTrimming="CharacterEllipsis"/>
+                              <TextBlock Grid.Column="1" Text="{Binding TotalCasts}"
+                                         FontSize="10" FontFamily="{StaticResource FontMono}"
+                                         Foreground="{StaticResource TextMuted}" TextAlignment="Right"/>
+                              <TextBlock Grid.Column="2" Text="{Binding AvgSpeedDisplay}"
+                                         FontSize="10" FontFamily="{StaticResource FontMono}"
+                                         Foreground="{StaticResource TextDim}" TextAlignment="Right"/>
+                            </Grid>
+                          </Border>
+                        </DataTemplate>
+                      </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                  </StackPanel>
+                </Border>
+
+                <!-- Walk to Mob -->
+                <Border Style="{StaticResource PanelCard}" Padding="10" Margin="0,0,0,6">
+                  <StackPanel>
+                    <TextBlock Text="WALK TO MOB" Style="{StaticResource SectionHeader}" Margin="0,0,0,8"/>
+
+                    <Grid Margin="0,0,0,6">
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                      </Grid.ColumnDefinitions>
+                      <TextBlock Grid.Column="0" FontSize="11" Foreground="{StaticResource TextSoft}"
+                                 Text="WtM Aktif"
+                                 ToolTip="Moba tıkladığında karakter önce hedef konumuna yürür, sonra komboyu ateşler."/>
+                      <CheckBox Grid.Column="1" IsChecked="{Binding WtmEnabled}" VerticalAlignment="Center"/>
+                    </Grid>
+
+                    <StackPanel>
+                      <StackPanel.Style>
+                        <Style TargetType="StackPanel">
+                          <Setter Property="Visibility" Value="Collapsed"/>
+                          <Style.Triggers>
+                            <DataTrigger Binding="{Binding WtmEnabled}" Value="True">
+                              <Setter Property="Visibility" Value="Visible"/>
+                            </DataTrigger>
+                          </Style.Triggers>
+                        </Style>
+                      </StackPanel.Style>
+
+                      <TextBlock Text="Ateşlenecek kombo" FontSize="10"
+                                 Foreground="{StaticResource TextMuted}" Margin="0,0,0,2"/>
+                      <ComboBox Style="{StaticResource ComboBase}"
+                                Margin="0,0,0,6"
+                                ItemsSource="{Binding Combos}"
+                                SelectedValuePath="Id"
+                                SelectedValue="{Binding WtmComboId}"
+                                DisplayMemberPath="Name"
+                                FontSize="11"/>
+
+                      <TextBlock FontSize="9" Foreground="{StaticResource TextDim}"
+                                 TextWrapping="Wrap" Margin="0,0,0,4"
+                                 Text="Halka rengini kalibre et — karakter merkezi + hedef HP global kalibrasyondan alınır."/>
+
+                      <Button Command="{Binding CalibrateWtmCommand}"
+                              Style="{StaticResource BtnGhost}"
+                              Margin="0,0,0,4" Padding="6,4" FontSize="11"
+                              ToolTip="Yeşil halka rengini kalibre et.">
+                        <TextBlock Text="Kalibre Et (halka rengi)"/>
+                      </Button>
+
+                      <TextBlock Text="{Binding WtmCalibrationState}"
+                                 FontSize="10" Foreground="{StaticResource Gold}"
+                                 TextWrapping="Wrap" Margin="0,0,0,4">
+                        <TextBlock.Style>
+                          <Style TargetType="TextBlock">
+                            <Setter Property="Visibility" Value="Visible"/>
+                            <Style.Triggers>
+                              <DataTrigger Binding="{Binding WtmCalibrationState}" Value="">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                              </DataTrigger>
+                            </Style.Triggers>
+                          </Style>
+                        </TextBlock.Style>
+                      </TextBlock>
+                    </StackPanel>
+
+                    <Border Margin="0,2,0,0" Padding="6,3" CornerRadius="3"
+                            Background="{StaticResource BgPanel2}"
+                            BorderBrush="{StaticResource Border1}" BorderThickness="1">
+                      <Border.Style>
+                        <Style TargetType="Border">
+                          <Setter Property="Visibility" Value="Collapsed"/>
+                          <Style.Triggers>
+                            <DataTrigger Binding="{Binding WtmEnabled}" Value="True">
+                              <Setter Property="Visibility" Value="Visible"/>
+                            </DataTrigger>
+                          </Style.Triggers>
+                        </Style>
+                      </Border.Style>
+                      <TextBlock Text="{Binding WtmStatus}"
+                                 FontFamily="{StaticResource FontMono}"
+                                 FontSize="10" Foreground="{StaticResource TextMuted}"
+                                 TextWrapping="Wrap"/>
+                    </Border>
+                  </StackPanel>
+                </Border>
+
+              </StackPanel>
+
+              <!-- ═══════════════════════════════════════════════════════
+                   OTO FARM — sadece farm sayfasında görünür
+                   ═══════════════════════════════════════════════════════ -->
+              <StackPanel>
+                <StackPanel.Style>
+                  <Style TargetType="StackPanel">
+                    <Setter Property="Visibility" Value="Collapsed"/>
+                    <Style.Triggers>
+                      <DataTrigger Binding="{Binding CurrentPage}" Value="farm">
+                        <Setter Property="Visibility" Value="Visible"/>
+                      </DataTrigger>
+                    </Style.Triggers>
+                  </Style>
+                </StackPanel.Style>
+
+                <!-- Farm HUD toggle -->
+                <Border Style="{StaticResource PanelCard}" Padding="10" Margin="0,0,0,6">
+                  <StackPanel>
+                    <TextBlock Text="FARM HUD" Style="{StaticResource SectionHeader}" Margin="0,0,0,8"/>
+                    <Button Command="{Binding ToggleFarmHudCommand}"
+                            Padding="7,4" FontSize="11">
+                      <Button.Style>
+                        <Style TargetType="Button" BasedOn="{StaticResource BtnGhost}">
+                          <Style.Triggers>
+                            <DataTrigger Binding="{Binding FarmHudVisible}" Value="True">
+                              <Setter Property="BorderBrush" Value="{StaticResource GoldDeep}"/>
+                              <Setter Property="Foreground"  Value="{StaticResource Gold}"/>
+                            </DataTrigger>
+                          </Style.Triggers>
+                        </Style>
+                      </Button.Style>
+                      <TextBlock Text="⬛ HUD Göster / Gizle" FontSize="10"/>
+                    </Button>
+                  </StackPanel>
+                </Border>
+
+                <!-- Farm durum -->
+                <Border Style="{StaticResource PanelCard}" Padding="10" Margin="0,0,0,6">
+                  <StackPanel>
+                    <TextBlock Text="FARM DURUM" Style="{StaticResource SectionHeader}" Margin="0,0,0,6"/>
+                    <TextBlock Text="{Binding FarmStatus}"
+                               FontFamily="{StaticResource FontMono}"
+                               FontSize="10" Foreground="{StaticResource TextMuted}"
+                               TextWrapping="Wrap"/>
+                  </StackPanel>
+                </Border>
+
+                <!-- Koruma mobu tespiti toggle -->
+                <Border Style="{StaticResource PanelCard}" Padding="10" Margin="0,0,0,6">
+                  <StackPanel>
+                    <TextBlock Text="KORUMA MOBU" Style="{StaticResource SectionHeader}" Margin="0,0,0,6"/>
+                    <Grid>
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                      </Grid.ColumnDefinitions>
+                      <TextBlock Grid.Column="0" Text="Tespiti Etkin" FontSize="10"
+                                 Foreground="{StaticResource TextMuted}" VerticalAlignment="Center"/>
+                      <CheckBox Grid.Column="1" IsChecked="{Binding GuardianDetectionEnabled}"
+                                VerticalAlignment="Center"
+                                ToolTip="Kırmızı isimli koruma moblarını tespit et ve kara listeye ekle"/>
+                    </Grid>
+                    <TextBlock Text="{Binding NameplateCalibStatus}"
+                               FontSize="9" Foreground="{StaticResource Gold}"
+                               TextWrapping="Wrap" Margin="0,4,0,0"/>
+                  </StackPanel>
+                </Border>
+
+              </StackPanel>
+
+            </StackPanel>
+          </ScrollViewer>
+
+        </Grid>
+
+        <!-- ===== Status bar ===== -->
+        <ctrl:StatusBarControl Grid.Row="3"/>
+
+      </Grid>
+    </Grid>
+  </Border>
+</Window>

@@ -1,0 +1,36 @@
+<Window x:Class="HomekoWorld.Views.CalibrationOverlayWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        WindowStyle="None" AllowsTransparency="True"
+        Background="#AA000000"
+        Topmost="True" WindowState="Maximized"
+        Cursor="Cross"
+        KeyDown="Window_KeyDown">
+
+  <Grid>
+    <!-- Instruction bar -->
+    <Border VerticalAlignment="Top" HorizontalAlignment="Center"
+            Margin="0,24,0,0"
+            Background="#CC1A1A2E" BorderBrush="#FF8B6914"
+            BorderThickness="1" CornerRadius="6" Padding="16,8"
+            IsHitTestVisible="False">
+      <TextBlock x:Name="InstructionText"
+                 Text="Skill barlarının tümünü kapsayan alanı sürükleyerek seçin.  Onay: bırak veya Enter  |  İptal: Escape"
+                 Foreground="White" FontSize="13"/>
+    </Border>
+
+    <!-- Full-screen drawing canvas -->
+    <Canvas x:Name="DrawCanvas"
+            Background="Transparent"
+            MouseLeftButtonDown="Canvas_MouseDown"
+            MouseMove="Canvas_MouseMove"
+            MouseLeftButtonUp="Canvas_MouseUp">
+
+      <!-- Selection rectangle drawn programmatically in code-behind -->
+      <Rectangle x:Name="SelectionRect"
+                 Stroke="#FF8B6914" StrokeThickness="2"
+                 Fill="#33D4A44A"
+                 Visibility="Collapsed"/>
+    </Canvas>
+  </Grid>
+</Window>

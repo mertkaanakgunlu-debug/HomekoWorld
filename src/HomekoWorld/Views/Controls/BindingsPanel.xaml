@@ -1,0 +1,32 @@
+<UserControl x:Class="HomekoWorld.Views.Controls.BindingsPanel"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+  <Border Style="{StaticResource PanelCard}" Margin="0,0,0,6" Padding="10">
+    <StackPanel>
+      <TextBlock Text="ATAMALAR" Style="{StaticResource SectionHeader}" Margin="0,0,0,8"/>
+
+      <ItemsControl ItemsSource="{Binding Filtered}">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate>
+            <Grid Margin="0,2">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+              </Grid.ColumnDefinitions>
+              <Border Style="{StaticResource KeyChip}" Margin="0,0,6,0"
+                      Visibility="{Binding IsBound, Converter={StaticResource BoolToVis}}">
+                <TextBlock Text="{Binding BindingLabel}"
+                           FontFamily="{StaticResource FontMono}" FontSize="10"
+                           Foreground="{StaticResource Gold}"/>
+              </Border>
+              <TextBlock Grid.Column="1" Text="{Binding Name}"
+                         FontSize="11" Foreground="{StaticResource TextSoft}"
+                         VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+            </Grid>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </StackPanel>
+  </Border>
+</UserControl>

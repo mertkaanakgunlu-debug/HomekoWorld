@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+  <!-- Scale 96×96 design into the 72dp safe zone (18dp padding each side) -->
+  <group
+      android:scaleX="0.75"
+      android:scaleY="0.75"
+      android:translateX="18"
+      android:translateY="18">
+
+    <!-- Outer lozenge -->
+    <path
+        android:pathData="M48,4 L92,48 L48,92 L4,48 Z"
+        android:fillColor="#00000000"
+        android:strokeColor="#f5d27c"
+        android:strokeWidth="2.4"/>
+
+    <!-- Inner lozenge -->
+    <path
+        android:pathData="M48,10 L86,48 L48,86 L10,48 Z"
+        android:fillColor="#00000000"
+        android:strokeColor="#8b6914"
+        android:strokeWidth="0.7"
+        android:strokeAlpha="0.6"/>
+
+    <!-- Separator lines -->
+    <path
+        android:pathData="M20,62 L76,62"
+        android:fillColor="#00000000"
+        android:strokeColor="#d4a44a"
+        android:strokeWidth="0.8"
+        android:strokeAlpha="0.7"/>
+    <path
+        android:pathData="M22,64 L74,64"
+        android:fillColor="#00000000"
+        android:strokeColor="#8b6914"
+        android:strokeWidth="0.5"
+        android:strokeAlpha="0.5"/>
+
+    <!-- Chevron 1 (faded) -->
+    <path
+        android:pathData="M48,20.2 L31,33.8 l6.8,0 L48,25.3 L58.2,33.8 l6.8,0 Z"
+        android:fillColor="#d4a44a"
+        android:fillAlpha="0.4"/>
+
+    <!-- Chevron 2 (mid) -->
+    <path
+        android:pathData="M48,33.2 L31,46.8 l6.8,0 L48,38.3 L58.2,46.8 l6.8,0 Z"
+        android:fillColor="#d4a44a"
+        android:fillAlpha="0.7"/>
+
+    <!-- Chevron 3 (full) -->
+    <path
+        android:pathData="M48,46.2 L31,59.8 l6.8,0 L48,51.3 L58.2,59.8 l6.8,0 Z"
+        android:fillColor="#f5d27c"/>
+
+    <!-- Three dots -->
+    <path android:pathData="M40,70 L43,70 L43,73 L40,73 Z" android:fillColor="#f5d27c"/>
+    <path android:pathData="M46,70 L49,70 L49,73 L46,73 Z" android:fillColor="#f5d27c"/>
+    <path android:pathData="M52,70 L55,70 L55,73 L52,73 Z" android:fillColor="#f5d27c"/>
+
+  </group>
+</vector>

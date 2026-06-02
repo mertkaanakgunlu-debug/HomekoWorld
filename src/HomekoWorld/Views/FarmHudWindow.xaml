@@ -1,0 +1,282 @@
+<Window x:Class="HomekoWorld.Views.FarmHudWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:conv="clr-namespace:HomekoWorld.Converters"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
+        Topmost="True"
+        ShowInTaskbar="False"
+        ResizeMode="NoResize"
+        SizeToContent="WidthAndHeight"
+        Title="Ana HUD">
+
+  <Window.Resources>
+    <conv:StepProgressConverter x:Key="StepProgressConverter"/>
+  </Window.Resources>
+
+  <Border x:Name="RootBorder"
+          CornerRadius="6" Padding="10,8" Margin="4"
+          Background="#E0130E09"
+          BorderBrush="#44D4A44A" BorderThickness="1">
+    <Border.Effect>
+      <DropShadowEffect Color="Black" BlurRadius="12" Opacity="0.7" ShadowDepth="2"/>
+    </Border.Effect>
+
+    <StackPanel MinWidth="214">
+
+      <!-- ── Üst satır: sürükleme tutacağı + durum + genişlet ── -->
+      <Grid x:Name="DragHandle" Cursor="SizeAll" Margin="0,0,0,6">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto"/>
+          <ColumnDefinition Width="*"/>
+          <ColumnDefinition Width="Auto"/>
+        </Grid.ColumnDefinitions>
+
+        <!-- Durum noktası -->
+        <Ellipse Grid.Column="0" Width="7" Height="7" Margin="0,1,6,0" VerticalAlignment="Center">
+          <Ellipse.Style>
+            <Style TargetType="Ellipse">
+              <Setter Property="Fill" Value="#FFCC4444"/>
+              <Style.Triggers>
+                <DataTrigger Binding="{Binding FarmRunning}" Value="True">
+                  <Setter Property="Fill" Value="#FF7ACC50"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding FarmPaused}" Value="True">
+                  <Setter Property="Fill" Value="#FFD4A44A"/>
+                </DataTrigger>
+              </Style.Triggers>
+            </Style>
+          </Ellipse.Style>
+        </Ellipse>
+
+        <!-- Başlık + durum -->
+        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+          <TextBlock Text="Oto Farm" FontSize="11" FontWeight="SemiBold"
+                     Foreground="#FFD4A44A" Margin="0,0,8,0" VerticalAlignment="Center"/>
+          <TextBlock FontSize="10" VerticalAlignment="Center" MaxWidth="150"
+                     TextTrimming="CharacterEllipsis"
+                     Text="{Binding FarmStatus, FallbackValue=Pasif}"
+                     Foreground="#99E8DCC0"/>
+        </StackPanel>
+
+        <!-- Genişlet / daralt -->
+        <Button Grid.Column="2" Command="{Binding ToggleHudExpandedCommand}"
+                Background="Transparent" BorderThickness="0" Cursor="Hand"
+                Padding="4,0" VerticalAlignment="Center" Foreground="#99E8DCC0">
+          <TextBlock FontSize="11">
+            <TextBlock.Style>
+              <Style TargetType="TextBlock">
+                <Setter Property="Text" Value="▾"/>
+                <Style.Triggers>
+                  <DataTrigger Binding="{Binding HudExpanded}" Value="True">
+                    <Setter Property="Text" Value="▴"/>
+                  </DataTrigger>
+                </Style.Triggers>
+              </Style>
+            </TextBlock.Style>
+          </TextBlock>
+        </Button>
+      </Grid>
+
+      <!-- ── İstatistik satırı (her zaman) ── -->
+      <Grid Margin="0,0,0,5">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto"/>
+          <ColumnDefinition Width="*"/>
+          <ColumnDefinition Width="Auto"/>
+        </Grid.ColumnDefinitions>
+
+        <!-- Kill + hedef -->
+        <StackPanel Grid.Column="0" Orientation="Horizontal">
+          <TextBlock Text="💀 " FontSize="10" VerticalAlignment="Center"/>
+          <TextBlock FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center"
+                     Foreground="#FFD4A44A" Text="{Binding FarmKills, FallbackValue=0}"/>
+          <TextBlock FontSize="10" VerticalAlignment="Center" Margin="8,0,0,0"
+                     MaxWidth="96" TextTrimming="CharacterEllipsis"
+                     Foreground="#99E8DCC0"
+                     Text="{Binding FarmCurrentMob}"/>
+        </StackPanel>
+
+        <!-- AutoPot durumu -->
+        <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+          <TextBlock Text="AutoPot" FontSize="9" Foreground="#66E8DCC0"
+                     VerticalAlignment="Center" Margin="0,0,4,0"/>
+          <Ellipse Width="7" Height="7" VerticalAlignment="Center">
+            <Ellipse.Style>
+              <Style TargetType="Ellipse">
+                <Setter Property="Fill" Value="#55E05555"/>
+                <Style.Triggers>
+                  <DataTrigger Binding="{Binding AutoPotEnabled}" Value="True">
+                    <Setter Property="Fill" Value="#FF7ACC50"/>
+                  </DataTrigger>
+                </Style.Triggers>
+              </Style>
+            </Ellipse.Style>
+          </Ellipse>
+        </StackPanel>
+      </Grid>
+
+      <!-- ════════ GENİŞLETİLMİŞ ════════ -->
+      <StackPanel Visibility="{Binding HudExpanded, Converter={StaticResource BoolToVis}}">
+
+        <Border Height="1" Background="#22D4A44A" Margin="0,1,0,6"/>
+
+        <!-- Combo bloğu -->
+        <Grid Margin="0,0,0,5">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="Auto"/>
+          </Grid.ColumnDefinitions>
+          <TextBlock Grid.Column="0" FontSize="10" VerticalAlignment="Center"
+                     MaxWidth="130" TextTrimming="CharacterEllipsis" Foreground="#99E8DCC0"
+                     Text="{Binding FiringComboName, FallbackValue=—, TargetNullValue=—}"/>
+          <TextBlock Grid.Column="1" FontSize="9" VerticalAlignment="Center" Foreground="#66E8DCC0">
+            <Run Text="Ping "/><Run Text="{Binding PingMs, Mode=OneWay, FallbackValue=—}"/><Run Text=" ms"/>
+          </TextBlock>
+        </Grid>
+
+        <!-- Adım çubuğu (kombo ateşlerken — manuel veya farm) -->
+        <Grid Margin="0,0,0,6">
+          <Grid.Style>
+            <Style TargetType="Grid">
+              <Setter Property="Visibility" Value="Collapsed"/>
+              <Style.Triggers>
+                <DataTrigger Binding="{Binding Active}" Value="True">
+                  <Setter Property="Visibility" Value="Visible"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding FarmRunning}" Value="True">
+                  <Setter Property="Visibility" Value="Visible"/>
+                </DataTrigger>
+              </Style.Triggers>
+            </Style>
+          </Grid.Style>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="Auto"/>
+          </Grid.ColumnDefinitions>
+          <Border Grid.Column="0" Height="5" CornerRadius="2" Background="#33FFFFFF"
+                  VerticalAlignment="Center" Margin="0,0,6,0" x:Name="ProgressTrack">
+            <Border CornerRadius="2" Background="#FFD4A44A" HorizontalAlignment="Left">
+              <Border.Width>
+                <MultiBinding Converter="{StaticResource StepProgressConverter}">
+                  <Binding Path="StepIndex"/>
+                  <Binding Path="TotalSteps"/>
+                  <Binding ElementName="ProgressTrack" Path="ActualWidth"/>
+                </MultiBinding>
+              </Border.Width>
+            </Border>
+          </Border>
+          <TextBlock Grid.Column="1" FontSize="9" Foreground="#99E8DCC0" VerticalAlignment="Center">
+            <Run Text="{Binding StepIndex, Mode=OneWay}"/><Run Text="/"/><Run Text="{Binding TotalSteps, Mode=OneWay}"/>
+          </TextBlock>
+        </Grid>
+
+        <!-- Oturum + kill/saat -->
+        <Grid Margin="0,0,0,6">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="Auto"/>
+          </Grid.ColumnDefinitions>
+          <TextBlock Grid.Column="0" FontSize="10" Foreground="#99E8DCC0" VerticalAlignment="Center">
+            <Run Text="⏱ "/><Run Text="{Binding FarmElapsed, Mode=OneWay, FallbackValue=00:00}"/>
+          </TextBlock>
+          <TextBlock Grid.Column="1" FontSize="10" Foreground="#99E8DCC0" VerticalAlignment="Center">
+            <Run Text="{Binding FarmKillsPerHour, Mode=OneWay, FallbackValue=0}"/><Run Text=" kill/sa"/>
+          </TextBlock>
+        </Grid>
+
+        <!-- Hızlı kontroller: koruma + duraklat -->
+        <Grid Margin="0,0,0,6">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="Auto"/>
+          </Grid.ColumnDefinitions>
+          <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+            <CheckBox IsChecked="{Binding GuardianDetectionEnabled}" VerticalAlignment="Center"/>
+            <TextBlock Text="🛡 Koruma" FontSize="10" Foreground="#99E8DCC0"
+                       VerticalAlignment="Center" Margin="4,0,10,0"/>
+            <CheckBox IsChecked="{Binding AutoPotEnabled}" VerticalAlignment="Center"/>
+            <TextBlock Text="🧪 Pot" FontSize="10" Foreground="#99E8DCC0"
+                       VerticalAlignment="Center" Margin="4,0,0,0"/>
+          </StackPanel>
+
+          <Button Grid.Column="1" Command="{Binding TogglePauseCommand}"
+                  IsEnabled="{Binding FarmRunning}" Cursor="Hand"
+                  Background="#22D4A44A" BorderBrush="#44D4A44A" BorderThickness="1"
+                  Foreground="#FFD4A44A" Padding="6,2" FontSize="10">
+            <TextBlock>
+              <TextBlock.Style>
+                <Style TargetType="TextBlock">
+                  <Setter Property="Text" Value="⏸ Duraklat"/>
+                  <Style.Triggers>
+                    <DataTrigger Binding="{Binding FarmPaused}" Value="True">
+                      <Setter Property="Text" Value="▶ Devam"/>
+                    </DataTrigger>
+                  </Style.Triggers>
+                </Style>
+              </TextBlock.Style>
+            </TextBlock>
+          </Button>
+        </Grid>
+
+        <!-- Log HUD aç/kapa -->
+        <Button Command="{Binding ToggleLogHudCommand}" Cursor="Hand"
+                Background="#1AD4A44A" BorderBrush="#33D4A44A" BorderThickness="1"
+                Foreground="#FFD4A44A" Padding="6,3" FontSize="10" Margin="0,0,0,6">
+          <TextBlock Text="📋 Log HUD"/>
+        </Button>
+      </StackPanel>
+
+      <!-- ── Ayırıcı ── -->
+      <Border Height="1" Background="#22D4A44A" Margin="0,0,0,6"/>
+
+      <!-- ── Başlat / Durdur ── -->
+      <Button Command="{Binding ToggleFarmCommand}"
+              IsEnabled="{Binding FarmToggleEnabled}"
+              Cursor="Hand" Padding="8,5" FontSize="11"
+              FontFamily="{StaticResource FontBody}">
+        <Button.Style>
+          <Style TargetType="Button">
+            <Setter Property="Background"   Value="#22D4A44A"/>
+            <Setter Property="Foreground"   Value="#FFD4A44A"/>
+            <Setter Property="BorderBrush"  Value="#44D4A44A"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Template">
+              <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                  <Border Background="{TemplateBinding Background}"
+                          BorderBrush="{TemplateBinding BorderBrush}"
+                          BorderThickness="{TemplateBinding BorderThickness}"
+                          CornerRadius="4" Padding="{TemplateBinding Padding}">
+                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                  </Border>
+                  <ControlTemplate.Triggers>
+                    <Trigger Property="IsMouseOver" Value="True">
+                      <Setter Property="Background" Value="#33D4A44A"/>
+                    </Trigger>
+                    <Trigger Property="IsPressed" Value="True">
+                      <Setter Property="Background" Value="#44D4A44A"/>
+                    </Trigger>
+                  </ControlTemplate.Triggers>
+                </ControlTemplate>
+              </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+              <DataTrigger Binding="{Binding FarmRunning}" Value="True">
+                <Setter Property="Background"  Value="#22CC4444"/>
+                <Setter Property="Foreground"  Value="#FFE05555"/>
+                <Setter Property="BorderBrush" Value="#44E05555"/>
+              </DataTrigger>
+              <DataTrigger Binding="{Binding FarmToggleEnabled}" Value="False">
+                <Setter Property="Opacity" Value="0.4"/>
+              </DataTrigger>
+            </Style.Triggers>
+          </Style>
+        </Button.Style>
+        <TextBlock Text="{Binding FarmStartLabel}" VerticalAlignment="Center"/>
+      </Button>
+
+    </StackPanel>
+  </Border>
+</Window>

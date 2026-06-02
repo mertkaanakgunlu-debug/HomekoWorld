@@ -1,0 +1,21 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+  <!-- Cinzel — display/title font (medieval serif).
+       Falls back to Georgia if TTF not present in Resources\Fonts\. -->
+  <FontFamily x:Key="FontDisplay">pack://application:,,,/Resources/Fonts/#Cinzel, Georgia, serif</FontFamily>
+
+  <!-- Inter — UI body font. Falls back to Segoe UI. -->
+  <FontFamily x:Key="FontBody">pack://application:,,,/Resources/Fonts/#Inter, Segoe UI, sans-serif</FontFamily>
+
+  <!-- JetBrains Mono — monospace. Falls back to Consolas. -->
+  <FontFamily x:Key="FontMono">pack://application:,,,/Resources/Fonts/#JetBrains Mono, Consolas, monospace</FontFamily>
+
+  <!-- System fallbacks used in TextElement defaults -->
+  <Style x:Key="BaseTextStyle" TargetType="TextElement">
+    <Setter Property="FontFamily" Value="{StaticResource FontBody}"/>
+    <Setter Property="FontSize" Value="13"/>
+    <Setter Property="Foreground" Value="{StaticResource Text}"/>
+  </Style>
+
+</ResourceDictionary>

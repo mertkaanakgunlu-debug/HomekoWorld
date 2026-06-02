@@ -1,0 +1,107 @@
+namespace HomekoWorld.Hardware;
+
+public enum TransportMode { Wifi, Usb, Local }
+
+// Routes IKeyDeviceTransport calls to the appropriate transport implementation.
+// ComboEngine holds a single IKeyDeviceTransport reference and never needs to
+// know the mode changed.
+public sealed class TransportRouter : IKeyDeviceTransport
+{
+    private readonly HidBridgeClient     _net;
+    private readonly LocalInputTransport _local;
+
+    // Volatile so background threads (ComboEngine tasks) always see the latest value
+    private volatile IKeyDeviceTransport _active;
+
+    public TransportMode Mode { get; private set; } = TransportMode.Wifi;
+
+    public bool IsConnected => _active.IsConnected;
+    public event EventHandler<string>? LineReceived;
+    public event EventHandler<string>? Disconnected;
+    public event EventHandler<long>?   LatencyMs;
+
+    public TransportRouter(HidBridgeClient net, LocalInputTransport local)
+    {
+        _net    = net;
+        _local  = local;
+        _active = net;
+
+        // Wire inner events once; only re-fire if that inner is currently active.
+        _net.LineReceived   += (s, e) => { if (_active == _net)   LineReceived?.Invoke(this, e); };
+        _net.Disconnected   += (s, e) => { if (_active == _net)   Disconnected?.Invoke(this, e); };
+        _net.LatencyMs      += (s, e) => { if (_active == _net)   LatencyMs?.Invoke(this, e);    };
+
+        _local.LineReceived += (s, e) => { if (_active == _local) LineReceived?.Invoke(this, e); };
+        _local.Disconnected += (s, e) => { if (_active == _local) Disconnected?.Invoke(this, e); };
+        _local.LatencyMs    += (s, e) => { if (_active == _local) LatencyMs?.Invoke(this, e);    };
+    }
+
+    // Switches to local SendInput mode
+    public void SwitchToLocal()
+    {
+        _net.Disconnect();
+        Mode    = TransportMode.Local;
+        _active = _local;
+    }
+
+    // Switches back to network (WiFi or USB — same underlying HidBridgeClient)
+    public void SwitchToNet(TransportMode netMode = TransportMode.Wifi)
+    {
+        _local.Disconnect();
+        Mode    = netMode;
+        _active = _net;
+    }
+
+    // ── IKeyDeviceTransport forwarding ────────────────────────────────────────
+
+    public Task<bool> ConnectAsync(string host, int port, CancellationToken ct = default)
+        => _active.ConnectAsync(host, port, ct);
+
+    public Task SendLineAsync(string line, CancellationToken ct = default)
+        => _active.SendLineAsync(line, ct);
+
+    public Task SendRawAsync(string payload, CancellationToken ct = default)
+        => _active.SendRawAsync(payload, ct);
+
+    public void Disconnect()
+        => _active.Disconnect();
+
+    // ── Faz 17: Mouse forwarding ──────────────────────────────────────────────
+
+    /// <summary>
+    /// Fareyi verilen ekran piksel koordinatına taşır.
+    /// Local modda Win32 SendInput, BLE modda Android MOUSE_MOVE_ABS protokolü.
+    /// </summary>
+    public Task MoveAbsAsync(int x, int y, CancellationToken ct = default)
+        => _active.MoveAbsAsync(x, y, ct);
+
+    /// <summary>Belirtilen mouse butonuna tek tıklama gönderir.</summary>
+    public Task ClickAsync(MouseButton btn = MouseButton.Left, CancellationToken ct = default)
+        => _active.ClickAsync(btn, ct);
+
+    /// <inheritdoc/>
+    public Task KeyDownAsync(string key, CancellationToken ct = default)
+        => _active.KeyDownAsync(key, ct);
+
+    /// <inheritdoc/>
+    public Task KeyUpAsync(string key, CancellationToken ct = default)
+        => _active.KeyUpAsync(key, ct);
+
+    /// <inheritdoc/>
+    public Task MouseDownAsync(MouseButton btn = MouseButton.Right, CancellationToken ct = default)
+        => _active.MouseDownAsync(btn, ct);
+
+    /// <inheritdoc/>
+    public Task MouseUpAsync(MouseButton btn = MouseButton.Right, CancellationToken ct = default)
+        => _active.MouseUpAsync(btn, ct);
+
+    /// <inheritdoc/>
+    public Task MoveRelAsync(int dx, int dy, CancellationToken ct = default)
+        => _active.MoveRelAsync(dx, dy, ct);
+
+    public void Dispose()
+    {
+        _net.Dispose();
+        _local.Dispose();
+    }
+}

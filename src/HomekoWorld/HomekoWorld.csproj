@@ -1,0 +1,50 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>HomekoWorld</RootNamespace>
+    <AssemblyName>HomekoWorld</AssemblyName>
+
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <StartupObject>HomekoWorld.Program</StartupObject>
+    <Platforms>x64</Platforms>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+
+    <!-- Single-file publish: native WPF DLLs must be extracted alongside the exe,
+         not bundled inside. Without this, SetWindowLongPtr etc. crash on startup. -->
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.3.2" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="8.0.1" />
+    <PackageReference Include="System.Drawing.Common" Version="8.0.14" />
+    <PackageReference Include="Microsoft.ML.OnnxRuntime.DirectML" Version="1.20.1" />
+    <PackageReference Include="Vortice.Direct3D11" Version="3.8.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="Assets\Skills\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <Content Include="Assets\HpBar\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Assets\Mobs\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+  <!-- Font TTF files loaded at runtime if present in Resources\Fonts\.
+       Download from Google Fonts and place here to activate:
+       Cinzel-Regular.ttf, Inter-Regular/Medium/SemiBold/Bold.ttf,
+       JetBrainsMono-Regular/Medium.ttf
+       Until then the app falls back to Georgia / Segoe UI / Consolas. -->
+  <ItemGroup>
+    <Resource Include="Resources\Fonts\*.ttf" Condition="Exists('Resources\Fonts\Cinzel-Regular.ttf')" />
+  </ItemGroup>
+</Project>

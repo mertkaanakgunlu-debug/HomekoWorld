@@ -1,0 +1,172 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#0A0805"
+    android:padding="16dp">
+
+  <LinearLayout
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:orientation="vertical">
+
+    <!-- Title -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="HomekoBridge"
+        android:textColor="#D4A44A"
+        android:textSize="22sp"
+        android:textStyle="bold"
+        android:layout_marginBottom="4dp"/>
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Bluetooth HID Keyboard Bridge"
+        android:textColor="#7A6B50"
+        android:textSize="12sp"
+        android:layout_marginBottom="16dp"/>
+
+    <!-- WiFi IP -->
+    <TextView
+        android:id="@+id/tvWifiIp"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="WiFi:  bağlı değil"
+        android:textColor="#B8A987"
+        android:textSize="13sp"
+        android:fontFamily="monospace"
+        android:background="#1C1610"
+        android:padding="10dp"
+        android:layout_marginBottom="2dp"/>
+
+    <!-- USB tethering IP -->
+    <TextView
+        android:id="@+id/tvUsbIp"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="USB:   kablo bağlı değil"
+        android:textColor="#5A8A3A"
+        android:textSize="13sp"
+        android:fontFamily="monospace"
+        android:background="#111A0E"
+        android:padding="10dp"
+        android:layout_marginBottom="8dp"/>
+
+    <!-- Refresh button -->
+    <Button
+        android:id="@+id/btnRefreshIp"
+        android:layout_width="wrap_content"
+        android:layout_height="36dp"
+        android:text="IP Yenile"
+        android:textColor="#B8A987"
+        android:textSize="12sp"
+        android:backgroundTint="#2A2218"
+        android:layout_marginBottom="12dp"/>
+
+    <!-- BT status -->
+    <TextView
+        android:id="@+id/tvBtStatus"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="BT: bekleniyor"
+        android:textColor="#6BA84F"
+        android:textSize="13sp"
+        android:background="#1C1610"
+        android:padding="10dp"
+        android:layout_marginBottom="16dp"/>
+
+    <!-- Port input -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginBottom="12dp">
+
+      <TextView
+          android:layout_width="wrap_content"
+          android:layout_height="wrap_content"
+          android:text="TCP Port: "
+          android:textColor="#B8A987"
+          android:textSize="13sp"
+          android:gravity="center_vertical"
+          android:layout_weight="0"/>
+
+      <EditText
+          android:id="@+id/etPort"
+          android:layout_width="0dp"
+          android:layout_height="wrap_content"
+          android:layout_weight="1"
+          android:text="5556"
+          android:inputType="number"
+          android:textColor="#E8DCC0"
+          android:background="#1C1610"
+          android:padding="8dp"
+          android:fontFamily="monospace"/>
+    </LinearLayout>
+
+    <!-- Start / Stop buttons -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginBottom="20dp">
+
+      <Button
+          android:id="@+id/btnStart"
+          android:layout_width="0dp"
+          android:layout_weight="1"
+          android:layout_height="48dp"
+          android:text="Başlat"
+          android:textColor="#F5D27C"
+          android:backgroundTint="#6A4E10"
+          android:layout_marginEnd="8dp"/>
+
+      <Button
+          android:id="@+id/btnStop"
+          android:layout_width="0dp"
+          android:layout_weight="1"
+          android:layout_height="48dp"
+          android:text="Durdur"
+          android:textColor="#D44A4A"
+          android:backgroundTint="#2A1010"
+          android:enabled="false"/>
+
+    </LinearLayout>
+
+    <!-- Instructions -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="BLUETOOTH modu:\n1. Telefonu PC'ye BT Klavye olarak eşleştir\n2. Başlat'a bas\n3. PC'den WiFi IP:PORT'a bağlan\n\nUSB KABLO modu:\n1. USB kablo ile bağla\n2. Ayarlar → Bağlantı → USB Tethering'i aç\n3. Yukarıda USB IP görünür (192.168.42.129)\n4. PC'de USB modunu seç ve Bağlan"
+        android:textColor="#7A6B50"
+        android:textSize="12sp"
+        android:lineSpacingExtra="4dp"
+        android:layout_marginBottom="16dp"/>
+
+    <!-- Log -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="LOG"
+        android:textColor="#5A4F3C"
+        android:textSize="10sp"
+        android:letterSpacing="0.15"
+        android:layout_marginBottom="4dp"/>
+
+    <TextView
+        android:id="@+id/tvLog"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="—"
+        android:textColor="#7A6B50"
+        android:textSize="11sp"
+        android:fontFamily="monospace"
+        android:background="#0F0C08"
+        android:padding="10dp"
+        android:lineSpacingExtra="3dp"
+        android:minLines="6"/>
+
+  </LinearLayout>
+</ScrollView>

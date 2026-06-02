@@ -1,0 +1,44 @@
+; Samsung RNDIS USB Tethering Driver
+; Wraps Windows built-in netrndis.inf/usbrndis6.ndi for Samsung devices
+; that expose RNDIS as Class_E0 SubClass_01 Prot_03 instead of the
+; standard EF/04/01 that rndiscmp.inf matches.
+;
+; Install (elevated PowerShell):
+;   pnputil /add-driver samsung_rndis.inf /install
+
+[Version]
+Signature   = "$Windows NT$"
+Class       = Net
+ClassGUID   = {4d36e972-e325-11ce-bfc1-08002be10318}
+Provider    = %Samsung%
+DriverVer   = 05/26/2026,1.0.0.0
+PnpLockdown = 1
+
+[Manufacturer]
+%Samsung% = SamsungDevices,NTamd64
+
+[SamsungDevices.NTamd64]
+; Matches S24 Ultra tethering interface (PID_6863, RNDIS function)
+%SamsungRNDIS% = RNDIS.NT.6.0, USB\VID_04E8&PID_6863&RNdis
+; Compatible-ID fallback for other Samsung phones exposing E0/01/03
+%SamsungRNDIS% = RNDIS.NT.6.0, USB\Vid_04E8&Pid_6863&Class_E0&SubClass_01&Prot_03
+
+[ControlFlags]
+ExcludeFromSelect = *
+
+[RNDIS.NT.6.0]
+Characteristics    = 0x84    ; NCF_PHYSICAL + NCF_HAS_UI
+BusType            = 15      ; BusTypeUsb
+include            = netrndis.inf
+needs              = usbrndis6.ndi
+*IfType            = 6       ; IF_TYPE_ETHERNET_CSMACD
+*MediaType         = 0       ; NdisMediumNative802_3
+*PhysicalMediaType = 14      ; NdisPhysicalMedium802_3
+
+[RNDIS.NT.6.0.Services]
+include = netrndis.inf
+needs   = usbrndis6.ndi.Services
+
+[Strings]
+Samsung      = "Samsung"
+SamsungRNDIS = "Samsung USB Tethering (RNDIS6)"

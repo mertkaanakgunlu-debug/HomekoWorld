@@ -1,0 +1,116 @@
+<UserControl x:Class="HomekoWorld.Views.Controls.StatusBarControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+  <Border Height="26"
+          Background="#FF0D0A06"
+          BorderBrush="{StaticResource Divider}"
+          BorderThickness="0,1,0,0">
+    <Grid Margin="12,0">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="Auto"/>   <!-- 0: Active -->
+        <ColumnDefinition Width="Auto"/>   <!-- 1: Divider -->
+        <ColumnDefinition Width="Auto"/>   <!-- 2: Connect -->
+        <ColumnDefinition Width="*"/>      <!-- 3: Log message -->
+        <ColumnDefinition Width="Auto"/>   <!-- 4: F12 hint -->
+        <ColumnDefinition Width="Auto"/>   <!-- 5: Lang toggle -->
+      </Grid.ColumnDefinitions>
+
+      <!-- Active indicator -->
+      <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,14,0">
+        <Ellipse Width="6" Height="6" Margin="0,0,5,0">
+          <Ellipse.Style>
+            <Style TargetType="Ellipse">
+              <Setter Property="Fill" Value="{StaticResource Red}"/>
+              <Style.Triggers>
+                <DataTrigger Binding="{Binding Active}" Value="True">
+                  <Setter Property="Fill" Value="{StaticResource Green}"/>
+                </DataTrigger>
+              </Style.Triggers>
+            </Style>
+          </Ellipse.Style>
+        </Ellipse>
+        <TextBlock FontSize="11" Foreground="{StaticResource TextMuted}">
+          <TextBlock.Style>
+            <Style TargetType="TextBlock">
+              <Setter Property="Text" Value="Durduruldu"/>
+              <Style.Triggers>
+                <DataTrigger Binding="{Binding Active}" Value="True">
+                  <Setter Property="Text" Value="Aktif"/>
+                </DataTrigger>
+              </Style.Triggers>
+            </Style>
+          </TextBlock.Style>
+        </TextBlock>
+      </StackPanel>
+
+      <!-- Divider -->
+      <Rectangle Grid.Column="1" Width="1" Height="12" Fill="{StaticResource Border1}" Margin="0,0,14,0"/>
+
+      <!-- Connection status -->
+      <TextBlock Grid.Column="2" FontSize="11" FontFamily="{StaticResource FontMono}"
+                 Foreground="{StaticResource TextMuted}" VerticalAlignment="Center"
+                 Text="{Binding ConnectStatus}" Margin="0,0,14,0"/>
+
+      <!-- Divider -->
+      <Rectangle Grid.Column="3" Width="1" Height="12" Fill="{StaticResource Border1}"
+                 HorizontalAlignment="Left" Margin="0,0,14,0"/>
+
+      <!-- Log message -->
+      <TextBlock Grid.Column="3" FontSize="11" Foreground="{StaticResource TextDim}"
+                 VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                 Text="{Binding LogMessage}"/>
+
+      <!-- F12 hint -->
+      <StackPanel Grid.Column="4" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,10,0">
+        <Border Style="{StaticResource KeyChip}">
+          <TextBlock Text="{Binding GlobalStartKey}" FontFamily="{StaticResource FontMono}" FontSize="10"
+                     Foreground="{StaticResource TextMuted}"/>
+        </Border>
+        <TextBlock Text=" toggle" FontSize="11" Foreground="{StaticResource TextDim}" Margin="4,0,0,0"/>
+      </StackPanel>
+
+      <!-- TR/EN language toggle -->
+      <StackPanel Grid.Column="5" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,2,0">
+        <!-- TR -->
+        <Border Padding="4,1" CornerRadius="3" Cursor="Hand" Margin="0,0,1,0">
+          <Border.InputBindings>
+            <MouseBinding MouseAction="LeftClick" Command="{Binding ToggleLanguageCommand}"/>
+          </Border.InputBindings>
+          <TextBlock Text="TR" FontSize="10" FontFamily="{StaticResource FontMono}">
+            <TextBlock.Style>
+              <Style TargetType="TextBlock">
+                <Setter Property="Foreground" Value="{StaticResource TextDim}"/>
+                <Style.Triggers>
+                  <DataTrigger Binding="{Binding Language}" Value="tr">
+                    <Setter Property="Foreground" Value="{StaticResource Gold}"/>
+                  </DataTrigger>
+                </Style.Triggers>
+              </Style>
+            </TextBlock.Style>
+          </TextBlock>
+        </Border>
+        <TextBlock Text="|" FontSize="10" Foreground="{StaticResource TextDim}" VerticalAlignment="Center"/>
+        <!-- EN -->
+        <Border Padding="4,1" CornerRadius="3" Cursor="Hand" Margin="1,0,0,0">
+          <Border.InputBindings>
+            <MouseBinding MouseAction="LeftClick" Command="{Binding ToggleLanguageCommand}"/>
+          </Border.InputBindings>
+          <TextBlock Text="EN" FontSize="10" FontFamily="{StaticResource FontMono}">
+            <TextBlock.Style>
+              <Style TargetType="TextBlock">
+                <Setter Property="Foreground" Value="{StaticResource TextDim}"/>
+                <Style.Triggers>
+                  <DataTrigger Binding="{Binding Language}" Value="en">
+                    <Setter Property="Foreground" Value="{StaticResource Gold}"/>
+                  </DataTrigger>
+                </Style.Triggers>
+              </Style>
+            </TextBlock.Style>
+          </TextBlock>
+        </Border>
+      </StackPanel>
+
+    </Grid>
+  </Border>
+</UserControl>

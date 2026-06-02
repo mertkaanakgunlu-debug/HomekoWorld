@@ -1,0 +1,135 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+  <!-- ===== Base button ===== -->
+  <Style x:Key="BtnBase" TargetType="Button">
+    <Setter Property="Cursor" Value="Hand"/>
+    <Setter Property="BorderThickness" Value="1"/>
+    <Setter Property="Padding" Value="10,5"/>
+    <Setter Property="FontFamily" Value="{StaticResource FontBody}"/>
+    <Setter Property="FontSize" Value="12"/>
+    <Setter Property="FontWeight" Value="Medium"/>
+    <Setter Property="SnapsToDevicePixels" Value="True"/>
+    <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="Button">
+          <Border x:Name="bd"
+                  Background="{TemplateBinding Background}"
+                  BorderBrush="{TemplateBinding BorderBrush}"
+                  BorderThickness="{TemplateBinding BorderThickness}"
+                  CornerRadius="3"
+                  Padding="{TemplateBinding Padding}">
+            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+          </Border>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+              <Setter TargetName="bd" Property="Opacity" Value="0.85"/>
+            </Trigger>
+            <Trigger Property="IsPressed" Value="True">
+              <Setter TargetName="bd" Property="Opacity" Value="0.7"/>
+            </Trigger>
+            <Trigger Property="IsEnabled" Value="False">
+              <Setter TargetName="bd" Property="Opacity" Value="0.35"/>
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <!-- Primary (gold) -->
+  <Style x:Key="BtnPrimary" TargetType="Button" BasedOn="{StaticResource BtnBase}">
+    <Setter Property="Background">
+      <Setter.Value>
+        <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+          <GradientStop Color="#FF8B6914" Offset="0"/>
+          <GradientStop Color="#FF6A4E10" Offset="1"/>
+        </LinearGradientBrush>
+      </Setter.Value>
+    </Setter>
+    <Setter Property="BorderBrush" Value="{StaticResource GoldDeep}"/>
+    <Setter Property="Foreground" Value="{StaticResource GoldBright}"/>
+  </Style>
+
+  <!-- Ghost (transparent with border) -->
+  <Style x:Key="BtnGhost" TargetType="Button" BasedOn="{StaticResource BtnBase}">
+    <Setter Property="Background" Value="Transparent"/>
+    <Setter Property="BorderBrush" Value="{StaticResource Border2}"/>
+    <Setter Property="Foreground" Value="{StaticResource TextSoft}"/>
+  </Style>
+
+  <!-- Muted (warm brown fill — matches BgPanel2 / model hazır rengi) -->
+  <Style x:Key="BtnMuted" TargetType="Button" BasedOn="{StaticResource BtnBase}">
+    <Setter Property="Background" Value="{StaticResource BgPanel2}"/>
+    <Setter Property="BorderBrush" Value="{StaticResource Border1}"/>
+    <Setter Property="Foreground" Value="{StaticResource TextSoft}"/>
+  </Style>
+
+  <!-- Danger (red) -->
+  <Style x:Key="BtnDanger" TargetType="Button" BasedOn="{StaticResource BtnBase}">
+    <Setter Property="Background">
+      <Setter.Value>
+        <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+          <GradientStop Color="#FF7A2A2A" Offset="0"/>
+          <GradientStop Color="#FF5A1E1E" Offset="1"/>
+        </LinearGradientBrush>
+      </Setter.Value>
+    </Setter>
+    <Setter Property="BorderBrush" Value="{StaticResource Red}"/>
+    <Setter Property="Foreground" Value="{StaticResource RedBright}"/>
+  </Style>
+
+  <!-- Icon button (square, no border, just icon) -->
+  <Style x:Key="BtnIcon" TargetType="Button" BasedOn="{StaticResource BtnBase}">
+    <Setter Property="Background" Value="Transparent"/>
+    <Setter Property="BorderBrush" Value="Transparent"/>
+    <Setter Property="BorderThickness" Value="0"/>
+    <Setter Property="Padding" Value="5"/>
+    <Setter Property="Foreground" Value="{StaticResource TextMuted}"/>
+    <Style.Triggers>
+      <Trigger Property="IsMouseOver" Value="True">
+        <Setter Property="Foreground" Value="{StaticResource TextSoft}"/>
+      </Trigger>
+    </Style.Triggers>
+  </Style>
+
+  <!-- Window chrome buttons -->
+  <Style x:Key="BtnWin" TargetType="Button" BasedOn="{StaticResource BtnBase}">
+    <Setter Property="Background" Value="Transparent"/>
+    <Setter Property="BorderBrush" Value="Transparent"/>
+    <Setter Property="BorderThickness" Value="0"/>
+    <Setter Property="Padding" Value="8,0"/>
+    <Setter Property="Foreground" Value="{StaticResource TextMuted}"/>
+    <Setter Property="Height" Value="34"/>
+    <Setter Property="Width" Value="34"/>
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="Button">
+          <Border x:Name="bd" Background="Transparent" Padding="{TemplateBinding Padding}">
+            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+          </Border>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+              <Setter TargetName="bd" Property="Background" Value="{StaticResource BgHover}"/>
+            </Trigger>
+            <Trigger Property="IsPressed" Value="True">
+              <Setter TargetName="bd" Property="Background" Value="{StaticResource BgPanel}"/>
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <!-- Window close button (red hover) -->
+  <Style x:Key="BtnWinClose" TargetType="Button" BasedOn="{StaticResource BtnWin}">
+    <Style.Triggers>
+      <Trigger Property="IsMouseOver" Value="True">
+        <Setter Property="Background" Value="{StaticResource Red}"/>
+        <Setter Property="Foreground" Value="White"/>
+      </Trigger>
+    </Style.Triggers>
+  </Style>
+
+</ResourceDictionary>

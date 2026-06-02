@@ -1,0 +1,96 @@
+<Window x:Class="HomekoWorld.Views.SettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Ayarlar"
+        Width="460" Height="420"
+        MinWidth="380" MinHeight="340"
+        WindowStartupLocation="CenterOwner"
+        Background="{StaticResource BgApp}"
+        BorderBrush="{StaticResource Border1}"
+        BorderThickness="1">
+
+  <Grid Margin="0">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="*"/>
+    </Grid.RowDefinitions>
+
+    <!-- Header -->
+    <Border Grid.Row="0" Padding="16,12"
+            Background="#FF0F0C08"
+            BorderBrush="{StaticResource Divider}" BorderThickness="0,0,0,1">
+      <TextBlock Text="Ayarlar"
+                 FontFamily="{StaticResource FontDisplay}"
+                 FontSize="16" Foreground="{StaticResource Gold}"/>
+    </Border>
+
+    <!-- Content -->
+    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+      <StackPanel Margin="16,14,16,14">
+
+        <!-- Global başlat tuşu -->
+        <Border Style="{StaticResource PanelCard}" Padding="12" Margin="0,0,0,10">
+          <StackPanel>
+            <TextBlock Text="GLOBAL BAŞLAT TUŞU" Style="{StaticResource SectionHeader}" Margin="0,0,0,8"/>
+            <TextBlock FontSize="11" Foreground="{StaticResource TextMuted}" TextWrapping="Wrap" Margin="0,0,0,6"
+                       Text="Uygulamayı etkinleştirmek / pasifleştirmek için kullanılacak tuş. Varsayılan: F12"/>
+            <Grid>
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="8"/>
+                <ColumnDefinition Width="80"/>
+              </Grid.ColumnDefinitions>
+              <TextBlock Grid.Column="0" Text="Aktif / Pasif tuşu" FontSize="11"
+                         Foreground="{StaticResource TextSoft}" VerticalAlignment="Center"/>
+              <TextBox Grid.Column="2" Style="{StaticResource InputMono}" FontSize="12"
+                       Text="{Binding GlobalStartKey, UpdateSourceTrigger=LostFocus}"
+                       ToolTip="Örn: F12, F11, Insert"/>
+            </Grid>
+          </StackPanel>
+        </Border>
+
+        <!-- Telefon bağlantı varsayılanları -->
+        <Border Style="{StaticResource PanelCard}" Padding="12" Margin="0,0,0,10">
+          <StackPanel>
+            <TextBlock Text="TELEFON BAĞLANTI VARSAYILANLARI" Style="{StaticResource SectionHeader}" Margin="0,0,0,8"/>
+
+            <TextBlock Text="WiFi / USB IP" FontSize="10"
+                       Foreground="{StaticResource TextMuted}" Margin="0,0,0,2"/>
+            <TextBox Style="{StaticResource InputBase}" FontSize="11" Margin="0,0,0,6"
+                     Text="{Binding PhoneHost, UpdateSourceTrigger=LostFocus}"
+                     ToolTip="HomekoBridge'in çalıştığı telefon IP adresi"/>
+
+            <TextBlock Text="Port" FontSize="10"
+                       Foreground="{StaticResource TextMuted}" Margin="0,0,0,2"/>
+            <TextBox Style="{StaticResource InputMono}" FontSize="11" Width="100" HorizontalAlignment="Left"
+                     Text="{Binding PhonePort, UpdateSourceTrigger=LostFocus}"
+                     ToolTip="TCP port (varsayılan: 5556)"/>
+          </StackPanel>
+        </Border>
+
+        <!-- Test hotkey'leri -->
+        <Border Style="{StaticResource PanelCard}" Padding="12" Margin="0,0,0,10">
+          <StackPanel>
+            <TextBlock Text="TEST KISA YOLLARI" Style="{StaticResource SectionHeader}" Margin="0,0,0,8"/>
+            <TextBlock FontSize="10" Foreground="{StaticResource TextDim}" TextWrapping="Wrap" Margin="0,0,0,8"
+                       Text="Oyun önde iken bu tuşlara basarak testleri tetikleyebilirsin."/>
+
+            <Grid Margin="0,0,0,4">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="8"/>
+                <ColumnDefinition Width="60"/>
+              </Grid.ColumnDefinitions>
+              <TextBlock Grid.Column="0" Text="Klavye Kombo Testi tuşu" FontSize="11"
+                         Foreground="{StaticResource TextSoft}" VerticalAlignment="Center"/>
+              <TextBox Grid.Column="2" Style="{StaticResource InputMono}" FontSize="11"
+                       Text="{Binding KeyboardTestKey, UpdateSourceTrigger=LostFocus}"
+                       ToolTip="Kombonun klavye girdisini arka planda test eder"/>
+            </Grid>
+          </StackPanel>
+        </Border>
+
+      </StackPanel>
+    </ScrollViewer>
+  </Grid>
+</Window>

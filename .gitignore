@@ -1,0 +1,23 @@
+# YOLO ve Ağır Model Dosyaları
+tools/yolo_trainer/
+*.pt
+backup/
+
+# C# ve Visual Studio Derlemeleri (src klasörü)
+src/**/bin/
+src/**/obj/
+src/**/%TEMP%/
+.publish/
+publish-single/
+
+# Android Derleme Dosyaları (android klasörü)
+android/**/.gradle/
+android/**/.idea/
+android/**/build/
+android/**/local.properties
+
+# Diğer Geçici/Gereksiz Dosyalar
+.claude/
+
+src/**/publish/
+*.exe
