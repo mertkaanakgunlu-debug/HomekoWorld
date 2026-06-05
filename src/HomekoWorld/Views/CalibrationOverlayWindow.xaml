@@ -9,13 +9,14 @@
 
   <Grid>
     <!-- Instruction bar -->
-    <Border VerticalAlignment="Top" HorizontalAlignment="Center"
-            Margin="0,24,0,0"
+    <Border VerticalAlignment="Center" HorizontalAlignment="Right"
+            Margin="0,0,24,0" MaxWidth="300"
             Background="#CC1A1A2E" BorderBrush="#FF8B6914"
             BorderThickness="1" CornerRadius="6" Padding="16,8"
             IsHitTestVisible="False">
       <TextBlock x:Name="InstructionText"
-                 Text="Skill barlarının tümünü kapsayan alanı sürükleyerek seçin.  Onay: bırak veya Enter  |  İptal: Escape"
+                 TextWrapping="Wrap"
+                 Text="Skill barlarının tümünü kapsayan alanı sürükleyerek seçin.&#x0a;Onay: bırak veya Enter&#x0a;İptal: Escape"
                  Foreground="White" FontSize="13"/>
     </Border>
 

@@ -44,6 +44,16 @@ public partial class App : Application
 
         try
         {
+            bool isNvidia = HomekoWorld.Services.Yolo.CudaInstallerService.IsNvidiaGpu();
+            bool isMissing = HomekoWorld.Services.Yolo.CudaInstallerService.IsMissingLibraries();
+
+            if (isNvidia && isMissing)
+            {
+                var cudaWindow = new Views.CudaDownloadWindow();
+                bool? result = cudaWindow.ShowDialog();
+                // İndirme reddedildiyse veya başarısız olduysa CPU modunda devam eder
+            }
+
             Program.Log("DI services kuruluyor...");
             var services = new ServiceCollection();
             ConfigureServices(services);
@@ -104,9 +114,11 @@ public partial class App : Application
         // Infrastructure — two concrete transports (Local + HidBridge) + a router
         services.AddSingleton<HidBridgeClient>();
         services.AddSingleton<LocalInputTransport>();
+        services.AddSingleton<Rp2040HidTransport>();
         services.AddSingleton<TransportRouter>(sp => new TransportRouter(
             sp.GetRequiredService<HidBridgeClient>(),
-            sp.GetRequiredService<LocalInputTransport>()));
+            sp.GetRequiredService<LocalInputTransport>(),
+            sp.GetRequiredService<Rp2040HidTransport>()));
         services.AddSingleton<IKeyDeviceTransport>(sp => sp.GetRequiredService<TransportRouter>());
 
         services.AddSingleton<GlobalKeyboardHook>();
@@ -131,7 +143,8 @@ public partial class App : Application
             sp.GetRequiredService<ComboEngine>(),
             sp.GetRequiredService<GlobalMouseHook>(),
             sp.GetRequiredService<GlobalKeyboardHook>(),
-            sp.GetRequiredService<AppState>()));
+            sp.GetRequiredService<AppState>(),
+            sp.GetRequiredService<IKeyDeviceTransport>()));
 
         // Faz 17 — Farm
         services.AddSingleton<MobLibrary>();

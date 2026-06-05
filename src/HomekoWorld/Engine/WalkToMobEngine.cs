@@ -1,6 +1,6 @@
 using System.Drawing;
-using System.Runtime.InteropServices;
 using System.Windows.Input;
+using HomekoWorld.Hardware;
 using HomekoWorld.Hooks;
 using HomekoWorld.Models;
 using HomekoWorld.Services;
@@ -29,6 +29,7 @@ public sealed class WalkToMobEngine : IDisposable
     private readonly GlobalMouseHook    _mouseHook;
     private readonly GlobalKeyboardHook _keyHook;
     private readonly AppState           _state;
+    private readonly IKeyDeviceTransport _transport;
 
     private WtmSettings Settings => _state.Wtm;
 
@@ -56,15 +57,17 @@ public sealed class WalkToMobEngine : IDisposable
     private string?                     _waitingComboId;
 
     public WalkToMobEngine(
-        ComboEngine        engine,
-        GlobalMouseHook    mouseHook,
-        GlobalKeyboardHook keyHook,
-        AppState           state)
+        ComboEngine         engine,
+        GlobalMouseHook     mouseHook,
+        GlobalKeyboardHook  keyHook,
+        AppState            state,
+        IKeyDeviceTransport transport)
     {
         _engine    = engine;
         _mouseHook = mouseHook;
         _keyHook   = keyHook;
         _state     = state;
+        _transport = transport;
 
         _engine.ComboFired += OnComboFired;
     }
@@ -214,22 +217,21 @@ public sealed class WalkToMobEngine : IDisposable
     /// </summary>
     private async Task<bool> WalkAndWaitForAdjacencyAsync(CancellationToken ct)
     {
-        byte walkVk = ResolveVk(Settings.WalkKey);
-        byte dirVk  = ResolveVk(Settings.DirectionKey);
-
         // Safety: stop after 30 s to avoid infinite walk on miscalibration.
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeout.CancelAfter(TimeSpan.FromSeconds(30));
         var tct = timeout.Token;
 
-        SendVkDown(walkVk);
+        // Faz 30: W/R artık aktif transport üstünden (RP2040 / Local / phone).
+        // Sentetik keybd_event baypası kaldırıldı → yaklaşma da gerçek HID'den.
+        await _transport.KeyDownAsync(Settings.WalkKey, tct);
         try
         {
             // Tap direction key once so the character immediately faces the mob.
             await Task.Delay(100, tct);
-            SendVkDown(dirVk);
+            await _transport.KeyDownAsync(Settings.DirectionKey, tct);
             await Task.Delay(30, tct);
-            SendVkUp(dirVk);
+            await _transport.KeyUpAsync(Settings.DirectionKey, tct);
 
             while (!tct.IsCancellationRequested)
             {
@@ -244,7 +246,8 @@ public sealed class WalkToMobEngine : IDisposable
         finally
         {
             // Always release W — critical to avoid stuck-walk if anything throws.
-            SendVkUp(walkVk);
+            // CancellationToken.None: iptal olsa bile W mutlaka bırakılmalı.
+            await _transport.KeyUpAsync(Settings.WalkKey, CancellationToken.None);
         }
 
         return false;
@@ -261,25 +264,4 @@ public sealed class WalkToMobEngine : IDisposable
         combo.Steps.Sum(s => s.HoldMs + s.DelayMs) + 200;
 
     private void Emit(string status) => StatusChanged?.Invoke(this, status);
-
-    /// <summary>Converts a single-character key string to a virtual-key code.</summary>
-    private static byte ResolveVk(string key)
-    {
-        if (string.IsNullOrEmpty(key)) return 0;
-        short vk = VkKeyScan(key[0]);
-        return (byte)(vk & 0xFF); // low byte = VK code; high byte = shift state
-    }
-
-    private static void SendVkDown(byte vk) => keybd_event(vk, 0, 0, 0);
-    private static void SendVkUp  (byte vk) => keybd_event(vk, 0, KEYEVENTF_KEYUP, 0);
-
-    // ---- P/Invoke ----
-
-    private const uint KEYEVENTF_KEYUP = 0x0002;
-
-    [DllImport("user32.dll", CharSet = CharSet.Auto)]
-    private static extern short VkKeyScan(char ch);
-
-    [DllImport("user32.dll")]
-    private static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, nint dwExtraInfo);
 }

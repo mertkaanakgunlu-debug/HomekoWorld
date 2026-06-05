@@ -150,8 +150,8 @@ public partial class MainViewModel
         foreach (var c in Classes) c.IsActive = c.Id == value;
         _state.ClassId = value;
         _store.Save(_state);
-        // Hotkey filtresi: sadece aktif sınıfın combo'ları çalışsın
-        _dispatcher.SetCombos(_state.Combos.Where(c => c.ClassId == value).ToList());
+        // Hotkey filtresi: aktif sınıfın combo'ları ve global ('all') combo'lar çalışsın
+        _dispatcher.SetCombos(_state.Combos.Where(c => c.ClassId == "all" || value == "all" || c.ClassId == value).ToList());
         ApplyFilter();
         RefreshFarmAvailableCombos();
     }
@@ -163,7 +163,7 @@ public partial class MainViewModel
         foreach (var vm in Combos)
         {
             // Class filter: aktif sınıfa göre filtrele
-            if (vm.ClassId != CurrentClass)
+            if (CurrentClass != "all" && vm.ClassId != "all" && vm.ClassId != CurrentClass)
                 continue;
             // Profile filter
             if (CurrentProfile != "all" && vm.ProfileId != CurrentProfile)

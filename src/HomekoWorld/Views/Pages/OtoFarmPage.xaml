@@ -302,7 +302,7 @@
                           ToolTip="Hsv: hızlı kırmızı-oran tespiti (varsayılan, önerilen). Ml: ONNX classifier (ROI kalibrasyonu gerekir). ColorScan: RGB renk taraması."/>
               </Grid>
 
-              <!-- ML ROI önizleme görüntüsü -->
+              <!-- Mob HP barı önizleme görüntüsü -->
               <Border Margin="0,0,0,4" BorderThickness="1"
                       BorderBrush="{StaticResource Border1}"
                       Visibility="{Binding HpColorScanPreviewVisible,
@@ -312,7 +312,7 @@
                        RenderOptions.BitmapScalingMode="NearestNeighbor"/>
               </Border>
 
-              <!-- ML ROI koordinatları -->
+              <!-- Mob HP barı koordinatları -->
               <TextBlock Text="{Binding HpBarRoiPreviewStatus}"
                          FontSize="10" Margin="0,0,0,4" TextWrapping="Wrap"
                          Foreground="{StaticResource Gold}"/>
@@ -326,7 +326,7 @@
 
                 <Button Grid.Column="0" Command="{Binding PreviewHpColorScanAreaCommand}"
                         Style="{StaticResource BtnMuted}" Padding="5,3" FontSize="10"
-                        ToolTip="Ana kalibrasyon 4. adımın ML arama alanını göster">
+                        ToolTip="Ana kalibrasyon mob HP barı adımının (iki-köşe) taradığı alanı göster">
                   <TextBlock Text="📷 Önizle"/>
                 </Button>
 
@@ -418,38 +418,37 @@
             <StackPanel>
               <TextBlock Text="⚙ Farm Davranışı" FontSize="10"
                          Foreground="{StaticResource TextMuted}" Margin="0,0,0,6"/>
-              <CheckBox IsChecked="{Binding FarmArcherMode}"
-                        Foreground="{StaticResource TextMuted}" FontSize="10"
-                        Margin="0,0,0,2"
-                        Content="🏹 Archer modu (yaklaş + yönelerek vur)"
-                        ToolTip="KAPALI (önerilen, archer dışı tüm sınıflar): hedef seçilince kombo hemen ateşlenir, oyun karakteri hedefe götürür. AÇIK (archer): AoE oklarının değmesi için moba yaklaşır (W sürekli basılı akıcı koşu) — hedef etrafında dönmeden menzile girince vurur."/>
-              <StackPanel Margin="18,2,0,4" IsEnabled="{Binding FarmArcherMode}">
-                <TextBlock FontSize="10" Foreground="{StaticResource TextMuted}">
-                  <Run Text="Yaklaşma mesafesi: "/><Run Text="{Binding FarmArcherRangePx}"/><Run Text=" px (küçük = daha yakın)"/>
-                </TextBlock>
-                <Slider Minimum="40" Maximum="220" Value="{Binding FarmArcherRangePx}"
-                        IsSnapToTickEnabled="True" TickFrequency="5" SmallChange="5" LargeChange="20"
-                        ToolTip="Archer komboya başlamadan önce moba ne kadar yaklaşsın (ekran px). 'Yeterince yaklaşmıyor' diyorsan KÜÇÜLT; 'çok dibine giriyor' diyorsan BÜYÜT. Çözünürlük/zoom'a göre test ederek ayarla."/>
+              <!-- Archer Modu (sadece Okçu seçiliyken görünür) -->
+              <StackPanel>
+                <StackPanel.Style>
+                  <Style TargetType="StackPanel">
+                    <Setter Property="Visibility" Value="Collapsed"/>
+                    <Style.Triggers>
+                      <DataTrigger Binding="{Binding CurrentClass}" Value="archer">
+                        <Setter Property="Visibility" Value="Visible"/>
+                      </DataTrigger>
+                    </Style.Triggers>
+                  </Style>
+                </StackPanel.Style>
+                <CheckBox IsChecked="{Binding FarmArcherMode}"
+                          Foreground="{StaticResource TextMuted}" FontSize="10"
+                          Margin="0,0,0,2"
+                          Content="🏹 Archer modu (yaklaş + yönelerek vur)"
+                          ToolTip="KAPALI (önerilen, archer dışı tüm sınıflar): hedef seçilince kombo hemen ateşlenir, oyun karakteri hedefe götürür. AÇIK (archer): AoE oklarının değmesi için moba yaklaşır (W sürekli basılı akıcı koşu) — hedef etrafında dönmeden menzile girince vurur."/>
+                <StackPanel Margin="18,2,0,4" IsEnabled="{Binding FarmArcherMode}">
+                  <TextBlock FontSize="10" Foreground="{StaticResource TextMuted}">
+                    <Run Text="Yaklaşma mesafesi: "/><Run Text="{Binding FarmArcherRangePx}"/><Run Text=" px (küçük = daha yakın)"/>
+                  </TextBlock>
+                  <Slider Minimum="40" Maximum="220" Value="{Binding FarmArcherRangePx}"
+                          IsSnapToTickEnabled="True" TickFrequency="5" SmallChange="5" LargeChange="20"
+                          ToolTip="Archer komboya başlamadan önce moba ne kadar yaklaşsın (ekran px). 'Yeterince yaklaşmıyor' diyorsan KÜÇÜLT; 'çok dibine giriyor' diyorsan BÜYÜT. Çözünürlük/zoom'a göre test ederek ayarla."/>
+                </StackPanel>
               </StackPanel>
-              <CheckBox IsChecked="{Binding FarmLootEnabled}"
-                        Foreground="{StaticResource TextMuted}" FontSize="10"
-                        Content="Loot topla (ölünce cesete git + F×3)"
-                        ToolTip="Kapalı (önerilen): oyun auto-loot ise her kill ~1 sn hızlanır. Açık: ölen mobun üstüne gidip loot tuşuna basar."/>
               <CheckBox IsChecked="{Binding FarmShowDetectionOverlay}"
                         Foreground="{StaticResource TextMuted}" FontSize="10"
                         Margin="0,6,0,0"
                         Content="🎯 Tespit kutularını göster (YOLO)"
                         ToolTip="Açıkken farm çalışırken seçili mob türü için ekrana tespit kutuları + isim/güven çizilir; saldırılan hedef vurgulanır. Kutular tıklamayı engellemez (click-through)."/>
-              <CheckBox IsChecked="{Binding FarmRecordingMode}"
-                        Foreground="{StaticResource TextMuted}" FontSize="10"
-                        Margin="0,6,0,0"
-                        Content="🎥 Kayıt/Performans modu (OBS ile)"
-                        ToolTip="OBS ile ekran kaydı alırken aç: YOLO tespit hızını ~15 FPS'e düşürür → GPU'ya nefes verir, imleç takılmasını/çakışmayı azaltır. Kapalıyken tam hız."/>
-              <CheckBox IsChecked="{Binding FarmDxgiCapture}"
-                        Foreground="{StaticResource TextMuted}" FontSize="10"
-                        Margin="0,6,0,0"
-                        Content="⚡ DXGI hızlı yakalama (kapalı = GDI)"
-                        ToolTip="Açık (önerilen): ekran yakalama GPU üzerinden (~1-2ms) → daha akıcı tespit, daha az takılma. Kapalı: eski GDI yöntemi (~15-30ms). DXGI sorun çıkarırsa (siyah kare/uyumsuzluk) kapat. Değişiklik farm'ı durdurup tekrar başlatınca geçerli olur."/>
 
               <!-- T1: YOLO güven eşiği — düşük = daha çok tespit (ağaç riski), yüksek = yalnız emin olunan moblar -->
               <TextBlock FontSize="10" Foreground="{StaticResource TextMuted}" Margin="0,8,0,0">
@@ -458,70 +457,6 @@
               <Slider Minimum="0.30" Maximum="0.90" Value="{Binding FarmConfidence}"
                       IsSnapToTickEnabled="True" TickFrequency="0.05" SmallChange="0.05" LargeChange="0.10"
                       ToolTip="Bu skorun altındaki YOLO tespitleri elenir. Ağaçları/yanlış nesneleri mob sanıyorsa BÜYÜT (0.55-0.65). Gerçek mobları kaçırıyorsa KÜÇÜLT. Değişiklik anında uygulanır (yeniden model yükleme gerekmez)."/>
-
-              <!-- T4: ONNX execution provider — Auto = GPU varsa DirectML, yoksa CPU -->
-              <Grid Margin="0,8,0,0">
-                <Grid.ColumnDefinitions>
-                  <ColumnDefinition Width="Auto"/>
-                  <ColumnDefinition Width="8"/>
-                  <ColumnDefinition Width="*"/>
-                </Grid.ColumnDefinitions>
-                <TextBlock Grid.Column="0" Text="⚙ İşlemci (EP)" FontSize="10" VerticalAlignment="Center"
-                           Foreground="{StaticResource TextMuted}"/>
-                <ComboBox Grid.Column="2" Style="{StaticResource ComboBase}" FontSize="10"
-                          ItemsSource="{Binding InferenceBackendOptions}"
-                          SelectedItem="{Binding FarmInferenceBackend}"
-                          ToolTip="Auto (önerilen): donanım GPU varsa DirectML, yoksa CPU. DirectML: zorla GPU (her DX12 GPU). Cpu: zorla CPU. Değişiklik yüklü modeli yeniden kurar."/>
-              </Grid>
-            </StackPanel>
-          </Border>
-
-          <!-- Test Click -->
-          <Border Padding="8,7" BorderThickness="1" CornerRadius="5"
-                  BorderBrush="{StaticResource TextDim}"
-                  Background="#18FFFFFF">
-            <StackPanel>
-              <TextBlock Text="🖱 Test Click" FontSize="10"
-                         Foreground="{StaticResource TextMuted}" Margin="0,0,0,6"/>
-              <Grid Margin="0,0,0,4">
-                <Grid.ColumnDefinitions>
-                  <ColumnDefinition Width="*"/>
-                  <ColumnDefinition Width="4"/>
-                  <ColumnDefinition Width="Auto"/>
-                  <ColumnDefinition Width="6"/>
-                  <ColumnDefinition Width="48"/>
-                </Grid.ColumnDefinitions>
-                <Button Grid.Column="0" Command="{Binding CalibrateTestClickCommand}"
-                        Style="{StaticResource BtnMuted}"
-                        Padding="5,3" FontSize="10"
-                        ToolTip="Ekranda bir noktaya tıkla — bot o koordinatı kaydeder">
-                  <TextBlock Text="📍 Nokta Seç"/>
-                </Button>
-                <Button Grid.Column="2" Command="{Binding RunTestClickCommand}"
-                        Style="{StaticResource BtnMuted}"
-                        Padding="5,3" FontSize="10"
-                        ToolTip="Kaydedilen noktaya bot tıklaması gönder">
-                  <TextBlock Text="▶ Test Et"/>
-                </Button>
-                <TextBox Grid.Column="4"
-                         Style="{StaticResource InputMono}" FontSize="10"
-                         Text="{Binding FarmTestClickKey, UpdateSourceTrigger=LostFocus}"
-                         ToolTip="Bu tuşa basınca test tıklaması tetiklenir (örn: F8)"/>
-              </Grid>
-              <TextBlock Text="{Binding TestClickStatus}"
-                         FontSize="10" TextWrapping="Wrap"
-                         Foreground="{StaticResource Gold}">
-                <TextBlock.Style>
-                  <Style TargetType="TextBlock">
-                    <Setter Property="Visibility" Value="Visible"/>
-                    <Style.Triggers>
-                      <DataTrigger Binding="{Binding TestClickStatus}" Value="">
-                        <Setter Property="Visibility" Value="Collapsed"/>
-                      </DataTrigger>
-                    </Style.Triggers>
-                  </Style>
-                </TextBlock.Style>
-              </TextBlock>
             </StackPanel>
           </Border>
 

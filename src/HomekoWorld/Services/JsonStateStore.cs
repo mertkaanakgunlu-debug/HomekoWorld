@@ -92,6 +92,18 @@ public sealed class JsonStateStore
             if (state.Farm.ConfidenceThreshold <= 0.45)
                 state.Farm.ConfidenceThreshold = 0.65;
 
+            // Migration: WtmTickMs 30/50 → 15 (F1). KOŞULSUZ (flag-bağımsız): bu satır eskiden
+            // DetectionFpsBoost flag bloğunun İÇİNDEydi; flag'i zaten set olmuş kullanıcılarda hiç
+            // uygulanmadı → combat tick'i 50ms'de takılı kaldı (ölüm tespiti + takip 3× yavaş, log'da
+            // her DEATH satırında tick=50ms doğrulandı). 15 hedef değer; WtmTickMs'in UI slider'ı yok.
+            if (state.Farm.WtmTickMs is 30 or 50)
+                state.Farm.WtmTickMs = 15;
+
+            // Migration: DeadBlacklistMs 4000 → 8000 (F2). Cesetler ~10sn+ ekranda kalıyor; 4sn süre
+            // dolunca aynı cesede yeniden tıklanıyordu. 8sn re-probe sıklığını yarıya indirir.
+            if (state.Farm.DeadBlacklistMs == 4000)
+                state.Farm.DeadBlacklistMs = 8000;
+
             // Faz 22 — agresif tepki süreleri: eski yavaş varsayılanları BİR KEZ hızlıya taşı.
             // Flag ile korunur → kullanıcı sonradan UI'dan elle ayarlarsa tekrar ezilmez.
             if (!state.AggressiveTimingMigrated)
@@ -110,10 +122,8 @@ public sealed class JsonStateStore
             {
                 if (state.Farm.DetectionMinIntervalMs is 0 or 40)
                     state.Farm.DetectionMinIntervalMs = 12;
-                // Combat döngü tick'i: eski kalıcı 30/50 → 15 (AggressiveTimingMigrated 50'yi atlamıştı).
-                // Combat takip/re-fire/ölüm tespiti 50ms'de tikliyordu; 15ms ile 3× daha duyarlı.
-                if (state.Farm.WtmTickMs is 30 or 50)
-                    state.Farm.WtmTickMs = 15;
+                // (WtmTickMs 30/50→15 migration'ı yukarıya, KOŞULSUZ bloğa taşındı — F1: flag'i zaten
+                //  set olmuş kullanıcılarda da uygulansın diye.)
                 state.DetectionFpsBoostMigrated = true;
             }
 
@@ -136,6 +146,20 @@ public sealed class JsonStateStore
             if (state.Wtm.HpBarRoiH == 0) state.Wtm.HpBarRoiH = 60;
             if (string.IsNullOrWhiteSpace(state.Wtm.HpBarClassifierPath))
                 state.Wtm.HpBarClassifierPath = "Assets/HpBar/hpbar_classifier.onnx";
+
+            // Kendi HP/MP barı: eski tek-satır (HpBarY mid-row) → iki-köşe dikdörtgen geçişi.
+            // Eski kalibrasyonu tek-satır dikdörtgene taşı (Top=eski Y, Height=1) ki kullanıcı
+            // yeniden kalibre edene kadar AutoPot bozulmasın. Yeni kalibrasyon Top/Height'i yazar.
+            if (state.Farm.HpBarTop == 0 && state.Farm.HpBarY > 0)
+            {
+                state.Farm.HpBarTop    = state.Farm.HpBarY;
+                state.Farm.HpBarHeight = 1;
+            }
+            if (state.Farm.MpBarTop == 0 && state.Farm.MpBarY > 0)
+            {
+                state.Farm.MpBarTop    = state.Farm.MpBarY;
+                state.Farm.MpBarHeight = 1;
+            }
 
             return state;
         }

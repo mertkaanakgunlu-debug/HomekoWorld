@@ -14,14 +14,16 @@ public partial class SkillPickerDialog : Window
 {
     private readonly SkillSlotMap _slotMap;
     private readonly SkillLibrary _library;
+    private readonly string? _initialClassId;
 
     public string? SelectedSkillId { get; private set; }
 
-    public SkillPickerDialog(SkillSlotMap slotMap, SkillLibrary library)
+    public SkillPickerDialog(SkillSlotMap slotMap, SkillLibrary library, string? initialClassId = null)
     {
         InitializeComponent();
         _slotMap = slotMap;
         _library = library;
+        _initialClassId = initialClassId;
         BuildTabs();
     }
 
@@ -43,6 +45,10 @@ public partial class SkillPickerDialog : Window
         {
             BuildBarTabs();
             BuildLibraryTab();
+            if (!string.IsNullOrEmpty(_initialClassId))
+            {
+                BarTabs.SelectedIndex = BarTabs.Items.Count - 1;
+            }
         }
         else
         {
@@ -156,6 +162,8 @@ public partial class SkillPickerDialog : Window
                 return idx >= 0 ? idx : 999;
             });
 
+        int i = 0;
+        int indexToSelect = 0;
         foreach (var group in groups)
         {
             var displayName = classNames.TryGetValue(group.Key, out var n) ? n : group.Key;
@@ -165,11 +173,13 @@ public partial class SkillPickerDialog : Window
                 Content = BuildClassPanel(group),
                 VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
             };
+            if (group.Key == _initialClassId) indexToSelect = i;
             BarTabs.Items.Add(tab);
+            i++;
         }
 
         if (BarTabs.Items.Count > 0)
-            BarTabs.SelectedIndex = 0;
+            BarTabs.SelectedIndex = indexToSelect;
     }
 
     private UIElement BuildLibraryContent()

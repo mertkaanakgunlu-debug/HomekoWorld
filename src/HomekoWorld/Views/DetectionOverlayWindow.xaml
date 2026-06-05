@@ -1,17 +1,12 @@
 <Window x:Class="HomekoWorld.Views.DetectionOverlayWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        WindowStyle="None"
-        AllowsTransparency="True"
+        Title="Detection Overlay" 
+        WindowStyle="None" 
+        AllowsTransparency="True" 
         Background="Transparent"
-        Topmost="True"
+        Topmost="True" 
         ShowInTaskbar="False"
-        ResizeMode="NoResize"
-        WindowState="Maximized"
-        IsHitTestVisible="False"
-        Focusable="False"
-        Title="YOLO Tespit Overlay">
-
-  <!-- Tespit kutuları code-behind'da DetectionCanvas ile çizilir -->
-  <Grid x:Name="Root"/>
+        IsHitTestVisible="False">
+    <Canvas x:Name="OverlayCanvas" Background="Transparent" />
 </Window>

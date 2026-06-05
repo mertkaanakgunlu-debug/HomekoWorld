@@ -35,7 +35,8 @@ public class FarmSettings
     public string SelectedComboId { get; set; } = "";
 
     // ── WtM (Walk-to-Mob) yeniden tasarım ─────────────────────────────────────
-    /// <summary>Karakterin ekrandaki piksel merkezi (kalibre edilir).</summary>
+    /// <summary>DEPRECATED: karakter merkezi artık daima fiziksel ekran merkezidir
+    /// (kalibrasyon kaldırıldı). Alan state.json uyumu için bırakıldı, kullanılmaz.</summary>
     public int    CharacterCenterX         { get; set; }
     public int    CharacterCenterY         { get; set; }
     public int    DefaultEngagementRangePx { get; set; } = 120;
@@ -43,8 +44,9 @@ public class FarmSettings
     /// Ölü/seçilemeyen mob (ceset) kara liste süresi (ms). Kill sonrası veya tıklama
     /// HP bar üretmediğinde o konum bu süre boyunca atlanır → en yakın diğer moba geçilir.
     /// Ceset despawn süresi kadar; respawn'ı kalıcı engellemeyecek kadar kısa tutulur.
+    /// F2: 4000→8000 — cesetler ~10sn+ ekranda kaldığından 4sn dolunca aynı cesede yeniden tıklanıyordu.
     /// </summary>
-    public int    DeadBlacklistMs          { get; set; } = 4000;
+    public int    DeadBlacklistMs          { get; set; } = 8000;
     /// <summary>Angajman + tracking döngüsü tick süresi (ms). Düşük = daha hızlı takip.
     /// Faz 22: YOLO ayrı thread'e alındığı için döngü inference beklemez → 15ms güvenli.</summary>
     public int    WtmTickMs                { get; set; } = 15;
@@ -120,15 +122,29 @@ public class FarmSettings
     public string HpPotKey        { get; set; } = "F1";
     public string MpPotKey        { get; set; } = "F2";
 
-    // ── HP/MP bar okuma kalibrasyonu ──────────────────────────────────────────
-    /// <summary>HP barının sol kenarının X koordinatı.</summary>
+    // ── Kendi HP/MP bar okuma kalibrasyonu (iki-köşe dikdörtgen + HSV) ────────
+    // İki köşe tıklanarak çizilir (sol-üst + sağ-alt); barın DOLU olması gerekmez.
+    // StatBarReader sütun-tabanlı HSV doluluk okur (HP=kırmızı, MP=mavi). Koordinatlar
+    // master pikselde saklanır; runtime'da ResolutionMapper.Map ile geçerli ekrana eşlenir.
+    /// <summary>HP bar dikdörtgeninin sol kenarı (X).</summary>
     public int    HpBarLeft       { get; set; }
-    public int    HpBarY          { get; set; }
+    /// <summary>HP bar dikdörtgeninin üst kenarı (Y).</summary>
+    public int    HpBarTop        { get; set; }
     public int    HpBarWidth      { get; set; } = 200;
+    public int    HpBarHeight     { get; set; } = 12;
     public int    MpBarLeft       { get; set; }
-    public int    MpBarY          { get; set; }
+    public int    MpBarTop        { get; set; }
     public int    MpBarWidth      { get; set; } = 200;
-    /// <summary>HP bar dolu renginin R bileşeni (kalibre edilir).</summary>
+    public int    MpBarHeight     { get; set; } = 12;
+
+    /// <summary>Bar HSV doluluk eşiği: bu değerin altındaki doygunluk → soluk/gri, sayılmaz.</summary>
+    public float  BarHsvMinSat    { get; set; } = 0.35f;
+    /// <summary>Bar HSV doluluk eşiği: bu değerin altındaki parlaklık → koyu/boş, sayılmaz.</summary>
+    public float  BarHsvMinVal    { get; set; } = 0.25f;
+
+    // DEPRECATED (eski tek-satır RGB eşleştirme) — state.json uyumu için bırakıldı, kullanılmaz.
+    public int    HpBarY          { get; set; }
+    public int    MpBarY          { get; set; }
     public byte   HpBarFullR      { get; set; } = 220;
     public byte   HpBarFullG      { get; set; } = 50;
     public byte   HpBarFullB      { get; set; } = 50;

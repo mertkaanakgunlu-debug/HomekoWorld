@@ -26,7 +26,7 @@ public partial class ComboEditorViewModel : ObservableObject
     public event EventHandler? Cancelled;
 
     // Raised when user clicks "+ Skill Ekle"; subscriber should show picker and invoke callback
-    public event Func<string?>? RequestSkillPick;
+    public event Func<string?, string?>? RequestSkillPick;
 
     public void LoadFrom(Combo combo)
     {
@@ -124,7 +124,7 @@ public partial class ComboEditorViewModel : ObservableObject
     private void AddSkillStep()
     {
         // Raise event so the view can open SkillPickerDialog and return the selected skill id
-        var skillId = RequestSkillPick?.Invoke();
+        var skillId = RequestSkillPick?.Invoke(ClassId);
         if (skillId is null) return; // user cancelled picker
         Steps.Add(new StepViewModel { Kind = StepKind.Skill, SkillId = skillId, Key = string.Empty, HoldMs = 50, DelayMs = 200 });
     }

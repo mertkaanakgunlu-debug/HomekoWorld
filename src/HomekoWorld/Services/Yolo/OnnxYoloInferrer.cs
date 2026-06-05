@@ -360,6 +360,44 @@ public sealed class OnnxYoloInferrer : IYoloInferrer, IDisposable
         return union <= 0f ? 0f : inter / union;
     }
 
+    // ── Warmup ────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// TensorRT motorunun ilk açılışta (uygulama boşta iken) derlenmesini sağlar.
+    /// Böylece kullanıcı Başlat'a bastığında FPS 0'da donmaz.
+    /// </summary>
+    public async Task WarmUpAsync(Action<string>? onStatusChanged = null)
+    {
+        if (_session is null) return;
+
+        await Task.Run(() =>
+        {
+            try
+            {
+                if (_epUsed == "TensorRT")
+                {
+                    onStatusChanged?.Invoke("⚙️ Yapay Zeka Optimize Ediliyor (İlk Kullanıma Özel, Lütfen Bekleyin...)");
+                }
+                
+                // Boş bir tensor ile ilk inference işlemini tetikle
+                string inputName = _session.InputMetadata.Keys.First();
+                _tensor ??= new DenseTensor<float>(_tensorBuf, new[] { 1, 3, _inputSize, _inputSize });
+                
+                using var results = _session.Run(new[] { NamedOnnxValue.CreateFromTensor(inputName, _tensor) });
+                
+                if (_epUsed == "TensorRT" || _epUsed == "CUDA")
+                    onStatusChanged?.Invoke($"🚀 {_epUsed} Hazır");
+                else
+                    onStatusChanged?.Invoke($"🐢 {_epUsed} Modu (Yavaş)");
+            }
+            catch (Exception ex)
+            {
+                HomekoWorld.Program.Log($"[YOLO] Warmup hatası: {ex.Message}");
+                onStatusChanged?.Invoke($"⚠ Hata (CPU Modu)");
+            }
+        });
+    }
+
     // ── IDisposable ───────────────────────────────────────────────────────────
 
     public void Dispose()

@@ -43,6 +43,7 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private string _connectStatus = "Bağlı değil";
     [ObservableProperty] private bool   _isUsbMode;
     [ObservableProperty] private bool   _isLocalMode;
+    [ObservableProperty] private bool   _isRp2040Mode;   // Faz 30: RP2040 USB-HID köprüsü
 
     private string _savedWifiHost = "192.168.1.100";
 
@@ -119,6 +120,8 @@ public partial class MainViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(FarmStartLabel))]
     private bool _farmRunning;          // döngü şu an aktif mi
     [ObservableProperty] private string _farmStatus           = "Pasif";
+    [ObservableProperty] private string _engineBuildStatus    = "Hazırlanıyor...";
+    [ObservableProperty] private bool _isEngineBuilding       = false;
     [ObservableProperty] private string _farmCalibrationState = "";
     [ObservableProperty] private string _farmMobsJsonPath     = "";
     [ObservableProperty] private string _farmModelPath        = "";
@@ -137,6 +140,7 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private string _farmCurrentMob = "";   // anlık hedef adı
     [ObservableProperty] private string _farmElapsed     = "00:00"; // oturum süresi
     [ObservableProperty] private int    _farmKillsPerHour;          // kill/saat
+    [ObservableProperty] private int    _farmInferenceFps;          // Inference FPS
     [ObservableProperty] private bool   _farmPaused;                // engine duraklatıldı mı
     [ObservableProperty] private bool   _hudExpanded;               // HUD genişletildi mi
     [ObservableProperty] private bool   _logHudVisible;             // Log HUD görünür mü
@@ -300,8 +304,8 @@ public partial class MainViewModel : ObservableObject
         _farmDxgiCapture     = _state.Farm.CaptureBackend == Models.Farm.CaptureBackend.Dxgi;
         _farmInferenceBackend = _state.Farm.InferenceBackend;
         _hpBarRoiPreviewStatus = _state.Wtm.IsHpBarRoiCalibrated
-            ? $"✓ ML ROI  X={_state.Wtm.HpBarRoiX}  Y={_state.Wtm.HpBarRoiY}  {_state.Wtm.HpBarRoiW}×{_state.Wtm.HpBarRoiH}px"
-            : "✗ Kalibre edilmedi (Ana kalibrasyon 4. adım)";
+            ? $"✓ Mob HP barı  X={_state.Wtm.HpBarRoiX}  Y={_state.Wtm.HpBarRoiY}  {_state.Wtm.HpBarRoiW}×{_state.Wtm.HpBarRoiH}px"
+            : "✗ Kalibre edilmedi (Ana kalibrasyon 3. adım)";
         _targetHpColorCalibStatus = _state.Wtm.IsTargetHpColorCalibrated
             ? $"Renk fallback: X={_state.Wtm.HpColorScanX} Y={_state.Wtm.HpColorScanY}"
             : "Renk fallback: kalibre edilmedi";
@@ -363,6 +367,7 @@ public partial class MainViewModel : ObservableObject
         PhonePort      = _state.SerialPort;
         IsLocalMode    = _state.ConnectionMode == "local";
         IsUsbMode      = _state.ConnectionMode == "usb";
+        IsRp2040Mode   = _state.ConnectionMode == "rp2040";
         // eski "kernel" değeri kaydedilmişse local'e düşür (graceful migration)
         if (_state.ConnectionMode == "kernel") { _state.ConnectionMode = "local"; IsLocalMode = true; }
         PhoneHost      = IsUsbMode ? _state.UsbHost : _savedWifiHost;
@@ -460,13 +465,18 @@ public partial class MainViewModel : ObservableObject
                     LogMessage = "⚠ Telefon Bluetooth HID bağlı değil! Telefonda BT durumunu kontrol et.");
         };
 
-        _transport.Disconnected += (_, _) =>
+        _transport.Disconnected += (_, disconnectReason) =>
         {
             Application.Current.Dispatcher.BeginInvoke(() =>
             {
-                IsConnected   = false;
-                ConnectStatus = "Bağlantı kesildi — yeniden bağlanılıyor…";
-                LogMessage    = "Telefon bağlantısı kesildi! Otomatik yeniden bağlanılıyor…";
+                IsConnected = false;
+                bool isRp = disconnectReason == "rp2040";
+                ConnectStatus = isRp
+                    ? "RP2040 bağlantısı kesildi — yeniden bağlanılıyor…"
+                    : "Bağlantı kesildi — yeniden bağlanılıyor…";
+                LogMessage = isRp
+                    ? "RP2040 USB bağlantısı kesildi (USB reset?) — otomatik yeniden bağlanılıyor…"
+                    : "Telefon bağlantısı kesildi! Otomatik yeniden bağlanılıyor…";
                 ScheduleReconnect();
             });
         };
@@ -497,6 +507,30 @@ public partial class MainViewModel : ObservableObject
         {
             _router.SwitchToNet(TransportMode.Usb);
         }
+        else if (IsRp2040Mode)
+        {
+            // Faz 30: son kullanılan mod RP2040 ise cihazı arka planda (USB) bağla.
+            _router.SwitchToRp2040();
+            ConnectStatus = "RP2040 aranıyor…";
+            ConnectRp2040Async();
+        }
+    }
+
+    // Faz 30: RP2040'a async bağlan (ctor fire-and-forget — async void: exception UI'da yutulur).
+    private async void ConnectRp2040Async()
+    {
+        try
+        {
+            var ok = await _transport.ConnectAsync("", 0);
+            Application.Current.Dispatcher.BeginInvoke(() =>
+            {
+                IsConnected   = ok;
+                ConnectStatus = ok ? "RP2040 — bağlı" : "RP2040 aranıyor…";
+                if (ok) { _pingEma = 0; PingMs = 0; PushAdaptiveSettings(); }
+                else    { ScheduleRp2040Reconnect(); }   // cihaz takılı değilse arka planda ara
+            });
+        }
+        catch { Application.Current.Dispatcher.BeginInvoke(() => ScheduleRp2040Reconnect()); }
     }
 
     private static readonly Key[] FBarKeys =
@@ -651,6 +685,11 @@ public partial class MainViewModel : ObservableObject
             _state.UsbHost        = PhoneHost;
             _state.SerialHost     = _savedWifiHost;
             _state.ConnectionMode = "usb";
+        }
+        else if (IsRp2040Mode)
+        {
+            _state.ConnectionMode = "rp2040";
+            _state.SerialHost     = _savedWifiHost;
         }
         else
         {

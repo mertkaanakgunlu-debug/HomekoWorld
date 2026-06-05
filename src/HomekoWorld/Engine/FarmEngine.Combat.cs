@@ -57,7 +57,11 @@ public sealed partial class FarmEngine
         EmitTelemetry();
         // Ölü mob kara listesi: cesedi (son bilinen konum) kısa süre atla → sonraki tarama
         // en yakın DİĞER mob'a geçer, ölüye tekrar tıklamaz (Sorun 5).
-        _deadBlacklist.Add((_lastEngagedCenter, NowMs() + s.DeadBlacklistMs));
+        long corpseExpire = NowMs() + s.DeadBlacklistMs;
+        _deadBlacklist.Add((_lastEngagedCenter, corpseExpire));
+        // F2: ceset ayakta-merkezden aşağı düşer → düşen kutuyu da kapsa (ayrı entry).
+        _deadBlacklist.Add((new PointF(_lastEngagedCenter.X, _lastEngagedCenter.Y + CorpseFallOffsetPx), corpseExpire));
+        Program.Log($"[DIAG] KILL #{Telemetry.Kills} → corpse blacklist @({_lastEngagedCenter.X:0},{_lastEngagedCenter.Y:0})+aşağı{CorpseFallOffsetPx} r={DeadBlacklistRadiusPx} {s.DeadBlacklistMs}ms → Scanning");
         if (s.LootEnabled)
         {
             SetState(FarmState.Looting, "Loot toplanıyor…");
@@ -75,12 +79,8 @@ public sealed partial class FarmEngine
         Detection target, Combo? combo, int rangePx, FarmSettings s, CancellationToken ct)
     {
         bool hpBarCalibrated   = _appState.Wtm.IsHpBarLocated;
-        // CharacterCenter (0,0) → kalibre edilmemiş; ekran merkezini fallback olarak kullan
-        var charCenter = (s.CharacterCenterX > 0 || s.CharacterCenterY > 0)
-            ? new PointF(s.CharacterCenterX, s.CharacterCenterY)
-            : new PointF(
-                (float)(System.Windows.SystemParameters.PrimaryScreenWidth  / 2.0),
-                (float)(System.Windows.SystemParameters.PrimaryScreenHeight / 2.0));
+        // #1: karakter daima fiziksel ekran merkezi (kalibrasyon kaldırıldı).
+        var charCenter = ScreenCenter();
         var  sw              = System.Diagnostics.Stopwatch.StartNew();
         const int safetyMs   = 120_000; // 2 dakika; boss/tank moblar için yeterli
         const string walkKey = "W";
@@ -152,7 +152,10 @@ public sealed partial class FarmEngine
                     {
                         if (firstHpMissMs < 0) firstHpMissMs = sw.ElapsedMilliseconds;
                         else if (sw.ElapsedMilliseconds - firstHpMissMs >= HpDeathConfirmMs)
+                        {
+                            Program.Log($"[DIAG] DEATH confirmed (HP {HpDeathConfirmMs}ms yok) lastCenter=({_lastEngagedCenter.X:0},{_lastEngagedCenter.Y:0}) tick={s.WtmTickMs}ms");
                             return true; // HP barı ~60ms kesintisiz yok → mob öldü / seçim düştü
+                        }
                     }
                     else
                     {

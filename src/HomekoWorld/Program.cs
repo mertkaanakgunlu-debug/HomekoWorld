@@ -15,9 +15,16 @@ public static class Program
         Environment.GetFolderPath(Environment.SpecialFolder.Desktop),
         "HomekoWorld_log.txt");
 
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool SetDllDirectory(string lpPathName);
+
     [STAThread]
     public static void Main(string[] args)
     {
+        // Fix for Single-File Publish: Ensure DLLs extracted to AppContext.BaseDirectory can be loaded
+        // by ONNX Runtime native libraries that are extracted to %TEMP%.
+        SetDllDirectory(AppContext.BaseDirectory);
+
         // 1 ms scheduler resolution — required for Thread.Sleep(1) accuracy in LocalInputTransport
         timeBeginPeriod(1);
 

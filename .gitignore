@@ -21,3 +21,4 @@ android/**/local.properties
 
 src/**/publish/
 *.exe
+Build/

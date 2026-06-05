@@ -4,6 +4,7 @@ using System.Windows.Shell;
 using Microsoft.Extensions.DependencyInjection;
 using HomekoWorld.Engine;
 using HomekoWorld.ViewModels;
+using HomekoWorld.Services.Vision;
 
 namespace HomekoWorld.Views;
 
@@ -11,7 +12,7 @@ public partial class MainWindow : Window
 {
     private FarmHudWindow?          _farmHud;
     private LogHudWindow?           _logHud;
-    private DetectionOverlayWindow? _detectionOverlay;
+    private DetectionOverlayWindow? _overlayWindow;
 
     public MainWindow()
     {
@@ -107,16 +108,17 @@ public partial class MainWindow : Window
     {
         if (vm.FarmShowDetectionOverlay)
         {
-            if (_detectionOverlay is null)
+            if (_overlayWindow is null)
             {
                 var engine = App.Services.GetRequiredService<FarmEngine>();
-                _detectionOverlay = new DetectionOverlayWindow(engine);
+                _overlayWindow = new DetectionOverlayWindow(engine);
+                _overlayWindow.Owner = this; // Hide from Alt+Tab
             }
-            _detectionOverlay.Show();
+            _overlayWindow.ActivateOverlay();
         }
         else
         {
-            _detectionOverlay?.Hide();
+            _overlayWindow?.DeactivateOverlay();
         }
     }
 
@@ -124,7 +126,7 @@ public partial class MainWindow : Window
     {
         _farmHud?.Destroy();
         _logHud?.Destroy();
-        _detectionOverlay?.Destroy();
+        _overlayWindow?.Close();
         base.OnClosed(e);
         System.Windows.Application.Current.Shutdown();
     }

@@ -45,28 +45,18 @@ public static class OrtEpFactory
     /// </summary>
     public static SessionOptions Create(InferenceBackend backend, out string epUsed)
     {
-        var opts = new SessionOptions { GraphOptimizationLevel = GraphOptimizationLevel.ORT_ENABLE_ALL };
+        var opts = new SessionOptions 
+        { 
+            GraphOptimizationLevel = GraphOptimizationLevel.ORT_ENABLE_EXTENDED,
+            ExecutionMode = ExecutionMode.ORT_SEQUENTIAL,
+            EnableMemoryPattern = false
+        };
         epUsed = "CPU";
 
 #if HOMEKO_CUDA
         // ── NVIDIA performans build'i: TensorRT(FP16) → CUDA → CPU ──
         if (backend != InferenceBackend.Cpu)
         {
-            try
-            {
-                var trt = new OrtTensorRTProviderOptions();
-                trt.UpdateOptions(new Dictionary<string, string>
-                {
-                    ["trt_fp16_enable"]        = "1",
-                    ["trt_engine_cache_enable"] = "1",
-                    ["trt_engine_cache_path"]  = System.IO.Path.Combine(AppContext.BaseDirectory, "trt_cache"),
-                });
-                opts.AppendExecutionProvider_Tensorrt(trt);
-                epUsed = "TensorRT";
-                return opts;
-            }
-            catch (Exception ex) { HomekoWorld.Program.Log($"[EP] TensorRT yok: {ex.Message}"); }
-
             try { opts.AppendExecutionProvider_CUDA(0); epUsed = "CUDA"; return opts; }
             catch (Exception ex) { HomekoWorld.Program.Log($"[EP] CUDA yok: {ex.Message}"); }
         }

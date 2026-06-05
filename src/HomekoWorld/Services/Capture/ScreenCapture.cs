@@ -19,6 +19,11 @@ public static class ScreenCapture
     [DllImport("user32.dll")] private static extern int  ReleaseDC(nint hWnd, nint hDC);
     private const uint SRCCOPY = 0x00CC0020;
 
+    // Primary monitor size in PHYSICAL pixels (SM_CXSCREEN/SM_CYSCREEN).
+    // Use this instead of SystemParameters.PrimaryScreen* which returns DIP units
+    // and misaligns with screen capture / calibrated coordinates on high-DPI displays.
+    public static (int W, int H) PhysicalSize() => (GetSystemMetrics(0), GetSystemMetrics(1));
+
     // Capture the primary monitor into a Bitmap using physical pixel dimensions.
     // SystemParameters.PrimaryScreenWidth returns DIP units which misalign with
     // CopyFromScreen (physical pixels) on high-DPI displays.

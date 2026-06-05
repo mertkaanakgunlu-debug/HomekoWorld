@@ -60,11 +60,15 @@ public static class WtmVision
     {
         if (!s.IsTargetHpColorCalibrated) return false;
 
-        int left  = Math.Max(0, s.HpColorScanX - s.HpColorScanHalfW);
-        int width = s.HpColorScanHalfW * 2;
+        // Master → geçerli ekran (tek satır; pozisyon + genişlik ölçeklenir).
+        var mapped = ResolutionMapper.Map(
+            Math.Max(0, s.HpColorScanX - s.HpColorScanHalfW), s.HpColorScanY,
+            s.HpColorScanHalfW * 2, 1);
+        int left  = mapped.X;
+        int width = mapped.Width;
         if (width <= 0) return false;
 
-        using var bmp  = CaptureRegion(left, s.HpColorScanY, width, 1);
+        using var bmp  = CaptureRegion(left, mapped.Y, width, 1);
         var       rect = new Rectangle(0, 0, width, 1);
         var       data = bmp.LockBits(rect, ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
         int       count = 0;
@@ -98,16 +102,33 @@ public static class WtmVision
     /// </summary>
     public static bool IsTargetAliveByHsv(WtmSettings s)
     {
-        // Tercih: ML ROI kutusu (2B) — düşük HP'ye dayanıklı, ek kalibrasyon yok.
+        // Tercih: iki-köşe HP bar dikdörtgeni (2B) — düşük HP'ye dayanıklı, koruma mobuyla aynı motor.
         if (s.IsHpBarRoiCalibrated)
-            return CountRedHsv(s.HpBarRoiX, s.HpBarRoiY, s.HpBarRoiW, s.HpBarRoiH, s) >= s.HpHsvMinPx;
+        {
+            var r = ResolutionMapper.Map(s.HpBarRoiX, s.HpBarRoiY, s.HpBarRoiW, s.HpBarRoiH);
+            return RedAtAreas(r.X, r.Y, r.Width, r.Height, s.HpHsvMinPx, s);
+        }
 
         // Fallback: tek-satır renk tarama bölgesi (1px → eşik düşük tutulur).
         if (s.IsTargetHpColorCalibrated)
         {
-            int left = Math.Max(0, s.HpColorScanX - s.HpColorScanHalfW);
-            int red  = CountRedHsv(left, s.HpColorScanY, s.HpColorScanHalfW * 2, 1, s);
-            return red >= Math.Min(s.HpHsvMinPx, 4);
+            var r = ResolutionMapper.Map(
+                Math.Max(0, s.HpColorScanX - s.HpColorScanHalfW), s.HpColorScanY,
+                s.HpColorScanHalfW * 2, 1);
+            return RedAtAreas(r.X, r.Y, r.Width, r.Height, Math.Min(s.HpHsvMinPx, 4), s);
+        }
+        return false;
+    }
+
+    /// <summary>Alan 1'de (verilen dikdörtgen) kırmızı eşiği geçer mi; geçmezse ve duyuru
+    /// kayması ayarlıysa alan 2'de (+Δy) dener. Ekrandan yakalar.</summary>
+    private static bool RedAtAreas(int x, int y, int w, int h, int threshold, WtmSettings s)
+    {
+        if (CountRedHsv(x, y, w, h, s) >= threshold) return true;
+        if (s.AnnounceShiftY > 0)
+        {
+            int dy = ResolutionMapper.ScaleLen(s.AnnounceShiftY);
+            if (CountRedHsv(x, y + dy, w, h, s) >= threshold) return true;
         }
         return false;
     }
@@ -157,12 +178,28 @@ public static class WtmVision
     public static bool IsTargetAliveByHsvFromFrame(Bitmap frame, WtmSettings s)
     {
         if (s.IsHpBarRoiCalibrated)
-            return CountRedHsvFromFrame(frame, s.HpBarRoiX, s.HpBarRoiY, s.HpBarRoiW, s.HpBarRoiH, s) >= s.HpHsvMinPx;
+        {
+            var r = ResolutionMapper.Map(s.HpBarRoiX, s.HpBarRoiY, s.HpBarRoiW, s.HpBarRoiH);
+            return RedAtAreasFromFrame(frame, r.X, r.Y, r.Width, r.Height, s.HpHsvMinPx, s);
+        }
         if (s.IsTargetHpColorCalibrated)
         {
-            int left = Math.Max(0, s.HpColorScanX - s.HpColorScanHalfW);
-            int red  = CountRedHsvFromFrame(frame, left, s.HpColorScanY, s.HpColorScanHalfW * 2, 1, s);
-            return red >= Math.Min(s.HpHsvMinPx, 4);
+            var r = ResolutionMapper.Map(
+                Math.Max(0, s.HpColorScanX - s.HpColorScanHalfW), s.HpColorScanY,
+                s.HpColorScanHalfW * 2, 1);
+            return RedAtAreasFromFrame(frame, r.X, r.Y, r.Width, r.Height, Math.Min(s.HpHsvMinPx, 4), s);
+        }
+        return false;
+    }
+
+    /// <summary>RedAtAreas'ın sağlanan tam kareden (yeni yakalama yok) çalışan eşi.</summary>
+    private static bool RedAtAreasFromFrame(Bitmap frame, int x, int y, int w, int h, int threshold, WtmSettings s)
+    {
+        if (CountRedHsvFromFrame(frame, x, y, w, h, s) >= threshold) return true;
+        if (s.AnnounceShiftY > 0)
+        {
+            int dy = ResolutionMapper.ScaleLen(s.AnnounceShiftY);
+            if (CountRedHsvFromFrame(frame, x, y + dy, w, h, s) >= threshold) return true;
         }
         return false;
     }
@@ -285,7 +322,7 @@ public static class WtmVision
     public static void RgbToHsv(Color c, out float hue, out float saturation, out float value)
         => RgbToHsv(c.R, c.G, c.B, out hue, out saturation, out value);
 
-    private static void RgbToHsv(byte r, byte g, byte b,
+    internal static void RgbToHsv(byte r, byte g, byte b,
         out float hue, out float saturation, out float value)
     {
         float rf = r / 255f, gf = g / 255f, bf = b / 255f;
@@ -318,7 +355,7 @@ public static class WtmVision
 
     public static NameplateClass ReadNameplateClass(WtmSettings s)
     {
-        // Tarama dikdörtgenini seç: önce çizilen bant, yoksa ofset fallback.
+        // Tarama dikdörtgenini seç (master px): önce çizilen bant, yoksa ofset fallback.
         int rx, ry, rw, rh;
         if (s.IsNameBandCalibrated)
         {
@@ -336,6 +373,25 @@ public static class WtmVision
             return NameplateClass.Unknown;
         }
         if (rw <= 0 || rh <= 0 || ry <= 0) return NameplateClass.Unknown;
+
+        // Master → geçerli ekran (anchor-aware). İsim bandı top-center çapasına oturur.
+        var r = ResolutionMapper.Map(rx, ry, rw, rh);
+        var c1 = ClassifyNameRect(r.X, r.Y, r.Width, r.Height, s);
+        if (s.AnnounceShiftY <= 0) return c1;
+
+        // Duyuru kayması: HP barıyla birlikte isim de kaydığı için alan 2'yi de sınıflandır.
+        // En güvenli sınıfı seç (Guardian > Normal > Unknown) — korumayı asla yanlışlıkla atlamamak için.
+        int dy = ResolutionMapper.ScaleLen(s.AnnounceShiftY);
+        var c2 = ClassifyNameRect(r.X, r.Y + dy, r.Width, r.Height, s);
+        if (c1 == NameplateClass.Guardian || c2 == NameplateClass.Guardian) return NameplateClass.Guardian;
+        if (c1 == NameplateClass.Normal   || c2 == NameplateClass.Normal)   return NameplateClass.Normal;
+        return NameplateClass.Unknown;
+    }
+
+    /// <summary>Verilen ekran dikdörtgenini yakalar ve HSV ile nameplate sınıfı döndürür.</summary>
+    private static NameplateClass ClassifyNameRect(int rx, int ry, int rw, int rh, WtmSettings s)
+    {
+        if (rw <= 0 || rh <= 0 || ry < 0) return NameplateClass.Unknown;
 
         using var bmp  = CaptureRegion(rx, ry, rw, rh);
         var       rect = new Rectangle(0, 0, rw, rh);
@@ -391,11 +447,9 @@ public static class WtmVision
     /// </summary>
     public static Bitmap CaptureHpBarRoi(WtmSettings s)
     {
-        int x = Math.Max(0, s.HpBarRoiX);
-        int y = Math.Max(0, s.HpBarRoiY);
-        int w = Math.Max(1, s.HpBarRoiW);
-        int h = Math.Max(1, s.HpBarRoiH);
-        return CaptureRegion(x, y, w, h);
+        var r = ResolutionMapper.Map(s.HpBarRoiX, s.HpBarRoiY, s.HpBarRoiW, s.HpBarRoiH);
+        return CaptureRegion(Math.Max(0, r.X), Math.Max(0, r.Y),
+                             Math.Max(1, r.Width), Math.Max(1, r.Height));
     }
 
     // Temporal smoothing: son HpBarTemporalWindow karedeki karar geçmişi.

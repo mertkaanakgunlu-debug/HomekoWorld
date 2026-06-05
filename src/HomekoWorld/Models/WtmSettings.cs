@@ -116,6 +116,15 @@ public class WtmSettings
     public float HpHsvMinSat { get; set; } = 0.45f;  // < bu = soluk/gri → say­ma
     public float HpHsvMinVal { get; set; } = 0.30f;  // < bu = koyu/gölge → sayma
     public int   HpHsvMinPx  { get; set; } = 5;      // ≥ bu kırmızı piksel → bar görünür (canlı)
+
+    // ── Duyuru kayması (alan 1 / alan 2) ─────────────────────────────────────
+    /// <summary>
+    /// Üstten duyuru/announcement geçerken mob HP barı + ismi belirli miktar AŞAĞI kayar.
+    /// Bu, normal konumdan kayık konuma dikey ofset (master piksel, &gt;0). Tespit önce normal
+    /// (alan 1), bulamazsa +AnnounceShiftY (alan 2) konumunu dener — HP barı ve isim birlikte
+    /// kaydığı için ikisine de uygulanır. 0 = kapalı. Runtime'da ResolutionMapper.ScaleLen ile ölçeklenir.
+    /// </summary>
+    public int AnnounceShiftY { get; set; }
 }
 
 /// <summary>Hedef HP bar varlık tespiti yöntemi.</summary>

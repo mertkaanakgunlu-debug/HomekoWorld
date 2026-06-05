@@ -1,0 +1,14 @@
+# Pico SDK build çıktıları
+/build/
+build/
+
+# VS Code Pico eklentisinin ürettiği yerel ayarlar (SDK yolu makineye özel)
+.vscode/
+
+# pioasm/elf2uf2 ara çıktıları
+*.uf2
+*.elf
+*.bin
+*.hex
+*.dis
+*.map

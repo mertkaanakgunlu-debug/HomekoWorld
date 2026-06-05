@@ -41,14 +41,14 @@ public partial class ComboEditor : UserControl
         DataContextChanged += (_, _) => SubscribeToVm();
     }
 
-    private string? OnRequestSkillPick()
+    private string? OnRequestSkillPick(string? classId)
     {
         var appState = (App.Services.GetService(typeof(AppState)) as AppState)
                        ?? new AppState();
         var library  = (App.Services.GetService(typeof(SkillLibrary)) as SkillLibrary)
                        ?? new SkillLibrary();
 
-        var dialog = new SkillPickerDialog(appState.SkillBar, library)
+        var dialog = new SkillPickerDialog(appState.SkillBar, library, classId)
         {
             Owner = Window.GetWindow(this),
         };

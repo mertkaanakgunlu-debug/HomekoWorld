@@ -47,7 +47,14 @@ public sealed partial class FarmEngine
     // Ölü/seçilemeyen mob kara listesi (kısa ömürlü): ceset hâlâ YOLO'da görünür;
     // "en yakın" sıralaması onu tekrar seçmesin diye o konum DeadBlacklistMs süre atlanır.
     private readonly List<(PointF pos, long expireAt)> _deadBlacklist = new();
-    private const int DeadBlacklistRadiusPx = 64; // kayan ceset YOLO kutusunu da kapsasın (#4)
+    private const int DeadBlacklistRadiusPx = 90; // F2: 64→90, kayan/düşen ceset YOLO kutusunu kapsasın
+    // F2: mob ölünce cesedi ayakta-merkezden ekranda AŞAĞI düşer (~100px; log'da @(987,650) standing →
+    // @(986,758) corpse). Kill anında merkez + bu kadar aşağısı ayrı blacklist'lenir ki düşen kutu da kapsansın.
+    private const int CorpseFallOffsetPx = 85;
+    // Tık ıskaladı + tespit o an kayboldu (mobStillThere=False) → aynı noktaya kilitlenip sonsuz re-pick
+    // döngüsüne girmesin diye KISA süre atla (statik false-positive ya da kaymış mob). Onaylanan ceset
+    // blacklist'inden (DeadBlacklistMs) çok daha kısa: gerçekten kaydıysa mob kısa sürede geri alınır.
+    private const int MissReselectSkipMs = 2500;
 
     // TrackAndCombat'in son bilinen hedef merkezi — kill sonrası ölü kara listesi için.
     private PointF _lastEngagedCenter;
@@ -77,6 +84,14 @@ public sealed partial class FarmEngine
             if (dx * dx + dy * dy <= radius * radius) return true;
         }
         return false;
+    }
+
+    // Karakter daima ekranın FİZİKSEL merkezindedir (#1: kalibrasyon kaldırıldı). DIP'li
+    // SystemParameters yerine GetSystemMetrics → yüksek DPI'da tespit koordinatlarıyla hizalı.
+    private static PointF ScreenCenter()
+    {
+        var (w, h) = ScreenCapture.PhysicalSize();
+        return new PointF(w / 2f, h / 2f);
     }
 
     /// <summary>Farm döngüsü şu an aktif mi (Idle veya KillSwitched değil).</summary>

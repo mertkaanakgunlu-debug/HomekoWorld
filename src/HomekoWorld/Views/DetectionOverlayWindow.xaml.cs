@@ -1,227 +1,256 @@
-using System.ComponentModel;
-using System.Globalization;
-using System.Runtime.InteropServices;
-using System.Threading;
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Windows;
-using System.Windows.Interop;
+using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Shapes;
 using HomekoWorld.Engine;
 using HomekoWorld.Models.Farm;
+using HomekoWorld.Services.Capture;
 
 namespace HomekoWorld.Views;
 
-/// <summary>
-/// Tam ekran, şeffaf, tıklama-geçirgen (click-through) YOLO tespit overlay'i.
-/// FarmEngine.DetectionsUpdated event'ine abone olur; seçili mob türü kutularını
-/// ve saldırılan hedefi (vurgulu) referans görseldeki gibi çizer.
-/// Yalnızca görünürken abone kalır — gizliyken sıfır redraw maliyeti.
-/// </summary>
 public partial class DetectionOverlayWindow : Window
 {
-    // ── Win32 click-through (genişletilmiş pencere stili) ─────────────────────
-    private const int GWL_EXSTYLE       = -20;
-    private const int WS_EX_LAYERED     = 0x00080000;
-    private const int WS_EX_TRANSPARENT = 0x00000020; // tıklamalar oyuna geçsin
-    private const int WS_EX_TOOLWINDOW  = 0x00000080; // Alt-Tab'da görünmesin
+    private readonly FarmEngine _engine;
+    private bool _isSubscribed;
+    
+    // UI nesneleri havuzu
+    private readonly List<DetectionVisual> _visualPool = new();
+    private DetectionVisual? _targetVisual;
 
-    [DllImport("user32.dll")] private static extern int GetWindowLong(nint hWnd, int nIndex);
-    [DllImport("user32.dll")] private static extern int SetWindowLong(nint hWnd, int nIndex, int dwNewLong);
+    private readonly Brush[] _classBrushes =
+    {
+        new SolidColorBrush(Color.FromRgb(0xB1, 0x4A, 0xE8)), // purple
+        new SolidColorBrush(Color.FromRgb(0x4A, 0xC8, 0xE8)), // cyan
+        new SolidColorBrush(Color.FromRgb(0xE8, 0xB1, 0x4A)), // orange
+        new SolidColorBrush(Color.FromRgb(0x4A, 0xE8, 0x7A)), // green
+        new SolidColorBrush(Color.FromRgb(0xE8, 0x4A, 0x8B)), // pink
+        new SolidColorBrush(Color.FromRgb(0xE8, 0xE8, 0x4A)), // yellow
+    };
 
-    private readonly FarmEngine      _engine;
-    private readonly DetectionCanvas _canvas = new();
-    private bool   _realClose;
-    private bool   _subscribed;
-    private double _dpiX = 1, _dpiY = 1;
+    private readonly Brush _targetBrush = new SolidColorBrush(Color.FromRgb(0x39, 0xFF, 0x14)); // bright green
 
-    // Frame coalescing: en son kare + kuyrukta bekleyen tek invoke bayrağı (0/1, Interlocked).
-    private DetectionFrame? _pendingFrame;
-    private int             _renderQueued;
+    // DPI ölçekleme katsayıları (fiziksel piksel → WPF DIP)
+    private double _dpiScaleX = 1.0;
+    private double _dpiScaleY = 1.0;
+
+    // EMA Yumuşatma
+    private Rect? _emaTargetBox;
+    private const double EmaAlpha = 0.4;
 
     public DetectionOverlayWindow(FarmEngine engine)
     {
         InitializeComponent();
         _engine = engine;
-        Root.Children.Add(_canvas);
-        IsVisibleChanged += OnIsVisibleChanged;
-    }
 
-    protected override void OnSourceInitialized(EventArgs e)
-    {
-        base.OnSourceInitialized(e);
+        // Pencereyi fiziksel çözünürlük üzerinden hizala ve boyutlandır
+        var (w, h) = ScreenCapture.PhysicalSize();
+        
+        // Window pozisyonunu ekranın tam üstüne oturt
+        Left = 0;
+        Top = 0;
+        Width = w;
+        Height = h;
 
-        // Click-through: pencere fare olaylarını yutmaz, oyuna geçirir.
-        var hwnd = new WindowInteropHelper(this).Handle;
-        int ex   = GetWindowLong(hwnd, GWL_EXSTYLE);
-        SetWindowLong(hwnd, GWL_EXSTYLE, ex | WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW);
-
-        // DPI: tespitler fiziksel piksel; WPF DIP çizer → DIP = fiziksel / M11(X), M22(Y)
-        var src = PresentationSource.FromVisual(this);
-        if (src?.CompositionTarget is not null)
+        // Tıklamaları alt pencereye geçirmesi için gerekli Win32 stilleri
+        Loaded += (s, e) =>
         {
-            _dpiX = src.CompositionTarget.TransformToDevice.M11;
-            _dpiY = src.CompositionTarget.TransformToDevice.M22;
-        }
-    }
+            var hwnd = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+            int extendedStyle = GetWindowLong(hwnd, GWL_EXSTYLE);
+            SetWindowLong(hwnd, GWL_EXSTYLE, extendedStyle | WS_EX_TRANSPARENT);
 
-    private void OnIsVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
-    {
-        if (IsVisible) Subscribe();
-        else           Unsubscribe();
-    }
-
-    private void Subscribe()
-    {
-        if (_subscribed) return;
-        _engine.DetectionsUpdated += OnDetections;
-        _subscribed = true;
-    }
-
-    private void Unsubscribe()
-    {
-        if (!_subscribed) return;
-        _engine.DetectionsUpdated -= OnDetections;
-        _subscribed = false;
-        _canvas.Update(null, _dpiX, _dpiY); // ekranı temizle
-    }
-
-    private void OnDetections(object? sender, DetectionFrame frame)
-    {
-        // Engine thread'inden UI thread'ine geç — FRAME COALESCING:
-        // En son kare kazanır; kuyrukta en fazla 1 invoke bulunur. Farm thread 33 FPS
-        // yayınlasa da UI daha yavaşsa fazla kareler düşürülür → Dispatcher kuyruğu
-        // şişmez (bellek balonu / donma / çökme biter; "takılı kutu" da bunun yan etkisiydi).
-        Volatile.Write(ref _pendingFrame, frame);
-        if (Interlocked.Exchange(ref _renderQueued, 1) == 1) return; // zaten kuyrukta
-
-        var disp = Dispatcher;
-        if (disp.HasShutdownStarted || disp.HasShutdownFinished)
-        {
-            Interlocked.Exchange(ref _renderQueued, 0);
-            return;
-        }
-
-        disp.BeginInvoke(() =>
-        {
-            Interlocked.Exchange(ref _renderQueued, 0);
-            _canvas.Update(Volatile.Read(ref _pendingFrame), _dpiX, _dpiY);
-        });
-    }
-
-    // ── Yaşam döngüsü (OverlayWindow deseni: Hide, gerçek kapatmada Destroy) ──
-    public void Destroy()
-    {
-        _realClose = true;
-        Unsubscribe();
-        Close();
-    }
-
-    protected override void OnClosing(CancelEventArgs e)
-    {
-        if (_realClose) return;
-        e.Cancel = true;
-        Hide();
-    }
-}
-
-/// <summary>
-/// FarmEngine tespit kutularını DrawingContext ile çizen hafif eleman.
-/// Sınıf başına sabit renk; saldırılan hedef parlak yeşil + kalın çerçeve.
-/// </summary>
-internal sealed class DetectionCanvas : FrameworkElement
-{
-    private DetectionFrame? _frame;
-    private double _dpiX = 1, _dpiY = 1;
-
-    // Sınıf başına sabit renk paleti
-    private static readonly Color[] Palette =
-    {
-        Color.FromRgb(0xB1, 0x4A, 0xE8), // mor (referans görseldeki gibi)
-        Color.FromRgb(0x4A, 0xC8, 0xE8), // camgöbeği
-        Color.FromRgb(0xE8, 0xB1, 0x4A), // turuncu
-        Color.FromRgb(0x4A, 0xE8, 0x7A), // yeşil
-        Color.FromRgb(0xE8, 0x4A, 0x8B), // pembe
-        Color.FromRgb(0xE8, 0xE8, 0x4A), // sarı
-    };
-    private static readonly Pen[]   ClassPens;
-    private static readonly Brush[] ClassFills;
-    private static readonly Pen     TargetPen;
-    private static readonly Brush   TargetFill;
-    private static readonly Typeface Face = new("Segoe UI");
-
-    static DetectionCanvas()
-    {
-        ClassPens  = new Pen[Palette.Length];
-        ClassFills = new Brush[Palette.Length];
-        for (int i = 0; i < Palette.Length; i++)
-        {
-            var pen = new Pen(new SolidColorBrush(Palette[i]), 2); pen.Freeze();
-            ClassPens[i] = pen;
-            var fill = new SolidColorBrush(Palette[i]); fill.Freeze();
-            ClassFills[i] = fill;
-        }
-        var tColor = Color.FromRgb(0x39, 0xFF, 0x14); // parlak yeşil — saldırılan hedef
-        TargetPen  = new Pen(new SolidColorBrush(tColor), 3.5); TargetPen.Freeze();
-        TargetFill = new SolidColorBrush(tColor); TargetFill.Freeze();
-    }
-
-    public void Update(DetectionFrame? frame, double dpiX, double dpiY)
-    {
-        _frame = frame;
-        _dpiX  = dpiX <= 0 ? 1 : dpiX;
-        _dpiY  = dpiY <= 0 ? 1 : dpiY;
-        InvalidateVisual();
-    }
-
-    protected override void OnRender(DrawingContext dc)
-    {
-        var f = _frame;
-        if (f is null) return;
-
-        float ppd = (float)_dpiX; // pixelsPerDip = M11
-
-        // Geçici bir render hatası (ör. eşzamanlı liste anlık görüntüsü) uygulamayı
-        // düşürmesin; App.DispatcherUnhandledException Handled=true ile yutuyor.
-        try
-        {
-            foreach (var d in f.Detections)
+            // DPI Hesaplama
+            var src = PresentationSource.FromVisual(this);
+            if (src?.CompositionTarget != null)
             {
-                if (ReferenceEquals(d, f.Target)) continue; // hedef ayrıca vurgulu çizilecek — çift kutu olmasın
-                int idx = Math.Abs(d.ClassId) % Palette.Length;
-                DrawBox(dc, d, ClassPens[idx], ClassFills[idx], ppd);
+                _dpiScaleX = 1.0 / src.CompositionTarget.TransformToDevice.M11;
+                _dpiScaleY = 1.0 / src.CompositionTarget.TransformToDevice.M22;
+                
+                // Pencere boyutunu DIP olarak tekrar ayarla
+                Width = w * _dpiScaleX;
+                Height = h * _dpiScaleY;
+            }
+        };
+    }
+
+    public void ActivateOverlay()
+    {
+        if (!_isSubscribed)
+        {
+            _engine.DetectionsUpdated += OnDetectionsUpdated;
+            _isSubscribed = true;
+        }
+        Show();
+    }
+
+    public void DeactivateOverlay()
+    {
+        if (_isSubscribed)
+        {
+            _engine.DetectionsUpdated -= OnDetectionsUpdated;
+            _isSubscribed = false;
+        }
+        Hide();
+        // Temizle
+        foreach (var v in _visualPool) v.Hide();
+        _targetVisual?.Hide();
+    }
+
+    private void OnDetectionsUpdated(object? sender, DetectionFrame frame)
+    {
+        // UI thread'inde Canvas'ı güncelle
+        Dispatcher.InvokeAsync(() => UpdateVisuals(frame), System.Windows.Threading.DispatcherPriority.Render);
+    }
+
+    private void UpdateVisuals(DetectionFrame frame)
+    {
+        int poolIndex = 0;
+
+        foreach (var d in frame.Detections)
+        {
+            if (frame.Target != null && ReferenceEquals(d, frame.Target)) continue;
+
+            var visual = GetOrCreateVisual(poolIndex++);
+            var brush = _classBrushes[Math.Abs(d.ClassId) % _classBrushes.Length];
+            
+            UpdateVisual(visual, d.BBox.Left, d.BBox.Top, d.BBox.Width, d.BBox.Height, d.ClassName, d.Confidence, brush, 2);
+        }
+
+        // Fazlalık visual'ları gizle
+        for (int i = poolIndex; i < _visualPool.Count; i++)
+        {
+            _visualPool[i].Hide();
+        }
+
+        // Hedefi EMA ile çiz
+        if (frame.Target != null)
+        {
+            var t = frame.Target;
+            var currentBox = new Rect(t.BBox.Left, t.BBox.Top, t.BBox.Width, t.BBox.Height);
+
+            if (_emaTargetBox == null)
+            {
+                _emaTargetBox = currentBox;
+            }
+            else
+            {
+                var ema = _emaTargetBox.Value;
+                _emaTargetBox = new Rect(
+                    ema.X + EmaAlpha * (currentBox.X - ema.X),
+                    ema.Y + EmaAlpha * (currentBox.Y - ema.Y),
+                    ema.Width + EmaAlpha * (currentBox.Width - ema.Width),
+                    ema.Height + EmaAlpha * (currentBox.Height - ema.Height));
             }
 
-            // Saldırılan/seçili hedefi en üstte vurgulu (yeşil) çiz
-            if (f.Target is { } t)
-                DrawBox(dc, t, TargetPen, TargetFill, ppd);
+            if (_targetVisual == null) _targetVisual = CreateVisual();
+            UpdateVisual(_targetVisual, (float)_emaTargetBox.Value.Left, (float)_emaTargetBox.Value.Top, 
+                (float)_emaTargetBox.Value.Width, (float)_emaTargetBox.Value.Height, 
+                t.ClassName, t.Confidence, _targetBrush, 3.5);
         }
-        catch (Exception ex)
+        else
         {
-            System.Diagnostics.Debug.WriteLine($"[DetectionOverlay] OnRender hata: {ex.Message}");
+            _emaTargetBox = null;
+            _targetVisual?.Hide();
         }
     }
 
-    private void DrawBox(DrawingContext dc, Detection d, Pen pen, Brush labelFill, float ppd)
+    private DetectionVisual GetOrCreateVisual(int index)
     {
-        double x = d.BBox.X      / _dpiX;
-        double y = d.BBox.Y      / _dpiY;
-        double w = d.BBox.Width  / _dpiX;
-        double h = d.BBox.Height / _dpiY;
-        if (w <= 0 || h <= 0) return;
-
-        dc.DrawRectangle(null, pen, new Rect(x, y, w, h));
-
-        // Etiket bandı: "isim 0.00" (referans görseldeki dolu etiket)
-        string label = $"{d.ClassName} {d.Confidence:0.00}";
-        var ft = new FormattedText(label, CultureInfo.InvariantCulture, FlowDirection.LeftToRight,
-                                   Face, 12, Brushes.White, ppd);
-        const double padX = 4, padY = 2;
-        double labelW = ft.Width  + padX * 2;
-        double labelH = ft.Height + padY * 2;
-        double lx = x;
-        double ly = y - labelH;
-        if (ly < 0) ly = y; // ekranın en üstünü taşmasın — kutunun içine al
-
-        dc.DrawRectangle(labelFill, null, new Rect(lx, ly, labelW, labelH));
-        dc.DrawText(ft, new Point(lx + padX, ly + padY));
+        while (_visualPool.Count <= index)
+        {
+            _visualPool.Add(CreateVisual());
+        }
+        return _visualPool[index];
     }
+
+    private DetectionVisual CreateVisual()
+    {
+        var border = new Border
+        {
+            BorderBrush = Brushes.White,
+            BorderThickness = new Thickness(2),
+            Background = Brushes.Transparent,
+            RenderTransform = new TranslateTransform()
+        };
+
+        var labelBg = new Border
+        {
+            Background = Brushes.White,
+            Padding = new Thickness(2),
+            RenderTransform = new TranslateTransform()
+        };
+
+        var text = new TextBlock
+        {
+            Foreground = Brushes.White,
+            FontSize = 12,
+            FontWeight = FontWeights.Bold
+        };
+        
+        labelBg.Child = text;
+
+        OverlayCanvas.Children.Add(border);
+        OverlayCanvas.Children.Add(labelBg);
+
+        return new DetectionVisual { Box = border, LabelBg = labelBg, Text = text, Transform = (TranslateTransform)border.RenderTransform, LabelTransform = (TranslateTransform)labelBg.RenderTransform };
+    }
+
+    private void UpdateVisual(DetectionVisual visual, float x, float y, float w, float h, string className, float conf, Brush brush, double thickness)
+    {
+        visual.Box.Visibility = Visibility.Visible;
+        visual.LabelBg.Visibility = Visibility.Visible;
+
+        visual.Box.BorderBrush = brush;
+        visual.Box.BorderThickness = new Thickness(thickness);
+        visual.LabelBg.Background = brush;
+        visual.Text.Text = $"{className} {conf:0.00}";
+
+        // DPI dönüşümü: fiziksel pikselleri WPF DIP'e çevir
+        double dipX = x * _dpiScaleX;
+        double dipY = y * _dpiScaleY;
+        double dipW = w * _dpiScaleX;
+        double dipH = h * _dpiScaleY;
+
+        visual.Box.Width = dipW;
+        visual.Box.Height = dipH;
+        visual.Transform.X = dipX;
+        visual.Transform.Y = dipY;
+
+        // Label'ı kutunun üstüne koy
+        visual.LabelBg.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+        double labelH = visual.LabelBg.DesiredSize.Height;
+        
+        double labelY = dipY - labelH;
+        if (labelY < 0) labelY = dipY; // Ekrandan taşıyorsa içine al
+
+        visual.LabelTransform.X = dipX;
+        visual.LabelTransform.Y = labelY;
+    }
+
+    private class DetectionVisual
+    {
+        public Border Box { get; set; } = null!;
+        public Border LabelBg { get; set; } = null!;
+        public TextBlock Text { get; set; } = null!;
+        public TranslateTransform Transform { get; set; } = null!;
+        public TranslateTransform LabelTransform { get; set; } = null!;
+
+        public void Hide()
+        {
+            Box.Visibility = Visibility.Hidden;
+            LabelBg.Visibility = Visibility.Hidden;
+        }
+    }
+
+    // Win32 Imports for Click-through
+    private const int GWL_EXSTYLE = -20;
+    private const int WS_EX_TRANSPARENT = 0x00000020;
+    
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern int GetWindowLong(IntPtr hwnd, int index);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern int SetWindowLong(IntPtr hwnd, int index, int newStyle);
 }

@@ -17,14 +17,24 @@
     <!-- Single-file publish: native WPF DLLs must be extracted alongside the exe,
          not bundled inside. Without this, SetWindowLongPtr etc. crash on startup. -->
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <DefineConstants>$(DefineConstants);HOMEKO_CUDA</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.3.2" />
+    <PackageReference Include="HidSharp" Version="2.1.0" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="8.0.1" />
     <PackageReference Include="System.Drawing.Common" Version="8.0.14" />
-    <PackageReference Include="Microsoft.ML.OnnxRuntime.DirectML" Version="1.20.1" />
+    <PackageReference Include="Microsoft.ML.OnnxRuntime.Gpu" Version="1.20.1" />
     <PackageReference Include="Vortice.Direct3D11" Version="3.8.3" />
+  </ItemGroup>
+
+  <!-- Faz 9: RP2040 firmware'i app-içi güncelleme için exe yanına kopyala -->
+  <ItemGroup>
+    <Content Include="..\..\firmware\rp2040-bridge\build\rp2040_bridge.uf2" Condition="Exists('..\..\firmware\rp2040-bridge\build\rp2040_bridge.uf2')">
+      <Link>rp2040_bridge.uf2</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
 
   <ItemGroup>

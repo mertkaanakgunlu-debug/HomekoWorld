@@ -24,14 +24,39 @@ public sealed partial class FarmEngine
     private void DetectionLoop(CancellationToken ct)
     {
         var frameSw = new System.Diagnostics.Stopwatch();
+        long lastFpsTime = NowMs();
+        int frames = 0;
+
         // Ekran kaynağı bu thread'de kurulur (DXGI/D3D11 device tek-thread kullanımı için kritik).
         IScreenSource screen = CreateScreenSource(_appState.Farm);
         Program.Log($"[Farm] Ekran yakalama yöntemi: {screen.BackendName}");
         try
         {
+            long totalCapMs = 0;
+            long totalInfMs = 0;
+            long totalWaitMs = 0;
+
             while (!ct.IsCancellationRequested)
             {
                 frameSw.Restart();
+                frames++;
+                long now = NowMs();
+                if (now - lastFpsTime >= 1000)
+                {
+                    Telemetry.InferenceFps = frames;
+                    
+                    if (frames > 0)
+                    {
+                        Program.Log($"[DIAG] FPS: {frames} | AvgCap: {totalCapMs/frames}ms | AvgInf: {totalInfMs/frames}ms | AvgWait: {totalWaitMs/frames}ms");
+                    }
+                    totalCapMs = 0;
+                    totalInfMs = 0;
+                    totalWaitMs = 0;
+                    
+                    frames = 0;
+                    lastFpsTime = now;
+                    TelemetryUpdated?.Invoke(this, Telemetry);
+                }
                 try
                 {
                     var inferrer = Inferrer; // mid-iteration null swap'a karşı yerel kopya
@@ -42,8 +67,7 @@ public sealed partial class FarmEngine
                     }
 
                     var s = _appState.Farm;
-                    // Kaynak sahibi: frame'i Dispose ETME (sonraki Capture'a kadar geçerli).
-                    // DXGI çalışma anında hata verirse (HDR/sürücü/siyah kare) kendiliğinden GDI'ye düşer.
+                    long capStart = NowMs();
                     Bitmap frame;
                     try { frame = screen.Capture(); }
                     catch (Exception capEx) when (screen is not GdiScreenSource)
@@ -53,19 +77,13 @@ public sealed partial class FarmEngine
                         screen = new GdiScreenSource();
                         frame  = screen.Capture();
                     }
+                    long capEnd = NowMs();
                     var dets = inferrer.Infer(frame);
+                    long infEnd = NowMs();
 
-                    // NOT: Tespit kalıcılığı (DetectionHoldMs köprüleme) KALDIRILDI. Hareketli mob/kamerada
-                    // boş kareyi son DOLU set'le köprülemek BAYAT kutu gösteriyor + bota BAYAT tıklama konumu
-                    // veriyordu ("kutuya tıkladık, mob orada yok"). Artık daima TAZE tespit: zayıf modelde
-                    // kutular yanıp sönse de konum DOĞRU; tıklama isabeti > kozmetik akıcılık.
+                    totalCapMs += (capEnd - capStart);
+                    totalInfMs += (infEnd - capEnd);
 
-                    // HP/MP okuması KALDIRILDI: yalnız (artık silinen) farm-içi pot tüketiyordu. Oyuncu
-                    // HP/MP'sini global AutoPotService kendi yakalamasıyla okur; combat ölüm tespiti aşağıdaki
-                    // hedef-HP HSV ile yapılır → DetectionLoop kare başına 2 bar taraması kadar hafifler.
-
-                    // T2 sinerji: hedef-canlı (HSV) kontrolünü AYNI kareden hesapla → combat döngüsü ayrı
-                    // GDI ROI yakalaması yapmaz. Bu thread'de, kare paylaşılmadan taranır (race yok).
                     bool? targetAliveHsv = null;
                     var wtm = _appState.Wtm;
                     if (wtm.HpBarMode == HpBarDetectionMode.Hsv && wtm.IsHpBarLocated)
@@ -74,18 +92,16 @@ public sealed partial class FarmEngine
                     _latestDetections = new DetectionSnapshot(
                         dets, frame.Width, frame.Height, NowMs(), targetAliveHsv);
 
-                    // Overlay yayını tek kaynaktan — abone yoksa ≈sıfır maliyet.
                     PublishOverlay(dets, s, frame.Width, frame.Height);
 
-                    // ── FPS SINIRI (kritik) ───────────────────────────────────
-                    // Tam-ekran yakalama (~16MB @ 2560×1600) + GPU inference SINIRSIZ
-                    // dönerse sistem (GPU/GDI/GC) boğulur → imleç takılır, UI donar, çöker.
-                    // Her kare en az DetectionMinIntervalMs sürsün.
                     int spent = (int)frameSw.ElapsedMilliseconds;
                     int minMs = Math.Max(10, s.DetectionMinIntervalMs);
-                    if (s.RecordingMode) // A4: kayıt sırasında GPU'ya nefes ver
+                    if (s.RecordingMode) 
                         minMs = Math.Max(minMs, s.RecordingModeMinIntervalMs);
+                    
+                    long waitStart = NowMs();
                     if (spent < minMs) Thread.Sleep(minMs - spent);
+                    totalWaitMs += (NowMs() - waitStart);
                 }
                 catch (OperationCanceledException) { break; }
                 catch (Exception ex)

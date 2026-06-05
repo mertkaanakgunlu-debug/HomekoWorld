@@ -194,6 +194,7 @@ public partial class MainViewModel
             FarmMpPotsUsed = t.MpPotsUsed;
             FarmCurrentKey = t.LastKeyTapped;
             FarmCurrentMob = t.CurrentMob;
+            FarmInferenceFps = t.InferenceFps;
         }
 
         // Aktivite log — tick başına sınırlı sayıda (UI'yı tıkamadan boşalt)
@@ -317,6 +318,25 @@ public partial class MainViewModel
             _farmEngine.Inferrer = inferrer;
 
             FarmStatus = $"Model hazır ({names.Count} sınıf)";
+
+            // T3: TensorRT Motoru için arka planda ilk ısınma işlemini başlat (UI donmasını önler)
+            IsEngineBuilding = true;
+            
+            // WPF D3D/DXGI initialization ile TensorRT CUDA context creation aynı anda çalışırsa 
+            // NVIDIA sürücüsü (dxgi.dll) deadlock/crash yaşayabilir. Bu nedenle WarmUp işlemini 
+            // WPF'nin UI render işlemi tamamen bittikten (ApplicationIdle) sonraya erteliyoruz.
+            System.Windows.Application.Current.Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.ApplicationIdle, new Action(() =>
+            {
+                _ = inferrer.WarmUpAsync(status =>
+                {
+                    System.Windows.Application.Current.Dispatcher.BeginInvoke(() => 
+                    {
+                        EngineBuildStatus = status;
+                        if (status.Contains("Hazır") || status.Contains("Hata") || status.Contains("Modu"))
+                            IsEngineBuilding = false;
+                    });
+                });
+            }));
         }
         catch (Exception ex)
         {
@@ -422,9 +442,9 @@ public partial class MainViewModel
             if (foundOnnx is not null && foundMobs is not null) break;
         }
 
-        if (foundOnnx is not null && string.IsNullOrWhiteSpace(FarmModelPath))
+        if (foundOnnx is not null && (string.IsNullOrWhiteSpace(FarmModelPath) || !System.IO.File.Exists(FarmModelPath)))
             FarmModelPath = foundOnnx;
-        if (foundMobs is not null && string.IsNullOrWhiteSpace(FarmMobsJsonPath))
+        if (foundMobs is not null && (string.IsNullOrWhiteSpace(FarmMobsJsonPath) || !System.IO.File.Exists(FarmMobsJsonPath)))
             FarmMobsJsonPath = foundMobs;
 
         // Show success whenever files were found in filesystem (regardless of whether paths were already set)

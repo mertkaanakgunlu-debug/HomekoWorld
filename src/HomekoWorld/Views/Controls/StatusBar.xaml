@@ -11,9 +11,11 @@
         <ColumnDefinition Width="Auto"/>   <!-- 0: Active -->
         <ColumnDefinition Width="Auto"/>   <!-- 1: Divider -->
         <ColumnDefinition Width="Auto"/>   <!-- 2: Connect -->
-        <ColumnDefinition Width="*"/>      <!-- 3: Log message -->
-        <ColumnDefinition Width="Auto"/>   <!-- 4: F12 hint -->
-        <ColumnDefinition Width="Auto"/>   <!-- 5: Lang toggle -->
+        <ColumnDefinition Width="Auto"/>   <!-- 3: Divider -->
+        <ColumnDefinition Width="Auto"/>   <!-- 4: Engine Status -->
+        <ColumnDefinition Width="*"/>      <!-- 5: Log message -->
+        <ColumnDefinition Width="Auto"/>   <!-- 6: F12 hint -->
+        <ColumnDefinition Width="Auto"/>   <!-- 7: Lang toggle -->
       </Grid.ColumnDefinitions>
 
       <!-- Active indicator -->
@@ -56,13 +58,50 @@
       <Rectangle Grid.Column="3" Width="1" Height="12" Fill="{StaticResource Border1}"
                  HorizontalAlignment="Left" Margin="0,0,14,0"/>
 
+      <!-- Engine Status -->
+      <StackPanel Grid.Column="4" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,14,0">
+        <!-- Animated Loading Spinner -->
+        <Path Data="M 12,2 A 10,10 0 0,0 2,12" 
+              Stroke="{StaticResource Gold}" StrokeThickness="2" StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+              Width="12" Height="12" Margin="0,0,6,0"
+              Stretch="Uniform" RenderTransformOrigin="0.5,0.5">
+          <Path.Style>
+            <Style TargetType="Path">
+              <Setter Property="Visibility" Value="Collapsed"/>
+              <Style.Triggers>
+                <DataTrigger Binding="{Binding IsEngineBuilding}" Value="True">
+                  <Setter Property="Visibility" Value="Visible"/>
+                </DataTrigger>
+              </Style.Triggers>
+            </Style>
+          </Path.Style>
+          <Path.RenderTransform>
+            <RotateTransform Angle="0" />
+          </Path.RenderTransform>
+          <Path.Triggers>
+            <EventTrigger RoutedEvent="Loaded">
+              <BeginStoryboard>
+                <Storyboard>
+                  <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)"
+                                   From="0" To="360" Duration="0:0:1" RepeatBehavior="Forever"/>
+                </Storyboard>
+              </BeginStoryboard>
+            </EventTrigger>
+          </Path.Triggers>
+        </Path>
+
+        <TextBlock FontSize="11" FontFamily="{StaticResource FontMono}"
+                   Foreground="{StaticResource Gold}" VerticalAlignment="Center"
+                   Text="{Binding EngineBuildStatus}" />
+      </StackPanel>
+
       <!-- Log message -->
-      <TextBlock Grid.Column="3" FontSize="11" Foreground="{StaticResource TextDim}"
+      <TextBlock Grid.Column="5" FontSize="11" Foreground="{StaticResource TextDim}"
                  VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
                  Text="{Binding LogMessage}"/>
 
       <!-- F12 hint -->
-      <StackPanel Grid.Column="4" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,10,0">
+      <StackPanel Grid.Column="6" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,10,0">
         <Border Style="{StaticResource KeyChip}">
           <TextBlock Text="{Binding GlobalStartKey}" FontFamily="{StaticResource FontMono}" FontSize="10"
                      Foreground="{StaticResource TextMuted}"/>
@@ -71,7 +110,7 @@
       </StackPanel>
 
       <!-- TR/EN language toggle -->
-      <StackPanel Grid.Column="5" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,2,0">
+      <StackPanel Grid.Column="7" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,2,0">
         <!-- TR -->
         <Border Padding="4,1" CornerRadius="3" Cursor="Hand" Margin="0,0,1,0">
           <Border.InputBindings>

@@ -63,11 +63,11 @@
               <ColumnDefinition Width="Auto"/>  <!-- 10: Stop loop -->
             </Grid.ColumnDefinitions>
 
-            <!-- Connection mode toggle: WiFi → USB → Local (3-way cycle) -->
+            <!-- Connection mode toggle: WiFi → USB → Local → RP2040 (4-way cycle) -->
             <Button Grid.Column="0" VerticalAlignment="Center"
                     Command="{Binding ToggleConnectionModeCommand}"
                     Padding="8,4" FontSize="11" Cursor="Hand"
-                    ToolTip="Bağlantı modunu değiştir (WiFi → USB → Local döngüsü).&#x0a;WiFi: telefon IP/port ile TCP bağlantısı.&#x0a;USB: USB Tethering aktifken telefon gateway IP'si.&#x0a;Local: SendInput ile direkt PC'ye input.">
+                    ToolTip="Bağlantı modunu değiştir (WiFi → USB → Local → RP2040 döngüsü).&#x0a;WiFi: telefon IP/port ile TCP bağlantısı.&#x0a;USB: USB Tethering aktifken telefon gateway IP'si.&#x0a;Local: SendInput ile direkt PC'ye input.&#x0a;RP2040: USB-HID köprü cihazı (gerçek klavye+fare).">
               <Button.Style>
                 <Style TargetType="Button">
                   <Setter Property="Background"       Value="Transparent"/>
@@ -97,6 +97,11 @@
                       <Setter Property="BorderBrush" Value="{StaticResource Blue}"/>
                       <Setter Property="Foreground"  Value="#FF9A79D0"/>
                     </DataTrigger>
+                    <DataTrigger Binding="{Binding IsRp2040Mode}" Value="True">
+                      <Setter Property="Background"  Value="#1A0A6A5A"/>
+                      <Setter Property="BorderBrush" Value="#FF2AA88A"/>
+                      <Setter Property="Foreground"  Value="#FF55D0B0"/>
+                    </DataTrigger>
                     <Trigger Property="IsMouseOver" Value="True">
                       <Setter Property="BorderBrush" Value="{StaticResource TextSoft}"/>
                     </Trigger>
@@ -117,6 +122,10 @@
                         <Setter Property="Text"       Value="Local"/>
                         <Setter Property="Foreground" Value="#FF9A79D0"/>
                       </DataTrigger>
+                      <DataTrigger Binding="{Binding IsRp2040Mode}" Value="True">
+                        <Setter Property="Text"       Value="RP2040"/>
+                        <Setter Property="Foreground" Value="#FF55D0B0"/>
+                      </DataTrigger>
                     </Style.Triggers>
                   </Style>
                 </TextBlock.Style>
@@ -131,6 +140,9 @@
                 <Style TargetType="TextBox" BasedOn="{StaticResource InputBase}">
                   <Style.Triggers>
                     <DataTrigger Binding="{Binding IsLocalMode}" Value="True">
+                      <Setter Property="Visibility" Value="Collapsed"/>
+                    </DataTrigger>
+                    <DataTrigger Binding="{Binding IsRp2040Mode}" Value="True">
                       <Setter Property="Visibility" Value="Collapsed"/>
                     </DataTrigger>
                   </Style.Triggers>
@@ -153,6 +165,11 @@
                       <Setter Property="Text"       Value="Local — PC (SendInput)"/>
                       <Setter Property="Foreground" Value="#FF9A79D0"/>
                     </DataTrigger>
+                    <DataTrigger Binding="{Binding IsRp2040Mode}" Value="True">
+                      <Setter Property="Visibility" Value="Visible"/>
+                      <Setter Property="Text"       Value="RP2040 — USB HID köprüsü"/>
+                      <Setter Property="Foreground" Value="#FF55D0B0"/>
+                    </DataTrigger>
                   </Style.Triggers>
                 </Style>
               </TextBlock.Style>
@@ -166,6 +183,9 @@
                 <Style TargetType="TextBox" BasedOn="{StaticResource InputMono}">
                   <Style.Triggers>
                     <DataTrigger Binding="{Binding IsLocalMode}" Value="True">
+                      <Setter Property="Visibility" Value="Collapsed"/>
+                    </DataTrigger>
+                    <DataTrigger Binding="{Binding IsRp2040Mode}" Value="True">
                       <Setter Property="Visibility" Value="Collapsed"/>
                     </DataTrigger>
                   </Style.Triggers>
@@ -199,6 +219,26 @@
                     </DataTrigger>
                     <DataTrigger Binding="{Binding IsLocalMode}" Value="True">
                       <Setter Property="Visibility" Value="Collapsed"/>
+                    </DataTrigger>
+                    <DataTrigger Binding="{Binding IsRp2040Mode}" Value="True">
+                      <Setter Property="Visibility" Value="Collapsed"/>
+                    </DataTrigger>
+                  </Style.Triggers>
+                </Style>
+              </Button.Style>
+            </Button>
+
+            <!-- Faz 9: Firmware güncelle — yalnız RP2040 modunda (col 6, Connect ile aynı hücre) -->
+            <Button Grid.Column="6" VerticalAlignment="Center"
+                    Command="{Binding UpdateRp2040FirmwareCommand}"
+                    Content="⟳ Firmware" Padding="8,4" FontSize="11" Cursor="Hand"
+                    ToolTip="RP2040'ı BOOTSEL'e sokup yeni firmware'i otomatik yükler (BOOT düğmesi gerekmez).">
+              <Button.Style>
+                <Style TargetType="Button" BasedOn="{StaticResource BtnGhost}">
+                  <Setter Property="Visibility" Value="Collapsed"/>
+                  <Style.Triggers>
+                    <DataTrigger Binding="{Binding IsRp2040Mode}" Value="True">
+                      <Setter Property="Visibility" Value="Visible"/>
                     </DataTrigger>
                   </Style.Triggers>
                 </Style>
@@ -368,16 +408,30 @@
                   <TextBlock Text="KALİBRASYON" Style="{StaticResource SectionHeader}" Margin="0,0,0,6"/>
                   <TextBlock FontSize="10" Foreground="{StaticResource TextDim}" TextWrapping="Wrap"
                              Margin="0,0,0,6"
-                             Text="HP/MP barı, karakter merkezi ve hedef HP barını öğret. Combo + Farm + WtM tarafından paylaşılır."/>
-                  <Button Command="{Binding CalibrateFarmCenterCommand}"
-                          Style="{StaticResource BtnGhost}"
-                          Padding="6,4" FontSize="11"
-                          ToolTip="4 adım:&#x0a;1) Karakterini çerçevele (merkez)&#x0a;2) Kendi HP barını çiz (dolu iken)&#x0a;3) Kendi MP barını çiz (dolu iken)&#x0a;4) Hedef HP bar panelini sürükle (ML ROI)">
-                    <StackPanel Orientation="Horizontal">
-                      <TextBlock Text="⊕ " FontSize="12" VerticalAlignment="Center"/>
-                      <TextBlock Text="Kalibre Et (4 adım)" VerticalAlignment="Center"/>
-                    </StackPanel>
-                  </Button>
+                             Text="Kendi HP/MP barını ve hedef mob HP barını İKİ KÖŞE tıklayarak öğret (bar dolu olması gerekmez). Karakter merkezi otomatik (ekran ortası)."/>
+                  <Grid Margin="0,0,0,0">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="3*"/>
+                      <ColumnDefinition Width="1*"/>
+                    </Grid.ColumnDefinitions>
+                    <Button Grid.Column="0" Command="{Binding CalibrateFarmCenterCommand}"
+                            Style="{StaticResource BtnGhost}"
+                            Margin="0,0,4,0" Padding="6,4" FontSize="11"
+                            ToolTip="3 adım: Kendi HP, MP ve Mob HP barını ikişer köşeden seçerek kalibre et">
+                      <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                        <TextBlock Text="⊕ " FontSize="12" VerticalAlignment="Center"/>
+                        <TextBlock Text="Ana Kalibrasyon" VerticalAlignment="Center"/>
+                      </StackPanel>
+                    </Button>
+                    <Button Grid.Column="1" Command="{Binding CalibrateAnnounceShiftCommand}"
+                            Style="{StaticResource BtnGhost}"
+                            Padding="6,4" FontSize="11"
+                            ToolTip="Duyuru geldiğinde kayan Mob HP barının sol-üst köşesine tek tıkla">
+                      <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                        <TextBlock Text="Duyuru Δy" VerticalAlignment="Center"/>
+                      </StackPanel>
+                    </Button>
+                  </Grid>
                   <TextBlock Text="{Binding FarmCalibrationState}"
                              FontSize="10" Foreground="{StaticResource Gold}"
                              TextWrapping="Wrap" Margin="0,4,0,0">

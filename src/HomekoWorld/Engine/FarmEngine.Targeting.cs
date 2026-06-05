@@ -19,45 +19,33 @@ public sealed partial class FarmEngine
         FarmSettings s,
         CancellationToken ct)
     {
-        if (candidates.Count == 0)
-        {
-            if (s.ScanModeEnabled && _idleWatch.ElapsedMilliseconds > s.ScanIdleMs)
-            {
-                await CameraScanStepAsync(s, ct);
-                return;
-            }
-            if (_idleWatch.ElapsedMilliseconds > s.IdleBeforeRoamMs && s.RoamWaypoints.Count > 0)
-                SetState(FarmState.Roaming, "Spot boş — yürünüyor…");
-            else
-                StatusChanged?.Invoke(this, $"Taranıyor… ({candidates.Count} mob)");
-            return;
-        }
-
-        _idleWatch.Restart();
-        _scanAttempts = 0; // #6: mob bulundu → kamera scan tur sayacını sıfırla (sonraki boşlukta baştan)
-
-        // Süresi dolan kara liste girdilerini temizle
+        // Süresi dolan kara liste girdilerini temizle (görünür aday olsun olmasın)
         long now = NowMs();
         _guardianBlacklist.RemoveAll(e => e.expireAt < now);
         _deadBlacklist.RemoveAll(e => e.expireAt < now);
-
-        // CharacterCenter (0,0) → kalibre edilmemiş; ekran merkezini fallback olarak kullan
-        var charCenter = (s.CharacterCenterX > 0 || s.CharacterCenterY > 0)
-            ? new PointF(s.CharacterCenterX, s.CharacterCenterY)
-            : new PointF(
-                (float)(System.Windows.SystemParameters.PrimaryScreenWidth  / 2.0),
-                (float)(System.Windows.SystemParameters.PrimaryScreenHeight / 2.0));
 
         // Kara listede (koruma mobu veya ölü/seçilemeyen ceset) olan adayları filtrele
         var filteredCandidates = candidates.Where(d =>
             !NearAny(d.Center, _guardianBlacklist, GuardianBlacklistRadiusPx) &&
             !NearAny(d.Center, _deadBlacklist,     DeadBlacklistRadiusPx)).ToList();
 
+        // Görünürde CANLI (blacklist dışı) hedef YOK — ya hiç aday yok ya da hepsi ceset/koruma.
+        // F4: her iki durum da idle saatini büyütür → ScanIdleMs sonra kamera-scan, yoksa roam tetiklenir.
+        // (Eskiden candidates>0 ama hepsi blacklist iken _idleWatch resetlenip bot boş dönüyordu = stall.)
         if (filteredCandidates.Count == 0)
         {
-            StatusChanged?.Invoke(this, $"Tüm adaylar kara listede — yeniden tarıyor…");
+            if (candidates.Count > 0)
+                Program.Log($"[DIAG] SCAN all-blacklisted cand={candidates.Count} deadBL={_deadBlacklist.Count} guardBL={_guardianBlacklist.Count}");
+            await HandleNoLiveTargetAsync(candidates.Count, s, ct);
             return;
         }
+
+        // Canlı hedef bulundu → idle + kamera scan tur sayacını sıfırla
+        _idleWatch.Restart();
+        _scanAttempts = 0;
+
+        // #1: karakter daima fiziksel ekran merkezi (kalibrasyon kaldırıldı).
+        var charCenter = ScreenCenter();
 
         var target = s.Priority switch
         {
@@ -71,6 +59,8 @@ public sealed partial class FarmEngine
         var mobInfo = _mobLibrary.FindById(target.ClassId);
         Telemetry.CurrentMob = target.ClassName;
 
+        Program.Log($"[DIAG] SCAN pick {target.ClassName}@({target.Center.X:0},{target.Center.Y:0}) conf={target.Confidence:0.00} dist={target.DistanceTo(charCenter):0} cand={candidates.Count} filt={filteredCandidates.Count} deadBL={_deadBlacklist.Count}");
+
         SetState(FarmState.Targeting, $"Hedef: {target.ClassName}");
         bool targeted = await TargetAsync(target, s, ct);
 
@@ -82,6 +72,21 @@ public sealed partial class FarmEngine
 
         SetState(FarmState.Engaging, $"Angaje: {target.ClassName}");
         await EngageAsync(target, mobInfo, s, ct);
+    }
+
+    // Görünürde canlı (blacklist dışı) hedef yokken ortak davranış: idle büyüdükçe kamera-scan ya da
+    // roam tetikle. Hem "hiç aday yok" hem "hepsi ceset/blacklist" (F4) buraya düşer → bot boş dönmez.
+    private async Task HandleNoLiveTargetAsync(int visibleCount, FarmSettings s, CancellationToken ct)
+    {
+        if (s.ScanModeEnabled && _idleWatch.ElapsedMilliseconds > s.ScanIdleMs)
+        {
+            await CameraScanStepAsync(s, ct);
+            return;
+        }
+        if (_idleWatch.ElapsedMilliseconds > s.IdleBeforeRoamMs && s.RoamWaypoints.Count > 0)
+            SetState(FarmState.Roaming, "Spot boş — yürünüyor…");
+        else
+            StatusChanged?.Invoke(this, $"Taranıyor… ({visibleCount} görünür, canlı hedef yok)");
     }
 
     // ── Targeting — moba tıkla, HP bar bekle ─────────────────────────────────
@@ -131,6 +136,7 @@ public sealed partial class FarmEngine
                     .FirstOrDefault();
                 if (liveTarget is null)
                 {
+                    Program.Log($"[DIAG] CLICK-SKIP attempt={i} target not in fresh frame @({target.Center.X:0},{target.Center.Y:0}) — no click, rescan");
                     StatusChanged?.Invoke(this, "Hedef taze karede yok — tıklama atlandı, yeniden tarıyor");
                     return false;
                 }
@@ -140,18 +146,22 @@ public sealed partial class FarmEngine
                 int cy = (int)(liveTarget.Center.Y + yoloOffsets[i].dy);
 
                 // Tıklamadan önce karakter bölgesi örneği (motion detection — küçük bölge yakalama).
-                byte[] preCrop = SampleCharRegionDirect(s);
+                byte[] preCrop = SampleCharRegionDirect();
 
+                Program.Log($"[DIAG] CLICK attempt={i} ({(i == 0 ? "isim" : "merkez")}) @({cx},{cy}) liveCenter=({liveTarget.Center.X:0},{liveTarget.Center.Y:0})");
                 await _router.MoveAbsAsync(cx, cy, ct);
                 await Task.Delay(s.ClickPreDelayMs, ct);
                 await _router.ClickAsync(MouseButton.Left, ct);
                 await Task.Delay(s.ClickPostDelayMs, ct);
 
                 if (hpBarCalibrated && await PollHpBarAsync(ct))
+                {
+                    Program.Log($"[DIAG] CLICK attempt={i} → HP BAR ✓ canlı hedef alındı @({cx},{cy})");
                     return await CheckGuardianAndReturnAsync(liveTarget, ct);
+                }
 
                 // HP bar yok — karakter hareket ettiyse auto-walk'ı iptal et
-                byte[] postCrop = SampleCharRegionDirect(s);
+                byte[] postCrop = SampleCharRegionDirect();
                 if (IsCharacterMoving(preCrop, postCrop))
                     await CancelClickMovementAsync(ct);
 
@@ -161,8 +171,17 @@ public sealed partial class FarmEngine
                     d.ClassId == target.ClassId &&
                     d.DistanceTo(liveTarget.Center) < 80f);
 
+                Program.Log($"[DIAG] CLICK attempt={i} → HP bar YOK (ıska); mobStillThere={mobStillThere}");
                 if (!mobStillThere)
+                {
+                    // Tık sonrası tespit o noktada yok → mob kaymış olabilir VEYA tıklanamayan statik
+                    // false-positive (log'da aynı (686,546)'ya conf 0.94 ile SONSUZ re-pick görüldü).
+                    // Kısa süre blacklist'le → aynı noktaya kilitlenip döngüye girmesin; F4 ile kamerayı
+                    // çevirip başka moba geçer. Gerçekten kaydıysa süre kısa, mob yeni konumunda geri alınır.
+                    _deadBlacklist.Add((target.Center, NowMs() + MissReselectSkipMs));
+                    Program.Log($"[DIAG] MISS-VANISH @({target.Center.X:0},{target.Center.Y:0}) kısa skip {MissReselectSkipMs}ms (re-pick döngüsü kır)");
                     return false;
+                }
 
                 StatusChanged?.Invoke(this,
                     $"Tıklama ıskandı ({(i == 0 ? "isim" : "merkez")}) — tekrar…");
@@ -173,7 +192,11 @@ public sealed partial class FarmEngine
             // bir sonraki tarama EN YAKIN DİĞER mob'u seçsin (ölüye tıklama döngüsünü kırar).
             if (hpBarCalibrated)
             {
-                _deadBlacklist.Add((target.Center, NowMs() + s.DeadBlacklistMs));
+                // F2: 2 tık da HP üretmedi → KESİN ceset/seçilemez. Normal kill-blacklist'ten UZUN tut (2×)
+                // ki uzun süre ekranda kalan ceset (log'da 10sn+) tekrar tekrar probe edilmesin.
+                long corpseExpire = NowMs() + s.DeadBlacklistMs * 2;
+                _deadBlacklist.Add((target.Center, corpseExpire));
+                Program.Log($"[DIAG] CORPSE tüm tıklamalar ıskaladı → blacklist @({target.Center.X:0},{target.Center.Y:0}) {s.DeadBlacklistMs * 2}ms (deadBL now {_deadBlacklist.Count})");
                 StatusChanged?.Invoke(this, "Hedef seçilemedi (ölü/ceset?) — kısa süre atlanıyor");
             }
             else
@@ -279,10 +302,11 @@ public sealed partial class FarmEngine
     /// BGR örnek döndürür. Tıklama öncesi/sonrası hareket karşılaştırması için — Sorun 1
     /// kapsamında tam ekran yakalama yerine kullanılır (daha hızlı tepki).
     /// </summary>
-    private static byte[] SampleCharRegionDirect(FarmSettings s, int radius = 12)
+    private static byte[] SampleCharRegionDirect(int radius = 12)
     {
-        int cx = s.CharacterCenterX, cy = s.CharacterCenterY;
-        if (cx <= 0 && cy <= 0) return []; // kalibre değil
+        // #1: karakter daima fiziksel ekran merkezi (kalibrasyon kaldırıldı).
+        var c = ScreenCenter();
+        int cx = (int)c.X, cy = (int)c.Y;
 
         int x0 = Math.Max(0, cx - radius);
         int y0 = Math.Max(0, cy - radius);

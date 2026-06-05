@@ -129,11 +129,16 @@
             <ColumnDefinition Width="Auto"/>
           </Grid.ColumnDefinitions>
           <TextBlock Grid.Column="0" FontSize="10" VerticalAlignment="Center"
-                     MaxWidth="130" TextTrimming="CharacterEllipsis" Foreground="#99E8DCC0"
+                     MaxWidth="110" TextTrimming="CharacterEllipsis" Foreground="#99E8DCC0"
                      Text="{Binding FiringComboName, FallbackValue=—, TargetNullValue=—}"/>
-          <TextBlock Grid.Column="1" FontSize="9" VerticalAlignment="Center" Foreground="#66E8DCC0">
-            <Run Text="Ping "/><Run Text="{Binding PingMs, Mode=OneWay, FallbackValue=—}"/><Run Text=" ms"/>
-          </TextBlock>
+          <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+            <TextBlock FontSize="9" Foreground="#66E8DCC0" Margin="0,0,6,0">
+              <Run Text="YOLO "/><Run Text="{Binding FarmInferenceFps, Mode=OneWay, FallbackValue=0}"/><Run Text=" FPS"/>
+            </TextBlock>
+            <TextBlock FontSize="9" Foreground="#66E8DCC0">
+              <Run Text="Ping "/><Run Text="{Binding PingMs, Mode=OneWay, FallbackValue=—}"/><Run Text=" ms"/>
+            </TextBlock>
+          </StackPanel>
         </Grid>
 
         <!-- Adım çubuğu (kombo ateşlerken — manuel veya farm) -->
@@ -205,6 +210,21 @@
                   IsEnabled="{Binding FarmRunning}" Cursor="Hand"
                   Background="#22D4A44A" BorderBrush="#44D4A44A" BorderThickness="1"
                   Foreground="#FFD4A44A" Padding="6,2" FontSize="10">
+            <Button.Template>
+              <ControlTemplate TargetType="Button">
+                <Border Background="{TemplateBinding Background}"
+                        BorderBrush="{TemplateBinding BorderBrush}"
+                        BorderThickness="{TemplateBinding BorderThickness}"
+                        CornerRadius="4" Padding="{TemplateBinding Padding}">
+                  <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                </Border>
+                <ControlTemplate.Triggers>
+                  <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#33D4A44A"/>
+                  </Trigger>
+                </ControlTemplate.Triggers>
+              </ControlTemplate>
+            </Button.Template>
             <TextBlock>
               <TextBlock.Style>
                 <Style TargetType="TextBlock">

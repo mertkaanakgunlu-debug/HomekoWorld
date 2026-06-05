@@ -5,7 +5,7 @@ public class AppState
     // Bump when combo timing semantics change (forces fresh default combos on load)
     public int Version { get; set; } = 0;
 
-    // "wifi" | "usb" | "local"  (eski "kernel" değeri startup'ta "local"'e migrate edilir)
+    // "wifi" | "usb" | "local" | "rp2040"  (eski "kernel" değeri startup'ta "local"'e migrate edilir)
     public string ConnectionMode { get; set; } = "local";
 
     // "tr" | "en"
@@ -51,6 +51,15 @@ public class AppState
 
     // ---- Faz 17: Oto Farm ----
     public Farm.FarmSettings Farm { get; set; } = new();
+
+    /// <summary>
+    /// Kalibrasyonun yapıldığı çözünürlük (fiziksel piksel) — tüm kalibre koordinatlarının
+    /// "master"ı. Başka çözünürlükte çalışınca koordinatlar buradan anchor-aware ölçeklenir
+    /// (<see cref="Services.Capture.ResolutionMapper"/>). 0 = bilinmiyor → ölçekleme yapılmaz
+    /// (identity; eski kullanıcı kendi native çözünürlüğünde doğru kalır).
+    /// </summary>
+    public int CalibrationRefWidth  { get; set; }
+    public int CalibrationRefHeight { get; set; }
 
     /// <summary>Faz 22: eski yavaş tıklama/tick varsayılanlarının bir kez agresife taşındığı işareti.</summary>
     public bool AggressiveTimingMigrated { get; set; }

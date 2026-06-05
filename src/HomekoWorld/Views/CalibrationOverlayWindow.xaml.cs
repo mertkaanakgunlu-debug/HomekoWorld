@@ -10,6 +10,8 @@ public partial class CalibrationOverlayWindow : Window
     private System.Windows.Point _start;
     private bool _drawing;
     private readonly bool _singleClickMode;
+    private readonly bool _twoCorner;                 // iki-köşe modu: 1. tık köşe A, 2. tık karşı köşe
+    private bool _twoCornerArmed;                      // köşe A yerleştirildi mi
     private readonly System.Drawing.Size? _fixedSize; // fiziksel piksel cinsinden sabit boyut
     private double _fixedWDip, _fixedHDip;            // WPF DIP karşılığı
     private System.Windows.Point _lastMousePos;
@@ -20,18 +22,22 @@ public partial class CalibrationOverlayWindow : Window
     /// <param name="instruction">Özel talimat metni.</param>
     /// <param name="singleClickMode">true = ilk tıklamada onaylar.</param>
     /// <param name="fixedSize">Sabit fiziksel piksel boyutu — sürükle-bırak yerine fareyi takip eden sabit dikdörtgen.</param>
+    /// <param name="twoCorner">true = iki-köşe modu: 1. tık sol-üst köşe, 2. tık karşı (sağ-alt) köşe; dikdörtgen ikisinin sınır kutusudur.</param>
     public CalibrationOverlayWindow(string? instruction = null, bool singleClickMode = false,
-                                    System.Drawing.Size? fixedSize = null)
+                                    System.Drawing.Size? fixedSize = null, bool twoCorner = false)
     {
         _singleClickMode = singleClickMode;
         _fixedSize       = fixedSize;
+        _twoCorner       = twoCorner;
         InitializeComponent();
 
-        string suffix = fixedSize.HasValue
-            ? "  |  İptal: Escape"
-            : singleClickMode
+        string suffix = twoCorner
+            ? "  İlk köşe → karşı köşe  |  İptal: Escape"
+            : fixedSize.HasValue
                 ? "  |  İptal: Escape"
-                : "  Onay: bırak veya Enter  |  İptal: Escape";
+                : singleClickMode
+                    ? "  |  İptal: Escape"
+                    : "  Onay: bırak veya Enter  |  İptal: Escape";
 
         if (instruction is not null)
             InstructionText.Text = instruction + suffix;
@@ -52,6 +58,36 @@ public partial class CalibrationOverlayWindow : Window
 
     private void Canvas_MouseDown(object sender, MouseButtonEventArgs e)
     {
+        if (_twoCorner)
+        {
+            var pos = e.GetPosition(DrawCanvas);
+            if (!_twoCornerArmed)
+            {
+                // 1. tık: köşe A'yı sabitle, canlı dikdörtgeni başlat.
+                _start = pos;
+                _twoCornerArmed = true;
+                SelectionRect.Visibility = Visibility.Visible;
+                Canvas.SetLeft(SelectionRect, pos.X);
+                Canvas.SetTop(SelectionRect,  pos.Y);
+                SelectionRect.Width  = 0;
+                SelectionRect.Height = 0;
+                return;
+            }
+
+            // 2. tık: karşı köşe → A ile B'nin sınır kutusu (fiziksel piksel).
+            var (dpiX, dpiY) = GetDpiScale();
+            var x = Math.Min(_start.X, pos.X);
+            var y = Math.Min(_start.Y, pos.Y);
+            var w = Math.Abs(pos.X - _start.X);
+            var h = Math.Abs(pos.Y - _start.Y);
+            SelectedRect = new System.Drawing.Rectangle(
+                (int)(x * dpiX), (int)(y * dpiY),
+                Math.Max(1, (int)(w * dpiX)), Math.Max(1, (int)(h * dpiY)));
+            Confirmed = true;
+            Close();
+            return;
+        }
+
         if (_fixedSize.HasValue)
         {
             var pos = e.GetPosition(DrawCanvas);
@@ -89,6 +125,18 @@ public partial class CalibrationOverlayWindow : Window
     {
         _lastMousePos = e.GetPosition(DrawCanvas);
 
+        if (_twoCorner)
+        {
+            if (!_twoCornerArmed) return; // henüz köşe A yok
+            var bx = Math.Min(_start.X, _lastMousePos.X);
+            var by = Math.Min(_start.Y, _lastMousePos.Y);
+            Canvas.SetLeft(SelectionRect, bx);
+            Canvas.SetTop(SelectionRect,  by);
+            SelectionRect.Width  = Math.Abs(_lastMousePos.X - _start.X);
+            SelectionRect.Height = Math.Abs(_lastMousePos.Y - _start.Y);
+            return;
+        }
+
         if (_fixedSize.HasValue)
         {
             Canvas.SetLeft(SelectionRect, _lastMousePos.X);
@@ -109,6 +157,7 @@ public partial class CalibrationOverlayWindow : Window
 
     private void Canvas_MouseUp(object sender, MouseButtonEventArgs e)
     {
+        if (_twoCorner)  return; // iki-köşe modunu tıklamalar yürütür
         if (_fixedSize.HasValue) return; // MouseDown zaten kapattı
         if (!_drawing) return;
         _drawing = false;

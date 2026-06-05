@@ -6,6 +6,7 @@ namespace HomekoWorld.Services.Yolo;
 public interface IYoloInferrer
 {
     IReadOnlyList<Detection> Infer(System.Drawing.Bitmap frame);
+    Task WarmUpAsync(Action<string>? onStatusChanged = null);
 
     /// <summary>Güven eşiği (0-1). Altındaki tespitler elenir; FarmSettings.ConfidenceThreshold'dan beslenir.</summary>
     float ConfThreshold { get; set; }

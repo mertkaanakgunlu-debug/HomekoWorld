@@ -1,6 +1,6 @@
 namespace HomekoWorld.Hardware;
 
-public enum TransportMode { Wifi, Usb, Local }
+public enum TransportMode { Wifi, Usb, Local, Rp2040 }
 
 // Routes IKeyDeviceTransport calls to the appropriate transport implementation.
 // ComboEngine holds a single IKeyDeviceTransport reference and never needs to
@@ -9,6 +9,7 @@ public sealed class TransportRouter : IKeyDeviceTransport
 {
     private readonly HidBridgeClient     _net;
     private readonly LocalInputTransport _local;
+    private readonly Rp2040HidTransport  _rp2040;
 
     // Volatile so background threads (ComboEngine tasks) always see the latest value
     private volatile IKeyDeviceTransport _active;
@@ -20,10 +21,11 @@ public sealed class TransportRouter : IKeyDeviceTransport
     public event EventHandler<string>? Disconnected;
     public event EventHandler<long>?   LatencyMs;
 
-    public TransportRouter(HidBridgeClient net, LocalInputTransport local)
+    public TransportRouter(HidBridgeClient net, LocalInputTransport local, Rp2040HidTransport rp2040)
     {
         _net    = net;
         _local  = local;
+        _rp2040 = rp2040;
         _active = net;
 
         // Wire inner events once; only re-fire if that inner is currently active.
@@ -34,12 +36,17 @@ public sealed class TransportRouter : IKeyDeviceTransport
         _local.LineReceived += (s, e) => { if (_active == _local) LineReceived?.Invoke(this, e); };
         _local.Disconnected += (s, e) => { if (_active == _local) Disconnected?.Invoke(this, e); };
         _local.LatencyMs    += (s, e) => { if (_active == _local) LatencyMs?.Invoke(this, e);    };
+
+        _rp2040.LineReceived += (s, e) => { if (_active == _rp2040) LineReceived?.Invoke(this, e); };
+        _rp2040.Disconnected += (s, e) => { if (_active == _rp2040) Disconnected?.Invoke(this, e); };
+        _rp2040.LatencyMs    += (s, e) => { if (_active == _rp2040) LatencyMs?.Invoke(this, e);    };
     }
 
     // Switches to local SendInput mode
     public void SwitchToLocal()
     {
         _net.Disconnect();
+        _rp2040.Disconnect();
         Mode    = TransportMode.Local;
         _active = _local;
     }
@@ -48,9 +55,22 @@ public sealed class TransportRouter : IKeyDeviceTransport
     public void SwitchToNet(TransportMode netMode = TransportMode.Wifi)
     {
         _local.Disconnect();
+        _rp2040.Disconnect();
         Mode    = netMode;
         _active = _net;
     }
+
+    // Faz 30: RP2040 Zero USB-HID köprüsü (gerçek klavye+fare donanımı)
+    public void SwitchToRp2040()
+    {
+        _net.Disconnect();
+        _local.Disconnect();
+        Mode    = TransportMode.Rp2040;
+        _active = _rp2040;
+    }
+
+    // Faz 9: RP2040'ı BOOTSEL'e sokar (app-içi firmware güncelleme).
+    public Task RebootRp2040ToBootloaderAsync() => _rp2040.RebootToBootloaderAsync();
 
     // ── IKeyDeviceTransport forwarding ────────────────────────────────────────
 
@@ -103,5 +123,6 @@ public sealed class TransportRouter : IKeyDeviceTransport
     {
         _net.Dispose();
         _local.Dispose();
+        _rp2040.Dispose();
     }
 }
