@@ -26,14 +26,32 @@ public static class OrtEpFactory
         try
         {
             using var factory = DXGI.CreateDXGIFactory1<IDXGIFactory1>();
+            (bool hasGpu, string name, uint vendorId) bestGpu = (false, "", 0);
+
             for (uint i = 0; factory.EnumAdapters1(i, out var adapter).Success && adapter is not null; i++)
             {
                 AdapterDescription1 desc = adapter.Description1;
                 adapter.Dispose();
+                
                 if ((desc.Flags & AdapterFlags.Software) != 0) continue; // yazılım adaptörü → atla
+                
                 string name = string.IsNullOrWhiteSpace(desc.Description) ? "GPU" : desc.Description;
-                return (true, name, (uint)desc.VendorId);
+                uint vendor = (uint)desc.VendorId;
+
+                // NVIDIA (0x10DE) veya AMD (0x1002) bulursak direkt onu seç ve dön (harici GPU önceliği)
+                if (vendor == 0x10DE || vendor == 0x1002)
+                {
+                    return (true, name, vendor);
+                }
+
+                // Aksi takdirde (Intel vs.) ilk bulduğumuzu yedekte tutalım
+                if (!bestGpu.hasGpu)
+                {
+                    bestGpu = (true, name, vendor);
+                }
             }
+
+            return bestGpu;
         }
         catch { /* DXGI yoksa/başarısızsa GPU yok say */ }
         return (false, "", 0);

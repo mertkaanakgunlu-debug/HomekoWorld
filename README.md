@@ -1,14 +1,14 @@
 # HomekoWorld · Combo Assistant & Auto Farm
 
-Yapay zeka (YOLOv8) destekli, donanımsal (RP2040) USB HID tabanlı Knight Online kombo ve oto-farm asistanı. 
+Yapay zeka (YOLO) destekli, donanımsal (RP2040) USB HID tabanlı Knight Online kombo ve oto-farm asistanı. 
 Anti-cheat sistemlerine karşı maksimum güvenlik sağlamak için tüm tuş ve mouse tıklama sinyalleri **Raspberry Pi Pico (RP2040)** üzerinden donanımsal klavye/mouse olarak gönderilir.
 
 ## 🚀 Özellikler
 
 - **Donanımsal HID (RP2040):** Bilgisayara takılan bir Raspberry Pi Pico, sanal COM port üzerinden komutları alır ve gerçek bir USB Klavye/Mouse gibi bilgisayara geri tuş basar.
-- **Yapay Zeka Oto-Farm (YOLOv8):** Ekranda beliren mobları tespit eder, otomatik Z seçimi yapar ve yanlarına gidip saldırır.
-- **NVIDIA TensorRT Desteği:** RTX ve GTX serisi kartlarda 640x640 veya 960x960 çözünürlükteki yapay zeka modellerini 80-100 FPS hızında çalıştırır. TensorRT motoru arka planda otomatik optimize edilir.
-- **Otomatik Kütüphane İndirici:** Uygulama, kullanıcının bilgisayarında CUDA/TensorRT yoksa tek tıkla GitHub üzerinden `cuda_libs.zip` dosyasını çekip kurar.
+- **Yapay Zeka Oto-Farm (YOLO):** Ekranda beliren mobları tespit eder, otomatik Z seçimi yapar ve yanlarına gidip saldırır.
+- **NVIDIA CUDA ONNX Desteği:** RTX ve GTX serisi kartlarda 640x640 veya 960x960 çözünürlükteki yapay zeka modellerini yüksek FPS hızında çalıştırır. TensorRT bağımlılığı kaldırılmış ve tamamen saf CUDA altyapısına geçilmiştir.
+- **Otomatik Kütüphane İndirici (Smart Installer):** Kurulum dosyası sadece ~150 MB'tır. Uygulama, kullanıcının bilgisayarında NVIDIA ekran kartı (Harici veya Hibrit) tespit ederse ve sistemde CUDA DLL'leri yoksa, tek tıkla GitHub üzerinden gerekli kütüphaneleri `cuda_core.zip` ve `cudnn_core.zip` olarak çekip sessizce kurar.
 - **Dinamik HP Bar Takibi (HSV):** Mobların can barlarını görüntü işleme (OpenCV/HSV) ile okur. Mob ölünce diğerine geçer.
 - **Otomatik Pot (AutoPot):** Karakterin HP ve MP barını okuyarak belirlediğiniz yüzdelerin altına düştüğünde donanımsal olarak tuş basıp pot basar.
 - **Gelişmiş Kombo Motoru:** Priest (Helis), Assassin (Minor) vb. kombolarını kusursuz zamanlamayla uygular.
@@ -22,22 +22,18 @@ Anti-cheat sistemlerine karşı maksimum güvenlik sağlamak için tüm tuş ve 
 
 ## 🛠 Kurulum
 
-### 1. RP2040 Firmware (Donanım)
+### 1. PC Uygulaması
+`Output` klasöründeki yayınlanan `HomekoWorld_Kurulum.exe` kurulum sihirbazını çalıştırın.
+Uygulama açılışında bilgisayarınızda bir NVIDIA GPU tespit ederse size otomatik olarak CUDA Hızlandırma Paketi indirme ekranı sunacaktır.
+
+### 2. RP2040 Firmware (Donanım)
 1. Raspberry Pi Pico'yu bootloader modunda (BOOTSEL tuşuna basılı tutarak) bilgisayara takın.
 2. `firmware/rp2040-bridge` klasöründe derlediğiniz (veya yayınlanan) `.uf2` dosyasını, bilgisayarımda beliren "RPI-RP2" sürücüsünün içine sürükleyip bırakın.
 3. Cihaz kendini yeniden başlatacak ve "HomekoWorld HID" olarak tanınacaktır.
 
-### 2. PC Uygulaması
-Projeyi derleyip veya hazır `publish-single` klasöründeki dosyaları kullanabilirsiniz:
-```bash
-cd src/HomekoWorld
-dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o ../../publish-single
-```
-Yayınlanan `HomekoWorld.exe` dosyasını çalıştırın. Uygulama ilk açılışta `mobs.json` ve `.onnx` dosyalarınızı otomatik keşfedecektir.
+## 🧠 CUDA ONNX Yapay Zeka Altyapısı
 
-## 🧠 TensorRT İlk Isınma (Warm-Up)
-
-Uygulama açıldığında, yapay zeka motoru ilk kullanıma özel olarak ekran kartınızın mimarisine göre kendini optimize eder. Bu işlem sırasında arayüzün alt kısmında altın sarısı **dönen bir yükleniyor çemberi** göreceksiniz. Yaklaşık 1-3 dakika süren bu işlem sonrası yazı yeşile dönüp `🚀 TensorRT Hazır` olduğunda Oto-Farm'ı 0 donma ile başlatabilirsiniz.
+Eski nesil TensorRT bağımlılığı kaldırılarak doğrudan ONNX Runtime'ın CUDA Execution Provider modülüne geçilmiştir. Bu sayede uygulama çok daha hızlı açılmakta ve uzun süren "Isınma (Warm-Up)" optimizasyonlarına gerek kalmamaktadır.
 
 ---
 

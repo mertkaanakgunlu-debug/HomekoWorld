@@ -29,9 +29,10 @@ Name: "turkish"; MessagesFile: "compiler:Languages\Turkish.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Files]
-; EXE ve DLL Dosyaları
+; EXE, DLL ve JSON Dosyaları
 Source: "Build\HomekoWorld.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "Build\*.dll"; DestDir: "{app}"; Flags: ignoreversion
+Source: "Build\*.json"; DestDir: "{app}"; Flags: ignoreversion
 
 ; Assets klasörü ve içindeki her şey (alt klasörlerle birlikte)
 Source: "Build\Assets\*"; DestDir: "{app}\Assets"; Flags: ignoreversion recursesubdirs createallsubdirs
