@@ -45,10 +45,6 @@ public sealed partial class FarmEngine
                 {
                     Telemetry.InferenceFps = frames;
                     
-                    if (frames > 0)
-                    {
-                        Program.Log($"[DIAG] FPS: {frames} | AvgCap: {totalCapMs/frames}ms | AvgInf: {totalInfMs/frames}ms | AvgWait: {totalWaitMs/frames}ms");
-                    }
                     totalCapMs = 0;
                     totalInfMs = 0;
                     totalWaitMs = 0;

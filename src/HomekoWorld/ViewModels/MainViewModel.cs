@@ -230,6 +230,11 @@ public partial class MainViewModel : ObservableObject
     private readonly FarmEngine      _farmEngine;
     private readonly MobLibrary      _mobLibrary;
     private readonly AutoPotService  _autoPotService;
+    private readonly AutonomousPlayerEngine _autonomousEngine;
+    private readonly HomekoWorld.Services.Autonomous.CoordinateReader _coordReader;
+    private readonly HomekoWorld.Services.Autonomous.WorldNavigator   _navigator;
+    private readonly HomekoWorld.Services.Autonomous.InventoryReader  _inventoryReader;
+    private readonly HomekoWorld.Services.Autonomous.MerchantTrader   _merchantTrader;
 
     private CancellationTokenSource? _reconnectCts;
 
@@ -247,7 +252,12 @@ public partial class MainViewModel : ObservableObject
         WalkToMobEngine      wtmEngine,
         FarmEngine           farmEngine,
         MobLibrary           mobLibrary,
-        AutoPotService       autoPotService)
+        AutoPotService       autoPotService,
+        AutonomousPlayerEngine autonomousEngine,
+        HomekoWorld.Services.Autonomous.CoordinateReader coordinateReader,
+        HomekoWorld.Services.Autonomous.WorldNavigator   worldNavigator,
+        HomekoWorld.Services.Autonomous.InventoryReader  inventoryReader,
+        HomekoWorld.Services.Autonomous.MerchantTrader   merchantTrader)
     {
         _router        = router;
         _transport     = router;
@@ -262,6 +272,11 @@ public partial class MainViewModel : ObservableObject
         _farmEngine     = farmEngine;
         _mobLibrary     = mobLibrary;
         _autoPotService = autoPotService;
+        _autonomousEngine = autonomousEngine;
+        _coordReader      = coordinateReader;
+        _navigator        = worldNavigator;
+        _inventoryReader  = inventoryReader;
+        _merchantTrader   = merchantTrader;
         Editor          = editor;
 
         _state         = state;
@@ -340,6 +355,28 @@ public partial class MainViewModel : ObservableObject
         _farmEngine.TelemetryUpdated += (_, _) =>
             System.Threading.Interlocked.Exchange(ref _telemetryDirty, 1);
         _farmEngine.KeyLogged += (_, e) => EnqueueActivity(e.Text, e.Kind);
+
+        // Faz 31/32/33/34/35: Otonom Oyuncu — kalıcı ayarları yükle (backing field ctor'da = MVVMTK0034 yok) + event'leri bağla
+        _autonomousEnabled      = _state.Autonomous.Enabled;
+        // Faz 33 envanter ayarları
+        _inventoryKey              = _state.Autonomous.InventoryKey;
+        _inventoryCheckEveryKills  = _state.Autonomous.InventoryCheckEveryKills.ToString();
+        _inventoryFullThreshold    = _state.Autonomous.InventoryFullThreshold;
+        _inventoryOpenDelayMs      = _state.Autonomous.InventoryOpenDelayMs.ToString();
+        // Faz 34 nav ayarları
+        _navCameraPixPerDeg     = _state.Autonomous.NavCameraPixPerDeg;
+        _navToleranceCoords     = _state.Autonomous.NavToleranceCoords.ToString();
+        _navStepMs              = _state.Autonomous.NavStepMs.ToString();
+        _navCameraInvert        = _state.Autonomous.NavCameraInvert;
+        // Faz 35 Town/portal ayarları
+        _townTpKey              = _state.Autonomous.TownTpKey;
+        _townTpWaitMs           = _state.Autonomous.TownTpWaitMs.ToString();
+        _portalConfirmKey       = _state.Autonomous.PortalConfirmKey;
+        _portalWaitMs           = _state.Autonomous.PortalWaitMs.ToString();
+        _portalClickOffsetX     = _state.Autonomous.PortalClickOffsetX.ToString();
+        _portalClickOffsetY     = _state.Autonomous.PortalClickOffsetY.ToString();
+        _portalInteractDelayMs  = _state.Autonomous.PortalInteractDelayMs.ToString();
+        WireAutonomous();
 
         // Faz 17: Farm — populate mob list from persisted mobs.json
         if (!string.IsNullOrWhiteSpace(_farmMobsJsonPath))

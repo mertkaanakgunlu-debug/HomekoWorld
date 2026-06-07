@@ -44,14 +44,27 @@ public partial class App : Application
 
         try
         {
-            bool isNvidia = HomekoWorld.Services.Yolo.CudaInstallerService.IsNvidiaGpu();
-            bool isMissing = HomekoWorld.Services.Yolo.CudaInstallerService.IsMissingLibraries();
+            // Pre-MainWindow diyalog (CUDA indirme penceresi) kapanınca varsayılan OnLastWindowClose ile
+            // uygulama kapanıp MainWindow oluşturulamıyordu ("Application nesnesi kapatılıyor"). MainWindow
+            // gösterilene kadar explicit shutdown'a al; sonra OnMainWindowClose'a geçilir.
+            this.ShutdownMode = System.Windows.ShutdownMode.OnExplicitShutdown;
 
-            if (isNvidia && isMissing)
+            try
             {
-                var cudaWindow = new Views.CudaDownloadWindow();
-                bool? result = cudaWindow.ShowDialog();
-                // İndirme reddedildiyse veya başarısız olduysa CPU modunda devam eder
+                bool isNvidia = HomekoWorld.Services.Yolo.CudaInstallerService.IsNvidiaGpu();
+                bool isMissing = HomekoWorld.Services.Yolo.CudaInstallerService.IsMissingLibraries();
+
+                if (isNvidia && isMissing)
+                {
+                    var cudaWindow = new Views.CudaDownloadWindow();
+                    cudaWindow.ShowDialog();
+                    // İndirme reddedildiyse veya başarısız olduysa CPU modunda devam eder
+                }
+            }
+            catch (Exception cudaEx)
+            {
+                // CUDA kontrol/indirme penceresi başlatmayı ASLA engellememeli → logla, CPU/DirectML ile devam.
+                Program.Log($"[CUDA] pencere atlandı: {cudaEx.Message}");
             }
 
             Program.Log("DI services kuruluyor...");
@@ -71,6 +84,8 @@ public partial class App : Application
 
             Program.Log("MainWindow.Show() çağrılıyor...");
             MainWindow.Show();
+            // Ana pencere açıldı → normal kapanış semantiği: ana pencere kapanınca uygulama çıkar.
+            this.ShutdownMode = System.Windows.ShutdownMode.OnMainWindowClose;
             Program.Log("Pencere gösterildi.");
 
             // Smoke testi: --smoke argümanıyla başlatılınca pencere açılır, kısa süre sonra
@@ -152,6 +167,22 @@ public partial class App : Application
 
         // Faz 18 — Global AutoPot
         services.AddSingleton<AutoPotService>();
+
+        // Faz 32 — Koordinat okuma (glyph eşleştirmeli rakam tanıma)
+        services.AddSingleton<Services.Autonomous.GlyphDigitReader>();
+        services.AddSingleton<Services.Autonomous.CoordinateReader>();
+
+        // Faz 34 — WorldNavigator (probe-correct koordinat navigasyonu)
+        services.AddSingleton<Services.Autonomous.WorldNavigator>();
+
+        // Faz 33 — InventoryReader (envanter doluluğu tarama)
+        services.AddSingleton<Services.Autonomous.InventoryReader>();
+
+        // Faz 36 — MerchantTrader (NPC etkileşimi ve satış)
+        services.AddSingleton<Services.Autonomous.MerchantTrader>();
+
+        // Faz 31 — Otonom Oyuncu orkestratörü (FarmEngine üstünde FSM; WorldNavigator bağımlı)
+        services.AddSingleton<AutonomousPlayerEngine>();
 
         // Dispatchers & VMs
         services.AddSingleton<BindingDispatcher>();

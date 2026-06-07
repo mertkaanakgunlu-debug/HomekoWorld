@@ -38,7 +38,9 @@ public partial class MainViewModel
 
     partial void OnActiveChanged(bool value)
     {
-        // Makro "Başlat" kapatılınca aktif farm döngüsünü durdur
+        // Makro "Başlat" kapatılınca otonom modu + aktif farm döngüsünü durdur
+        if (!value && AutonomousRunning)
+            StopAutonomous();
         if (!value && FarmRunning)
             StopFarm();
 

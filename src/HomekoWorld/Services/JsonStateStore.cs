@@ -88,9 +88,14 @@ public sealed class JsonStateStore
             if (state.Farm.DefaultEngagementRangePx == 200)
                 state.Farm.DefaultEngagementRangePx = 120;
 
-            // Migration: ConfidenceThreshold 0.45 → 0.65 (false positive azaltma)
-            if (state.Farm.ConfidenceThreshold <= 0.45)
-                state.Farm.ConfidenceThreshold = 0.65;
+            // Migration: ConfidenceThreshold 0.35 (eski sabit) → 0.65 (false positive azaltma).
+            // Flag ile korunur → kullanıcı sonradan UI'dan bilerek düşürürse (ör. 0.30) ezilmez.
+            if (!state.ConfidenceThresholdMigrated)
+            {
+                if (state.Farm.ConfidenceThreshold <= 0.45)
+                    state.Farm.ConfidenceThreshold = 0.65;
+                state.ConfidenceThresholdMigrated = true;
+            }
 
             // Migration: WtmTickMs 30/50 → 15 (F1). KOŞULSUZ (flag-bağımsız): bu satır eskiden
             // DetectionFpsBoost flag bloğunun İÇİNDEydi; flag'i zaten set olmuş kullanıcılarda hiç
@@ -160,6 +165,12 @@ public sealed class JsonStateStore
                 state.Farm.MpBarTop    = state.Farm.MpBarY;
                 state.Farm.MpBarHeight = 1;
             }
+
+            // Faz 41 — envanter açılma animasyonu: eski 400ms varsayılanı bazen yarı-açık/animasyonlu
+            // kare yakalıyordu (hatalı doluluk → sahte %89-100). Eski default 400 → 1000 (animasyon
+            // otursun). UI'dan tunable; yalnız eski default'a (400) dokun.
+            if (state.Autonomous.InventoryOpenDelayMs == 400)
+                state.Autonomous.InventoryOpenDelayMs = 1000;
 
             return state;
         }

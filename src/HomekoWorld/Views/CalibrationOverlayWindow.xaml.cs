@@ -1,4 +1,5 @@
 using System.Drawing;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -75,14 +76,7 @@ public partial class CalibrationOverlayWindow : Window
             }
 
             // 2. tık: karşı köşe → A ile B'nin sınır kutusu (fiziksel piksel).
-            var (dpiX, dpiY) = GetDpiScale();
-            var x = Math.Min(_start.X, pos.X);
-            var y = Math.Min(_start.Y, pos.Y);
-            var w = Math.Abs(pos.X - _start.X);
-            var h = Math.Abs(pos.Y - _start.Y);
-            SelectedRect = new System.Drawing.Rectangle(
-                (int)(x * dpiX), (int)(y * dpiY),
-                Math.Max(1, (int)(w * dpiX)), Math.Max(1, (int)(h * dpiY)));
+            SelectedRect = RectFromCanvas(_start, pos);
             Confirmed = true;
             Close();
             return;
@@ -90,11 +84,9 @@ public partial class CalibrationOverlayWindow : Window
 
         if (_fixedSize.HasValue)
         {
-            var pos = e.GetPosition(DrawCanvas);
-            var (dpiX, dpiY) = GetDpiScale();
+            var p = ToPhysical(e.GetPosition(DrawCanvas));
             SelectedRect = new System.Drawing.Rectangle(
-                (int)(pos.X * dpiX), (int)(pos.Y * dpiY),
-                _fixedSize.Value.Width, _fixedSize.Value.Height);
+                p.X, p.Y, _fixedSize.Value.Width, _fixedSize.Value.Height);
             Confirmed = true;
             Close();
             return;
@@ -102,10 +94,8 @@ public partial class CalibrationOverlayWindow : Window
 
         if (_singleClickMode)
         {
-            var pos = e.GetPosition(DrawCanvas);
-            var (dpiX, dpiY) = GetDpiScale();
-            SelectedRect = new System.Drawing.Rectangle(
-                (int)(pos.X * dpiX), (int)(pos.Y * dpiY), 1, 1);
+            var p = ToPhysical(e.GetPosition(DrawCanvas));
+            SelectedRect = new System.Drawing.Rectangle(p.X, p.Y, 1, 1);
             Confirmed = true;
             Close();
             return;
@@ -164,17 +154,10 @@ public partial class CalibrationOverlayWindow : Window
         DrawCanvas.ReleaseMouseCapture();
 
         var cur = e.GetPosition(DrawCanvas);
-        var x   = Math.Min(_start.X, cur.X);
-        var y   = Math.Min(_start.Y, cur.Y);
-        var w   = Math.Abs(cur.X - _start.X);
-        var h   = Math.Abs(cur.Y - _start.Y);
-
-        if (w > 10 && h > 10)
+        // En az 10 DIP sürüklendiyse onayla.
+        if (Math.Abs(cur.X - _start.X) > 10 && Math.Abs(cur.Y - _start.Y) > 10)
         {
-            var (dpiX, dpiY) = GetDpiScale();
-            SelectedRect = new System.Drawing.Rectangle(
-                (int)(x * dpiX), (int)(y * dpiY),
-                (int)(w * dpiX), (int)(h * dpiY));
+            SelectedRect = RectFromCanvas(_start, cur);
             Confirmed = true;
             Close();
         }
@@ -191,29 +174,62 @@ public partial class CalibrationOverlayWindow : Window
         {
             if (_fixedSize.HasValue)
             {
-                var (dpiX, dpiY) = GetDpiScale();
+                var p = ToPhysical(_lastMousePos);
                 SelectedRect = new System.Drawing.Rectangle(
-                    (int)(_lastMousePos.X * dpiX), (int)(_lastMousePos.Y * dpiY),
-                    _fixedSize.Value.Width, _fixedSize.Value.Height);
+                    p.X, p.Y, _fixedSize.Value.Width, _fixedSize.Value.Height);
                 Confirmed = true;
                 Close();
             }
             else if (SelectionRect.Width > 10)
             {
-                var x = Canvas.GetLeft(SelectionRect);
-                var y = Canvas.GetTop(SelectionRect);
-                var (dpiX, dpiY) = GetDpiScale();
-                SelectedRect = new System.Drawing.Rectangle(
-                    (int)(x                   * dpiX), (int)(y                    * dpiY),
-                    (int)(SelectionRect.Width  * dpiX), (int)(SelectionRect.Height * dpiY));
+                var tl = new System.Windows.Point(Canvas.GetLeft(SelectionRect), Canvas.GetTop(SelectionRect));
+                var br = new System.Windows.Point(tl.X + SelectionRect.Width, tl.Y + SelectionRect.Height);
+                SelectedRect = RectFromCanvas(tl, br);
                 Confirmed = true;
                 Close();
             }
         }
     }
 
+    // ── Koordinat dönüşümü ────────────────────────────────────────────────────
+    // WPF DIP fare/canvas koordinatını YAKALAMA uzayındaki fiziksel ekran pikseline çevirir.
+    // PointToScreen, süreç DPI-farkındalığını VE pencerenin gerçek ekran konumunu (maximized
+    // borderless taşması dahil) otomatik hesaba katar → kalibre dikdörtgen yakalanan alanla
+    // birebir hizalı (eski ×TransformToDevice yaklaşımı Canvas orijinini 0,0 varsayıp sağ-alta
+    // kaydırıyordu, özellikle yüksek-DPI 2560×1600'de).
+    private System.Drawing.Point ToPhysical(System.Windows.Point canvasPoint)
+    {
+        var s = DrawCanvas.PointToScreen(canvasPoint);
+        return new System.Drawing.Point((int)Math.Round(s.X), (int)Math.Round(s.Y));
+    }
+
+    // İki canvas-DIP köşesinden fiziksel sınır kutusu (PointToScreen ile).
+    private System.Drawing.Rectangle RectFromCanvas(System.Windows.Point a, System.Windows.Point b)
+    {
+        var pa = ToPhysical(a);
+        var pb = ToPhysical(b);
+        int x = Math.Min(pa.X, pb.X);
+        int y = Math.Min(pa.Y, pb.Y);
+        int w = Math.Abs(pb.X - pa.X);
+        int h = Math.Abs(pb.Y - pa.Y);
+        return new System.Drawing.Rectangle(x, y, Math.Max(1, w), Math.Max(1, h));
+    }
+
+    [DllImport("user32.dll")] private static extern int GetSystemMetrics(int nIndex);
+
+    /// <summary>
+    /// Yalnız sabit-boyut modunun GÖRSEL dikdörtgenini DIP'e ölçeklemek için (kozmetik).
+    /// Yakalama koordinatları artık <see cref="ToPhysical"/>/PointToScreen ile hesaplanır.
+    /// </summary>
     private (double X, double Y) GetDpiScale()
     {
+        int    physW = GetSystemMetrics(0); // SM_CXSCREEN
+        int    physH = GetSystemMetrics(1); // SM_CYSCREEN
+        double dipW  = SystemParameters.PrimaryScreenWidth;
+        double dipH  = SystemParameters.PrimaryScreenHeight;
+        if (physW > 0 && physH > 0 && dipW > 0 && dipH > 0)
+            return (physW / dipW, physH / dipH);
+
         var src = PresentationSource.FromVisual(this);
         if (src?.CompositionTarget is null) return (1.0, 1.0);
         return (src.CompositionTarget.TransformToDevice.M11,

@@ -61,7 +61,6 @@ public sealed partial class FarmEngine
         _deadBlacklist.Add((_lastEngagedCenter, corpseExpire));
         // F2: ceset ayakta-merkezden aşağı düşer → düşen kutuyu da kapsa (ayrı entry).
         _deadBlacklist.Add((new PointF(_lastEngagedCenter.X, _lastEngagedCenter.Y + CorpseFallOffsetPx), corpseExpire));
-        Program.Log($"[DIAG] KILL #{Telemetry.Kills} → corpse blacklist @({_lastEngagedCenter.X:0},{_lastEngagedCenter.Y:0})+aşağı{CorpseFallOffsetPx} r={DeadBlacklistRadiusPx} {s.DeadBlacklistMs}ms → Scanning");
         if (s.LootEnabled)
         {
             SetState(FarmState.Looting, "Loot toplanıyor…");
@@ -103,6 +102,10 @@ public sealed partial class FarmEngine
         const int HpDeathConfirmMs = 60;
         long firstHpMissMs = -1;     // HP'nin ilk "yok" okunduğu an (-1 = canlı)
         long lastHpCheck   = -1000;  // HSV/HP ekran yakalamasını ≤~33ms'de bire sınırla (GDI yükü)
+        // Alive-gate (#1): bu angajmanda HP barını en az bir kez "canlı" gördük mü?
+        // Görülmeden ölüm bildirme → angajman başında HP barının henüz yüklenmediği kısa pencerede
+        // yanlış-ölüm üretmez (mob sadece seçildi, bar çıkmadı → hemen "öldü" deme).
+        bool hadHpOnce = false;
 
         // NOT: YOLO ARTIK ölüm sinyali DEĞİL (eski missingYoloFrom/graceMs kaldırıldı). Ölüm yalnız HP
         // barından gelir; YOLO kaybı angajmanı bitirmez → flicker false "öldü" üretmez (#3/#5).
@@ -150,16 +153,19 @@ public sealed partial class FarmEngine
 
                     if (!targetAlive)
                     {
-                        if (firstHpMissMs < 0) firstHpMissMs = sw.ElapsedMilliseconds;
-                        else if (sw.ElapsedMilliseconds - firstHpMissMs >= HpDeathConfirmMs)
+                        // Alive-gate: bu angajmanda HP'yi hiç görmedik → henüz bar yüklenmemiş olabilir,
+                        // ölüm bildirme (angajman başında yanlış-kill üretimini önler).
+                        if (hadHpOnce)
                         {
-                            Program.Log($"[DIAG] DEATH confirmed (HP {HpDeathConfirmMs}ms yok) lastCenter=({_lastEngagedCenter.X:0},{_lastEngagedCenter.Y:0}) tick={s.WtmTickMs}ms");
-                            return true; // HP barı ~60ms kesintisiz yok → mob öldü / seçim düştü
+                            if (firstHpMissMs < 0) firstHpMissMs = sw.ElapsedMilliseconds;
+                            else if (sw.ElapsedMilliseconds - firstHpMissMs >= HpDeathConfirmMs)
+                                return true; // HP barı ~60ms kesintisiz yok → mob öldü / seçim düştü
                         }
                     }
                     else
                     {
-                        firstHpMissMs = -1; // canlı okuma → debounce sıfırla
+                        hadHpOnce     = true;  // bu angajmanda en az bir kez canlı gördük
+                        firstHpMissMs = -1;    // canlı okuma → debounce sıfırla
                     }
                 }
 

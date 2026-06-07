@@ -5,7 +5,7 @@
         WindowStartupLocation="CenterScreen" ResizeMode="NoResize" Topmost="True" 
         WindowStyle="None" AllowsTransparency="True" Background="Transparent" Foreground="{StaticResource Text}">
     
-    <Border Background="{StaticResource BgMain}" 
+    <Border Background="{StaticResource BgApp}"
             BorderBrush="{StaticResource BorderGold}" 
             BorderThickness="2" 
             CornerRadius="10" 
@@ -24,7 +24,7 @@
 
             <!-- Başlık -->
             <TextBlock Text="NVIDIA CUDA Hızlandırma Paketi" 
-                       Foreground="{StaticResource TextGold}" 
+                       Foreground="{StaticResource Gold}" 
                        FontSize="22" 
                        FontWeight="SemiBold" 
                        HorizontalAlignment="Center" 
@@ -56,7 +56,7 @@
                          Minimum="0" Maximum="100" 
                          BorderThickness="0"
                          Background="{StaticResource BgPanel}"
-                         Foreground="{StaticResource TextGold}">
+                         Foreground="{StaticResource Gold}">
                 <ProgressBar.Resources>
                     <Style TargetType="Border">
                         <Setter Property="CornerRadius" Value="6"/>

@@ -11,6 +11,7 @@ AppUpdatesURL=https://github.com/mertkaanakgunlu-debug/HomekoWorld/releases
 ; Kurulum dizini: Varsayılan olarak C:\Program Files\HomekoWorld
 DefaultDirName={autopf}\HomekoWorld
 DisableProgramGroupPage=yes
+UsePreviousAppDir=no
 
 ; Yönetici hakları gereklidir (Uygulama çalışırken CUDA kütüphanelerini indireceği için Program Files'a yazma izni lazım)
 PrivilegesRequired=admin
@@ -31,7 +32,7 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 [Files]
 ; EXE, DLL ve JSON Dosyaları
 Source: "Build\HomekoWorld.exe"; DestDir: "{app}"; Flags: ignoreversion
-Source: "Build\*.dll"; DestDir: "{app}"; Flags: ignoreversion
+Source: "Build\*.dll"; DestDir: "{app}"; Excludes: "onnxruntime_providers_*.dll,nvinfer*.dll,cublas*.dll,cudnn*.dll,cufft*.dll,cusparse*.dll,cusolver*.dll,curand*.dll,nvrtc*.dll,nvoptix*.dll"; Flags: ignoreversion
 Source: "Build\*.json"; DestDir: "{app}"; Flags: ignoreversion
 
 ; Assets klasörü ve içindeki her şey (alt klasörlerle birlikte)

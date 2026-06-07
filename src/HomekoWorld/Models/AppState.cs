@@ -68,9 +68,16 @@ public class AppState
     /// (kullanıcı slider'dan elle değiştirdiyse ezilmez).</summary>
     public bool DetectionFpsBoostMigrated { get; set; }
 
+    /// <summary>Faz 24: ConfidenceThreshold 0.35→0.65 migration'ının bir kez yapıldığı işareti.
+    /// Flag olmadan migration her açılışta ≤0.45'i ezer → kullanıcının bilerek düşürdüğü eşiği kaybeder.</summary>
+    public bool ConfidenceThresholdMigrated { get; set; }
+
     // ---- Faz 18: Global Auto-Pot & Settings ----
     public AutoPotSettings   AutoPot        { get; set; } = new();
     public SettingsHotkeys   Hotkeys        { get; set; } = new();
+
+    // ---- Faz 31: Otonom Oyuncu ----
+    public Autonomous.AutonomousSettings Autonomous { get; set; } = new();
 
     public List<CharacterClass> Classes  { get; set; } = [];
     public List<Profile>        Profiles { get; set; } = [];

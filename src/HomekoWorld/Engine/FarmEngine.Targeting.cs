@@ -34,8 +34,6 @@ public sealed partial class FarmEngine
         // (Eskiden candidates>0 ama hepsi blacklist iken _idleWatch resetlenip bot boş dönüyordu = stall.)
         if (filteredCandidates.Count == 0)
         {
-            if (candidates.Count > 0)
-                Program.Log($"[DIAG] SCAN all-blacklisted cand={candidates.Count} deadBL={_deadBlacklist.Count} guardBL={_guardianBlacklist.Count}");
             await HandleNoLiveTargetAsync(candidates.Count, s, ct);
             return;
         }
@@ -58,8 +56,6 @@ public sealed partial class FarmEngine
         _lastTarget = target;
         var mobInfo = _mobLibrary.FindById(target.ClassId);
         Telemetry.CurrentMob = target.ClassName;
-
-        Program.Log($"[DIAG] SCAN pick {target.ClassName}@({target.Center.X:0},{target.Center.Y:0}) conf={target.Confidence:0.00} dist={target.DistanceTo(charCenter):0} cand={candidates.Count} filt={filteredCandidates.Count} deadBL={_deadBlacklist.Count}");
 
         SetState(FarmState.Targeting, $"Hedef: {target.ClassName}");
         bool targeted = await TargetAsync(target, s, ct);
@@ -136,7 +132,6 @@ public sealed partial class FarmEngine
                     .FirstOrDefault();
                 if (liveTarget is null)
                 {
-                    Program.Log($"[DIAG] CLICK-SKIP attempt={i} target not in fresh frame @({target.Center.X:0},{target.Center.Y:0}) — no click, rescan");
                     StatusChanged?.Invoke(this, "Hedef taze karede yok — tıklama atlandı, yeniden tarıyor");
                     return false;
                 }
@@ -148,17 +143,13 @@ public sealed partial class FarmEngine
                 // Tıklamadan önce karakter bölgesi örneği (motion detection — küçük bölge yakalama).
                 byte[] preCrop = SampleCharRegionDirect();
 
-                Program.Log($"[DIAG] CLICK attempt={i} ({(i == 0 ? "isim" : "merkez")}) @({cx},{cy}) liveCenter=({liveTarget.Center.X:0},{liveTarget.Center.Y:0})");
                 await _router.MoveAbsAsync(cx, cy, ct);
                 await Task.Delay(s.ClickPreDelayMs, ct);
                 await _router.ClickAsync(MouseButton.Left, ct);
                 await Task.Delay(s.ClickPostDelayMs, ct);
 
                 if (hpBarCalibrated && await PollHpBarAsync(ct))
-                {
-                    Program.Log($"[DIAG] CLICK attempt={i} → HP BAR ✓ canlı hedef alındı @({cx},{cy})");
                     return await CheckGuardianAndReturnAsync(liveTarget, ct);
-                }
 
                 // HP bar yok — karakter hareket ettiyse auto-walk'ı iptal et
                 byte[] postCrop = SampleCharRegionDirect();
@@ -171,7 +162,6 @@ public sealed partial class FarmEngine
                     d.ClassId == target.ClassId &&
                     d.DistanceTo(liveTarget.Center) < 80f);
 
-                Program.Log($"[DIAG] CLICK attempt={i} → HP bar YOK (ıska); mobStillThere={mobStillThere}");
                 if (!mobStillThere)
                 {
                     // Tık sonrası tespit o noktada yok → mob kaymış olabilir VEYA tıklanamayan statik
@@ -179,7 +169,6 @@ public sealed partial class FarmEngine
                     // Kısa süre blacklist'le → aynı noktaya kilitlenip döngüye girmesin; F4 ile kamerayı
                     // çevirip başka moba geçer. Gerçekten kaydıysa süre kısa, mob yeni konumunda geri alınır.
                     _deadBlacklist.Add((target.Center, NowMs() + MissReselectSkipMs));
-                    Program.Log($"[DIAG] MISS-VANISH @({target.Center.X:0},{target.Center.Y:0}) kısa skip {MissReselectSkipMs}ms (re-pick döngüsü kır)");
                     return false;
                 }
 
@@ -196,7 +185,6 @@ public sealed partial class FarmEngine
                 // ki uzun süre ekranda kalan ceset (log'da 10sn+) tekrar tekrar probe edilmesin.
                 long corpseExpire = NowMs() + s.DeadBlacklistMs * 2;
                 _deadBlacklist.Add((target.Center, corpseExpire));
-                Program.Log($"[DIAG] CORPSE tüm tıklamalar ıskaladı → blacklist @({target.Center.X:0},{target.Center.Y:0}) {s.DeadBlacklistMs * 2}ms (deadBL now {_deadBlacklist.Count})");
                 StatusChanged?.Invoke(this, "Hedef seçilemedi (ölü/ceset?) — kısa süre atlanıyor");
             }
             else

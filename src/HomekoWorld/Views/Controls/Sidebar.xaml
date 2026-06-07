@@ -116,6 +116,59 @@
           </StackPanel>
         </Border>
 
+        <!-- Otonom Oyuncu -->
+        <Border Margin="6,2" CornerRadius="8" Cursor="Hand" Padding="4,10">
+          <Border.InputBindings>
+            <MouseBinding MouseAction="LeftClick"
+                          Command="{Binding SelectPageCommand}"
+                          CommandParameter="autonomous"/>
+          </Border.InputBindings>
+          <Border.Style>
+            <Style TargetType="Border">
+              <Setter Property="Background"      Value="Transparent"/>
+              <Setter Property="BorderBrush"     Value="Transparent"/>
+              <Setter Property="BorderThickness" Value="1"/>
+              <Style.Triggers>
+                <DataTrigger Binding="{Binding CurrentPage}" Value="autonomous">
+                  <Setter Property="Background"  Value="#1A9B59D4"/>
+                  <Setter Property="BorderBrush" Value="#FFAA66CC"/>
+                </DataTrigger>
+                <Trigger Property="IsMouseOver" Value="True">
+                  <Setter Property="Background" Value="{StaticResource BgHover}"/>
+                </Trigger>
+              </Style.Triggers>
+            </Style>
+          </Border.Style>
+          <StackPanel HorizontalAlignment="Center">
+            <TextBlock Text="🤖" FontSize="18" HorizontalAlignment="Center">
+              <TextBlock.Style>
+                <Style TargetType="TextBlock">
+                  <Setter Property="Foreground" Value="{StaticResource TextMuted}"/>
+                  <Style.Triggers>
+                    <DataTrigger Binding="{Binding CurrentPage}" Value="autonomous">
+                      <Setter Property="Foreground" Value="#FFCC99EE"/>
+                    </DataTrigger>
+                  </Style.Triggers>
+                </Style>
+              </TextBlock.Style>
+            </TextBlock>
+            <TextBlock Text="Otonom" FontSize="8" TextAlignment="Center" Margin="0,3,0,0"
+                       TextWrapping="Wrap">
+              <TextBlock.Style>
+                <Style TargetType="TextBlock">
+                  <Setter Property="Foreground" Value="{StaticResource TextMuted}"/>
+                  <Style.Triggers>
+                    <DataTrigger Binding="{Binding CurrentPage}" Value="autonomous">
+                      <Setter Property="Foreground" Value="#FFCC99EE"/>
+                      <Setter Property="FontWeight" Value="SemiBold"/>
+                    </DataTrigger>
+                  </Style.Triggers>
+                </Style>
+              </TextBlock.Style>
+            </TextBlock>
+          </StackPanel>
+        </Border>
+
       </StackPanel>
 
       <!-- Active indicator dot at bottom -->

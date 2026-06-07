@@ -366,6 +366,19 @@
                 </Style>
               </pages:OtoFarmPage.Style>
             </pages:OtoFarmPage>
+            <!-- Otonom Oyuncu page -->
+            <pages:AutonomousPlayerPage>
+              <pages:AutonomousPlayerPage.Style>
+                <Style TargetType="UserControl">
+                  <Setter Property="Visibility" Value="Collapsed"/>
+                  <Style.Triggers>
+                    <DataTrigger Binding="{Binding CurrentPage}" Value="autonomous">
+                      <Setter Property="Visibility" Value="Visible"/>
+                    </DataTrigger>
+                  </Style.Triggers>
+                </Style>
+              </pages:AutonomousPlayerPage.Style>
+            </pages:AutonomousPlayerPage>
           </Grid>
 
           <!-- Right rail -->
