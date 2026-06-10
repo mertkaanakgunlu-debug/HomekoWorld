@@ -270,6 +270,13 @@
               <TextBlock Text="{Binding CoordXRoiStatus}" FontSize="9" Foreground="{StaticResource TextDim}"/>
               <TextBlock Text="{Binding CoordYRoiStatus}" FontSize="9" Foreground="{StaticResource TextDim}" Margin="0,0,0,4"/>
 
+              <!-- Birleşik ROI (önerilen) — tek geniş kutu "X, Y", virgülden böler -->
+              <TextBlock TextWrapping="Wrap" FontSize="9" Foreground="{StaticResource Gold}" Margin="0,2,0,4"
+                         Text="★ ÖNERİLEN: ayrı X/Y yerine TEK geniş ROI çiz (tüm 'X, Y'yi virgül dahil kapsa). Hane 3↔4 değişince ayrı ROI'ler kayar; birleşik ROI virgülden böldüğü için her durumda doğru okur. Aşağıda X ve Y'yi yazıp 'Öğret' deyince virgülü de otomatik öğrenir."/>
+              <Button Style="{StaticResource BtnMuted}" Command="{Binding CalibrateCoordComboRoiCommand}"
+                      Padding="5,3" FontSize="10" HorizontalAlignment="Left">🖊 Birleşik ROI çiz (X, Y)</Button>
+              <TextBlock Text="{Binding CoordComboRoiStatus}" FontSize="9" Foreground="{StaticResource TextDim}" Margin="0,2,0,4"/>
+
               <!-- ROI önizleme -->
               <StackPanel Orientation="Horizontal" Margin="0,0,0,4"
                           Visibility="{Binding CoordPreviewVisible, Converter={StaticResource BoolToVis}}">
@@ -355,12 +362,12 @@
                   BorderBrush="{StaticResource Border1}" BorderThickness="1">
             <StackPanel>
               <TextBlock TextWrapping="Wrap" FontSize="9" Foreground="{StaticResource TextDim}" Margin="0,0,0,8"
-                         Text="Merchant waypoint'e ulaşınca NPC'ye tıklar, satış sekmesini açar ve dolu envanter yuvalarını satar. 1) NPC tıklama ofsetini ayarla. 2) Varsa satış sekmesini kalibre et. 3) Sat modu seç. 4) Test Sat ile doğrula."/>
+                         Text="Akış: NPC sol-tık(seç)→sağ-tık(menü)→'I would like to trade.'→'Sell Item'→mod 'Confirm'→ikon-eşleşen yuvaları sağ-tık ile çantaya taşı→'Sell'→son 'Confirm'→kapat. Aşağıdaki noktaları sırayla (oyun açıkken merchant penceresi önünde) kalibre et, satılacak ikonu öğret, sonra 🛒 Test Sat."/>
 
-              <!-- NPC tıklama -->
-              <TextBlock Text="NPC TIKLAMA" FontSize="9" FontWeight="SemiBold"
+              <!-- ① NPC tıklama (sol-seç + sağ-menü otomatik) -->
+              <TextBlock Text="① NPC TIKLAMA (sol-seç + sağ-menü otomatik)" FontSize="9" FontWeight="SemiBold"
                          Foreground="{StaticResource TextMuted}" Margin="0,0,0,4"/>
-              <Grid Margin="0,0,0,4">
+              <Grid Margin="0,0,0,8">
                 <Grid.ColumnDefinitions>
                   <ColumnDefinition Width="*"/><ColumnDefinition Width="8"/>
                   <ColumnDefinition Width="*"/><ColumnDefinition Width="8"/>
@@ -377,17 +384,32 @@
                            Text="{Binding MerchantClickOffsetY, UpdateSourceTrigger=PropertyChanged}"/>
                 </StackPanel>
                 <StackPanel Grid.Column="4">
-                  <TextBlock Text="Diyalog bekleme (ms)" FontSize="9" Foreground="{StaticResource TextDim}" Margin="0,0,0,2"/>
+                  <TextBlock Text="Menü bekleme (ms)" FontSize="9" Foreground="{StaticResource TextDim}" Margin="0,0,0,2"/>
                   <TextBox Style="{StaticResource InputMono}" FontSize="10"
                            Text="{Binding MerchantInteractDelayMs, UpdateSourceTrigger=PropertyChanged}"/>
                 </StackPanel>
               </Grid>
-              <CheckBox Content="Sağ-tık ile aç (sağ-tık=menü; sol-tık=doğrudan)" FontSize="9"
-                        Foreground="{StaticResource TextDim}" Margin="0,0,0,6"
-                        IsChecked="{Binding MerchantRightClick}"/>
 
-              <!-- Satış sekmesi -->
-              <TextBlock Text="SATIŞ SEKMESİ" FontSize="9" FontWeight="SemiBold"
+              <!-- ② "I would like to trade." -->
+              <TextBlock Text="② 'I would like to trade.' BUTONU" FontSize="9" FontWeight="SemiBold"
+                         Foreground="{StaticResource TextMuted}" Margin="0,0,0,4"/>
+              <TextBlock Text="{Binding TradeDialogStatus}" FontSize="10" Foreground="{StaticResource Gold}"
+                         Margin="0,0,0,4" TextWrapping="Wrap"/>
+              <Grid Margin="0,0,0,8">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="Auto"/><ColumnDefinition Width="8"/>
+                  <ColumnDefinition Width="*"/><ColumnDefinition Width="8"/><ColumnDefinition Width="60"/>
+                </Grid.ColumnDefinitions>
+                <Button Grid.Column="0" Style="{StaticResource BtnMuted}" Command="{Binding CalibrateTradeDialogCommand}"
+                        Padding="5,3" FontSize="10">🖊 Kalibre</Button>
+                <TextBlock Grid.Column="2" Text="Pencere bekleme (ms)" FontSize="9"
+                           Foreground="{StaticResource TextDim}" VerticalAlignment="Center"/>
+                <TextBox Grid.Column="4" Style="{StaticResource InputMono}" FontSize="10"
+                         Text="{Binding TradeDialogDelayMs, UpdateSourceTrigger=PropertyChanged}"/>
+              </Grid>
+
+              <!-- ③ "Sell Item" sekmesi -->
+              <TextBlock Text="③ 'Sell Item' SEKMESİ" FontSize="9" FontWeight="SemiBold"
                          Foreground="{StaticResource TextMuted}" Margin="0,0,0,4"/>
               <TextBlock Text="{Binding SellTabStatus}" FontSize="10" Foreground="{StaticResource Gold}"
                          Margin="0,0,0,4" TextWrapping="Wrap"/>
@@ -396,70 +418,124 @@
                   <ColumnDefinition Width="Auto"/><ColumnDefinition Width="8"/>
                   <ColumnDefinition Width="*"/><ColumnDefinition Width="8"/><ColumnDefinition Width="60"/>
                 </Grid.ColumnDefinitions>
-                <Button Grid.Column="0" Style="{StaticResource BtnMuted}"
-                        Command="{Binding CalibrateSellTabCommand}"
+                <Button Grid.Column="0" Style="{StaticResource BtnMuted}" Command="{Binding CalibrateSellTabCommand}"
                         Padding="5,3" FontSize="10">🖊 Kalibre</Button>
-                <TextBlock Grid.Column="2" Text="Satış sekmesi bekleme (ms)" FontSize="9"
+                <TextBlock Grid.Column="2" Text="Sekme bekleme (ms)" FontSize="9"
                            Foreground="{StaticResource TextDim}" VerticalAlignment="Center"/>
                 <TextBox Grid.Column="4" Style="{StaticResource InputMono}" FontSize="10"
-                         Text="{Binding SellTabDelayMs, UpdateSourceTrigger=PropertyChanged}"
-                         ToolTip="Satış sekmesine tıklandıktan sonra envanter yüklenmesi için bekleme (ms)"/>
+                         Text="{Binding SellTabDelayMs, UpdateSourceTrigger=PropertyChanged}"/>
               </Grid>
 
-              <!-- Satış modu -->
-              <TextBlock Text="SATIŞ MODU" FontSize="9" FontWeight="SemiBold"
+              <!-- ④ Mod değişimi "Confirm" -->
+              <TextBlock Text="④ MOD DEĞİŞİMİ 'Confirm'" FontSize="9" FontWeight="SemiBold"
                          Foreground="{StaticResource TextMuted}" Margin="0,0,0,4"/>
-              <CheckBox Content="Tümünü Sat butonu kullan (tek tık)" FontSize="9"
-                        Foreground="{StaticResource TextDim}" Margin="0,0,0,4"
-                        IsChecked="{Binding UseSellAllButton}"/>
+              <TextBlock Text="{Binding SellModeConfirmStatus}" FontSize="10" Foreground="{StaticResource Gold}"
+                         Margin="0,0,0,4" TextWrapping="Wrap"/>
+              <Grid Margin="0,0,0,8">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="Auto"/><ColumnDefinition Width="8"/>
+                  <ColumnDefinition Width="*"/><ColumnDefinition Width="8"/><ColumnDefinition Width="60"/>
+                </Grid.ColumnDefinitions>
+                <Button Grid.Column="0" Style="{StaticResource BtnMuted}" Command="{Binding CalibrateSellModeConfirmCommand}"
+                        Padding="5,3" FontSize="10">🖊 Kalibre</Button>
+                <TextBlock Grid.Column="2" Text="Onay bekleme (ms)" FontSize="9"
+                           Foreground="{StaticResource TextDim}" VerticalAlignment="Center"/>
+                <TextBox Grid.Column="4" Style="{StaticResource InputMono}" FontSize="10"
+                         Text="{Binding SellModeConfirmDelayMs, UpdateSourceTrigger=PropertyChanged}"/>
+              </Grid>
 
-              <!-- Sell All butonu -->
-              <Border Margin="0,0,0,6" Padding="8,6" CornerRadius="4" Background="{StaticResource BgInset}">
-                <StackPanel>
-                  <TextBlock Text="Tümünü Sat Butonu" FontSize="9" FontWeight="SemiBold"
-                             Foreground="{StaticResource TextMuted}" Margin="0,0,0,4"/>
-                  <TextBlock Text="{Binding SellAllButtonStatus}" FontSize="9" Foreground="{StaticResource Gold}"
-                             Margin="0,0,0,4"/>
-                  <Button Style="{StaticResource BtnMuted}" Command="{Binding CalibrateSellAllButtonCommand}"
-                          Padding="5,3" FontSize="10" HorizontalAlignment="Left">🖊 Kalibre</Button>
-                </StackPanel>
-              </Border>
+              <!-- ⑤ Merchant envanteri -->
+              <TextBlock Text="⑤ MERCHANT ENVANTER IZGARASI" FontSize="9" FontWeight="SemiBold"
+                         Foreground="{StaticResource TextMuted}" Margin="0,0,0,4"/>
+              <TextBlock TextWrapping="Wrap" FontSize="9" Foreground="{StaticResource TextDim}" Margin="0,0,0,4"
+                         Text="Merchant penceresindeki alttaki çanta ızgarası — normal 'I' envanterinden farklı konumda olabilir."/>
+              <TextBlock Text="{Binding MerchantInvGridStatus}" FontSize="10" Foreground="{StaticResource Gold}"
+                         Margin="0,0,0,4" TextWrapping="Wrap"/>
+              <Button Style="{StaticResource BtnMuted}" Command="{Binding CalibrateMerchantInvGridCommand}"
+                      Padding="5,3" FontSize="10" HorizontalAlignment="Left" Margin="0,0,0,8">🖊 Izgara Kalibre</Button>
 
-              <!-- Yuva-başına satış ayarları -->
-              <Border Margin="0,0,0,6" Padding="8,6" CornerRadius="4" Background="{StaticResource BgInset}">
+              <!-- ⑥ Satılacak ikon (template eşleştirme) -->
+              <Border Margin="0,0,0,8" Padding="8,6" CornerRadius="4" Background="{StaticResource BgInset}">
                 <StackPanel>
-                  <TextBlock Text="Yuva-başına Satış (Tümünü Sat kapalıysa)" FontSize="9" FontWeight="SemiBold"
+                  <TextBlock Text="⑥ SATILACAK İKON (template eşleştirme)" FontSize="9" FontWeight="SemiBold"
                              Foreground="{StaticResource TextMuted}" Margin="0,0,0,4"/>
-                  <CheckBox Content="Sağ-tık ile sat (sağ-tık=sat; sol-tık=al)" FontSize="9"
-                            Foreground="{StaticResource TextDim}" Margin="0,0,0,4"
-                            IsChecked="{Binding SellRightClick}"/>
+                  <TextBlock TextWrapping="Wrap" FontSize="9" Foreground="{StaticResource TextDim}" Margin="0,0,0,4"
+                             Text="Satılacak eşya ikonunun çevresine kutu çiz → bot yalnız EŞLEŞEN yuvaları satar (iksir/parşömen tutulur). Birkaç farklı örnek öğretebilirsin."/>
+                  <TextBlock Text="{Binding SellIconStatus}" FontSize="10" Foreground="{StaticResource Gold}"
+                             Margin="0,0,0,4" TextWrapping="Wrap"/>
                   <Grid Margin="0,0,0,4">
                     <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="Auto"/><ColumnDefinition Width="6"/>
+                      <ColumnDefinition Width="Auto"/><ColumnDefinition Width="6"/>
+                      <ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Button Grid.Column="0" Style="{StaticResource BtnMuted}" Command="{Binding TeachSellIconCommand}"
+                            Padding="5,3" FontSize="10">🎓 İkon Öğret</Button>
+                    <Button Grid.Column="2" Style="{StaticResource BtnMuted}" Command="{Binding ResetSellIconsCommand}"
+                            Padding="5,3" FontSize="10">🗑 Sıfırla</Button>
+                    <Button Grid.Column="4" Style="{StaticResource BtnMuted}" Command="{Binding TestSellScanCommand}"
+                            Padding="5,3" FontSize="10">🔎 Test Tara</Button>
+                  </Grid>
+                  <Grid>
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="*"/><ColumnDefinition Width="8"/>
                       <ColumnDefinition Width="*"/><ColumnDefinition Width="8"/><ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
                     <StackPanel Grid.Column="0">
-                      <TextBlock Text="Her satış arası (ms)" FontSize="9" Foreground="{StaticResource TextDim}" Margin="0,0,0,2"/>
+                      <TextBlock Text="Eşleşme eşiği (0–1)" FontSize="9" Foreground="{StaticResource TextDim}" Margin="0,0,0,2"/>
+                      <TextBox Style="{StaticResource InputMono}" FontSize="10"
+                               Text="{Binding SellMatchThreshold, UpdateSourceTrigger=PropertyChanged}"
+                               ToolTip="NCC eşiği; düşürürsen daha çok eşler (yanlış-pozitif riski), yükseltirsen daha katı"/>
+                    </StackPanel>
+                    <StackPanel Grid.Column="2">
+                      <TextBlock Text="Taşıma arası (ms)" FontSize="9" Foreground="{StaticResource TextDim}" Margin="0,0,0,2"/>
                       <TextBox Style="{StaticResource InputMono}" FontSize="10"
                                Text="{Binding SellItemDelayMs, UpdateSourceTrigger=PropertyChanged}"/>
                     </StackPanel>
-                    <StackPanel Grid.Column="2">
-                      <TextBlock Text="Onay tuşu (boş=yok)" FontSize="9" Foreground="{StaticResource TextDim}" Margin="0,0,0,2"/>
-                      <TextBox Style="{StaticResource InputMono}" FontSize="10"
-                               Text="{Binding SellConfirmKey, UpdateSourceTrigger=PropertyChanged}"/>
+                    <StackPanel Grid.Column="4" VerticalAlignment="Bottom">
+                      <CheckBox Content="Sağ-tık ile taşı" FontSize="9" Margin="0,0,0,4"
+                                Foreground="{StaticResource TextDim}"
+                                IsChecked="{Binding SellRightClick}"/>
                     </StackPanel>
                   </Grid>
                 </StackPanel>
               </Border>
 
-              <!-- Toplu onay butonu -->
-              <TextBlock Text="TOPLU ONAY BUTONU (OPSİYONEL)" FontSize="9" FontWeight="SemiBold"
+              <!-- ⑦ "Sell" butonu -->
+              <TextBlock Text="⑦ 'Sell' BUTONU" FontSize="9" FontWeight="SemiBold"
                          Foreground="{StaticResource TextMuted}" Margin="0,0,0,4"/>
-              <TextBlock TextWrapping="Wrap" FontSize="9" Foreground="{StaticResource TextDim}" Margin="0,0,0,4"
-                         Text="Bazı KO sürümlerinde yuvaları satış alanına taşıdıktan sonra ayrı bir 'Sat' onay butonu bulunur."/>
-              <TextBlock Text="{Binding SellConfirmButtonStatus}" FontSize="9" Foreground="{StaticResource Gold}"
-                         Margin="0,0,0,4"/>
-              <Button Style="{StaticResource BtnMuted}" Command="{Binding CalibrateSellConfirmButtonCommand}"
-                      Padding="5,3" FontSize="10" HorizontalAlignment="Left" Margin="0,0,0,8">🖊 Kalibre</Button>
+              <TextBlock Text="{Binding SellButtonStatus}" FontSize="10" Foreground="{StaticResource Gold}"
+                         Margin="0,0,0,4" TextWrapping="Wrap"/>
+              <Grid Margin="0,0,0,8">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="Auto"/><ColumnDefinition Width="8"/>
+                  <ColumnDefinition Width="*"/><ColumnDefinition Width="8"/><ColumnDefinition Width="60"/>
+                </Grid.ColumnDefinitions>
+                <Button Grid.Column="0" Style="{StaticResource BtnMuted}" Command="{Binding CalibrateSellButtonCommand}"
+                        Padding="5,3" FontSize="10">🖊 Kalibre</Button>
+                <TextBlock Grid.Column="2" Text="Onay bekleme (ms)" FontSize="9"
+                           Foreground="{StaticResource TextDim}" VerticalAlignment="Center"/>
+                <TextBox Grid.Column="4" Style="{StaticResource InputMono}" FontSize="10"
+                         Text="{Binding SellButtonDelayMs, UpdateSourceTrigger=PropertyChanged}"/>
+              </Grid>
+
+              <!-- ⑧ Son "Confirm" (satış onayı) -->
+              <TextBlock Text="⑧ SON 'Confirm' (satış onayı)" FontSize="9" FontWeight="SemiBold"
+                         Foreground="{StaticResource TextMuted}" Margin="0,0,0,4"/>
+              <TextBlock Text="{Binding SellConfirmButtonStatus}" FontSize="10" Foreground="{StaticResource Gold}"
+                         Margin="0,0,0,4" TextWrapping="Wrap"/>
+              <Grid Margin="0,0,0,8">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="Auto"/><ColumnDefinition Width="8"/>
+                  <ColumnDefinition Width="*"/><ColumnDefinition Width="8"/><ColumnDefinition Width="60"/>
+                </Grid.ColumnDefinitions>
+                <Button Grid.Column="0" Style="{StaticResource BtnMuted}" Command="{Binding CalibrateSellConfirmButtonCommand}"
+                        Padding="5,3" FontSize="10">🖊 Kalibre</Button>
+                <TextBlock Grid.Column="2" Text="Onay bekleme (ms)" FontSize="9"
+                           Foreground="{StaticResource TextDim}" VerticalAlignment="Center"/>
+                <TextBox Grid.Column="4" Style="{StaticResource InputMono}" FontSize="10"
+                         Text="{Binding SellConfirmButtonDelayMs, UpdateSourceTrigger=PropertyChanged}"/>
+              </Grid>
 
               <!-- Kapat -->
               <Grid Margin="0,0,0,8">
@@ -509,20 +585,22 @@
               <TextBlock TextWrapping="Wrap" FontSize="9" Foreground="{StaticResource TextDim}" Margin="0,0,0,8"
                          Text="Tam döngü: Farm → Town TP → Merchant nav → Satış (Faz 36) → Portal nav → Portal giriş → Farm nav → Farm. 'Şehre Git' butonu manuel test için çalışan otonom mod gerektirir."/>
 
-              <!-- Town TP -->
-              <TextBlock Text="TOWN IŞINLANMA" FontSize="9" FontWeight="SemiBold"
+              <!-- Town TP (UI butonu) -->
+              <TextBlock Text="TOWN IŞINLANMA (UI butonu)" FontSize="9" FontWeight="SemiBold"
                          Foreground="{StaticResource TextMuted}" Margin="0,0,0,4"/>
+              <TextBlock TextWrapping="Wrap" FontSize="9" Foreground="{StaticResource TextDim}" Margin="0,0,0,4"
+                         Text="Bu oyunda town'a dönüş sabit bir UI butonu (kısayol değil). Butonu kalibre et; alttaki TP tuşu yalnız buton kalibre EDİLMEZSE devreye girer."/>
+              <TextBlock Text="{Binding TownTpButtonStatus}" FontSize="10" Foreground="{StaticResource Gold}"
+                         Margin="0,0,0,4" TextWrapping="Wrap"/>
               <Grid Margin="0,0,0,4">
                 <Grid.ColumnDefinitions>
-                  <ColumnDefinition Width="*"/><ColumnDefinition Width="8"/>
+                  <ColumnDefinition Width="Auto"/><ColumnDefinition Width="8"/>
                   <ColumnDefinition Width="*"/><ColumnDefinition Width="8"/>
                   <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-                <StackPanel Grid.Column="0">
-                  <TextBlock Text="TP Tuşu" FontSize="9" Foreground="{StaticResource TextDim}" Margin="0,0,0,2"/>
-                  <TextBox Style="{StaticResource InputMono}" FontSize="10"
-                           Text="{Binding TownTpKey, UpdateSourceTrigger=PropertyChanged}"/>
-                </StackPanel>
+                <Button Grid.Column="0" Command="{Binding CalibrateTownTpButtonCommand}"
+                        Style="{StaticResource BtnMuted}" Padding="5,3" FontSize="10"
+                        VerticalAlignment="Bottom">🖊 Town Butonu Kalibre</Button>
                 <StackPanel Grid.Column="2">
                   <TextBlock Text="Yükleme bekleme (ms)" FontSize="9" Foreground="{StaticResource TextDim}" Margin="0,0,0,2"/>
                   <TextBox Style="{StaticResource InputMono}" FontSize="10"
@@ -534,6 +612,11 @@
                   🏙 Şehre Git
                 </Button>
               </Grid>
+              <StackPanel Margin="0,0,0,4" HorizontalAlignment="Left" Width="150">
+                <TextBlock Text="TP Tuşu (fallback)" FontSize="9" Foreground="{StaticResource TextDim}" Margin="0,0,0,2"/>
+                <TextBox Style="{StaticResource InputMono}" FontSize="10"
+                         Text="{Binding TownTpKey, UpdateSourceTrigger=PropertyChanged}"/>
+              </StackPanel>
 
               <!-- Portal -->
               <TextBlock Text="PORTAL ETKİLEŞİMİ" FontSize="9" FontWeight="SemiBold"
@@ -627,8 +710,29 @@
                   Background="{StaticResource BgPanel2}"
                   BorderBrush="{StaticResource Border1}" BorderThickness="1">
             <StackPanel>
-              <TextBlock TextWrapping="Wrap" FontSize="9" Foreground="{StaticResource TextDim}" Margin="0,0,0,8"
-                         Text="Probe-correct: kısa W probu → koord delta'dan yön ölç → A/D tuşlarıyla karakteri döndür → yürü → tekrar. Faz 32 (Koordinat Okuma) tamamlanmış olmalı."/>
+              <TextBlock TextWrapping="Wrap" FontSize="9" Foreground="{StaticResource TextDim}" Margin="0,0,0,6"
+                         Text="Akıcı mod (hibrit): bir segment yürür → kısa durup okur+yön düzeltir → tekrar yürür. Probe-correct'ten az duraklamalı ama güvenilir (hareketken okuma çöp yakaladığı için durup okur). Kapatılırsa tam probe-correct. Faz 32 hazır olmalı."/>
+              <CheckBox Content="🚗 Akıcı mod (yürü→dur→düzelt; az duraklama)" FontSize="10" FontWeight="SemiBold"
+                        Foreground="{StaticResource Gold}" Margin="0,0,0,4"
+                        IsChecked="{Binding NavContinuous}"/>
+              <CheckBox Content="↳ W'yi bırakma (SAF akıcı — koord güvenilirse, en akıcı)" FontSize="9"
+                        Foreground="{StaticResource TextDim}" Margin="14,0,0,4"
+                        IsChecked="{Binding NavContinuousHold}"/>
+              <Grid Margin="0,0,0,8">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="8"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                <StackPanel Grid.Column="0">
+                  <TextBlock Text="Yürüme adımı (ms)" FontSize="9" Foreground="{StaticResource TextDim}" Margin="0,0,0,2"/>
+                  <TextBox Style="{StaticResource InputMono}" FontSize="10"
+                           Text="{Binding NavContinuousReadMs, UpdateSourceTrigger=PropertyChanged}"
+                           ToolTip="Bir segmentte ne kadar yürünsün — yüksek=uzun adım/daha akıcı, düşük=sık dur/düzelt (en az 200)"/>
+                </StackPanel>
+                <StackPanel Grid.Column="2">
+                  <TextBlock Text="Dönüş kazancı (0.1-1.5)" FontSize="9" Foreground="{StaticResource TextDim}" Margin="0,0,0,2"/>
+                  <TextBox Style="{StaticResource InputMono}" FontSize="10"
+                           Text="{Binding NavContinuousSteerGain, UpdateSourceTrigger=PropertyChanged}"
+                           ToolTip="Açı hatasının ne kadarı her düzeltmede dönülsün. Salınıyorsa düşür; yavaş yönelir/dışa çiziyorsa artır"/>
+                </StackPanel>
+              </Grid>
 
               <!-- A/D dönüş hızı -->
               <TextBlock Text="Karakter dönüş hızı (ms/derece)" FontSize="9"
@@ -649,8 +753,11 @@
                            Foreground="{StaticResource Gold}" VerticalAlignment="Center"/>
                 <Button Grid.Column="4" Style="{StaticResource BtnMuted}"
                         Command="{Binding CalibrateTurnRateCommand}"
-                        Padding="5,2" FontSize="9">🔧 Kalibre (D×2sn)</Button>
+                        Padding="5,2" FontSize="9">🔧 Kalibre (D dönüş)</Button>
               </Grid>
+              <CheckBox Content="Dönüş yönü ters (bot yanlış yöne dönüp varamıyorsa AÇ)" FontSize="9"
+                        Foreground="{StaticResource TextDim}" Margin="0,0,0,8"
+                        IsChecked="{Binding NavTurnInvert}"/>
 
               <!-- Kamera px/derece (Farm scan overlay için) -->
               <TextBlock Text="Kamera duyarlılığı — Farm scan için (px/derece)" FontSize="9"

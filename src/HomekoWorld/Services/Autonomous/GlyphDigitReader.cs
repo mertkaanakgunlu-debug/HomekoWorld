@@ -7,22 +7,28 @@ using HomekoWorld.Models.Autonomous;
 namespace HomekoWorld.Services.Autonomous;
 
 /// <summary>
-/// Faz 32 — Multi-örnekli glyph eşleştirmeli rakam tanıma.
-/// Her rakam için en fazla MaxSamples referans saklanır. Tahmin: her örnekle NCC hesapla,
-/// en yüksek skoru döndür. Tek örnekle karşılaştırıldığında font varyasyonuna karşı dayanıklı.
+/// Faz 32 — Multi-örnekli glyph eşleştirmeli karakter tanıma.
+/// 11 sınıf: 0-9 rakam + 10 = VİRGÜL (Faz 34 birleşik "X, Y" ROI'sinde ayıraç).
+/// Her sınıf için en fazla MaxSamples referans saklanır; tahmin: her örnekle NCC, en yüksek skor.
 /// </summary>
 public sealed class GlyphDigitReader
 {
     public const int W = 24, H = 32;
     public const int MaxSamples = 5;
+    public const int Comma   = 10;   // virgül sınıf indeksi
+    private const int Classes = 11;   // 0-9 + virgül
 
-    private readonly List<float[]>[] _vecs = Enumerable.Range(0, 10).Select(_ => new List<float[]>()).ToArray();
-    private readonly List<string>[]  _b64s = Enumerable.Range(0, 10).Select(_ => new List<string>()).ToArray();
+    private readonly List<float[]>[] _vecs = Enumerable.Range(0, Classes).Select(_ => new List<float[]>()).ToArray();
+    private readonly List<string>[]  _b64s = Enumerable.Range(0, Classes).Select(_ => new List<string>()).ToArray();
 
+    /// <summary>0-9 rakamlarının hepsi öğretildi mi (iki-ROI modu için yeterli).</summary>
     public bool IsReady
     {
         get { for (int d = 0; d < 10; d++) if (_vecs[d].Count == 0) return false; return true; }
     }
+
+    /// <summary>Virgül örneği öğretildi mi (birleşik ROI modu için gerekli).</summary>
+    public bool HasComma => _vecs[Comma].Count > 0;
 
     public bool[] TaughtMask()
     {
@@ -31,33 +37,37 @@ public sealed class GlyphDigitReader
         return m;
     }
 
-    /// <summary>Kaç örnekle öğretildi (durum gösterimi için).</summary>
-    public int SampleCount(int digit) => digit is >= 0 and <= 9 ? _vecs[digit].Count : 0;
+    /// <summary>Kaç örnekle öğretildi (durum gösterimi için). cls: 0-9 veya 10=virgül.</summary>
+    public int SampleCount(int cls) => cls is >= 0 and < Classes ? _vecs[cls].Count : 0;
 
-    /// <summary>Bir rakamın referans glyph'ini ekler/günceller. MaxSamples dolunca en eskiyi çıkarır.</summary>
-    public void SetGlyph(int digit, Bitmap cell)
+    /// <summary>Bir sınıfın (0-9 veya 10=virgül) referansını ekler/günceller. MaxSamples dolunca en eskiyi çıkarır.</summary>
+    public void SetGlyph(int cls, Bitmap cell)
     {
-        if (digit < 0 || digit > 9) return;
+        if (cls < 0 || cls >= Classes) return;
         using var wh = ResizeGray(cell);
-        if (_vecs[digit].Count >= MaxSamples) { _vecs[digit].RemoveAt(0); _b64s[digit].RemoveAt(0); }
-        _vecs[digit].Add(Vectorize(wh));
-        _b64s[digit].Add(ToB64(wh));
+        if (_vecs[cls].Count >= MaxSamples) { _vecs[cls].RemoveAt(0); _b64s[cls].RemoveAt(0); }
+        _vecs[cls].Add(Vectorize(wh));
+        _b64s[cls].Add(ToB64(wh));
     }
 
-    /// <summary>Tüm glyph örneklerini temizler.</summary>
+    /// <summary>Tüm örnekleri temizler.</summary>
     public void Clear()
     {
-        for (int d = 0; d < 10; d++) { _vecs[d].Clear(); _b64s[d].Clear(); }
+        for (int d = 0; d < Classes; d++) { _vecs[d].Clear(); _b64s[d].Clear(); }
     }
 
-    /// <summary>Hücreyi sınıflandırır → (rakam 0-9, en yüksek NCC ~[0,1]). Hazır değilse (-1, 0).</summary>
-    public (int digit, float conf) Predict(Bitmap cell)
+    /// <summary>
+    /// Hücreyi sınıflandırır → (sınıf, en yüksek NCC ~[0,1]). includeComma=false → yalnız 0-9
+    /// (iki-ROI modu); true → 0-9 + virgül(10) (birleşik mod). Hazır değilse (-1, 0).
+    /// </summary>
+    public (int cls, float conf) Predict(Bitmap cell, bool includeComma = false)
     {
         if (!IsReady) return (-1, 0f);
         using var wh = ResizeGray(cell);
         var v = Vectorize(wh);
         float best = -2f; int bi = -1;
-        for (int d = 0; d < 10; d++)
+        int upper = includeComma ? Classes : 10;
+        for (int d = 0; d < upper; d++)
         {
             foreach (var r in _vecs[d])
             {
@@ -70,8 +80,8 @@ public sealed class GlyphDigitReader
 
     public void SaveToSettings(AutonomousSettings s)
     {
-        var multi = new string[10][];
-        for (int d = 0; d < 10; d++)
+        var multi = new string[Classes][];
+        for (int d = 0; d < Classes; d++)
             multi[d] = _b64s[d].Count > 0 ? _b64s[d].ToArray() : Array.Empty<string>();
         s.DigitGlyphsMulti = multi;
     }
@@ -79,11 +89,11 @@ public sealed class GlyphDigitReader
     public void LoadFromSettings(AutonomousSettings s)
     {
         Clear();
-        // Yeni çok-örnekli format
+        // Yeni çok-örnekli format (0-9 + virgül)
         var multi = s.DigitGlyphsMulti;
         if (multi is not null)
         {
-            for (int d = 0; d < 10 && d < multi.Length; d++)
+            for (int d = 0; d < Classes && d < multi.Length; d++)
             {
                 if (multi[d] is null) continue;
                 foreach (var b64 in multi[d])

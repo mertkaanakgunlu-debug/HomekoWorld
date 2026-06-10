@@ -55,6 +55,7 @@ public partial class MainViewModel
 
         // Faz 32: glyph'leri ayarlardan yükle + koordinat durumlarını tazele
         _coordReader.Recognizer.LoadFromSettings(_state.Autonomous);
+        _iconMatcher.LoadFromSettings(_state.Autonomous);   // Faz 36: satılacak-ikon template'leri
         RefreshCoordStatus();
 
         // Faz 32: koordinat ayarlarını yükle
@@ -66,23 +67,43 @@ public partial class MainViewModel
         RefreshInventoryGridStatus();
 
         // Faz 34: nav ayarlarını yükle + waypoint metinleri
-        _navTurnMsPerDeg = _state.Autonomous.NavTurnMsPerDeg;
+        _navTurnMsPerDeg        = _state.Autonomous.NavTurnMsPerDeg;
+        _navTurnInvert          = _state.Autonomous.NavTurnInvert;
+        _navCameraInvert        = _state.Autonomous.NavCameraInvert;
+        _navToleranceCoords     = _state.Autonomous.NavToleranceCoords.ToString();
+        _navStepMs              = _state.Autonomous.NavStepMs.ToString();
+        _navContinuous          = _state.Autonomous.NavContinuous;
+        _navContinuousReadMs    = _state.Autonomous.NavContinuousReadMs.ToString();
+        _navContinuousSteerGain = _state.Autonomous.NavContinuousSteerGain.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture);
+        _navContinuousHold      = _state.Autonomous.NavContinuousHold;
         RefreshNavWaypoints();
 
-        // Faz 36: merchant satış ayarlarını yükle
+        // Faz 36: merchant satış ayarlarını yükle (gerçek KO akışı)
         var a36 = _state.Autonomous;
-        _merchantClickOffsetX    = a36.MerchantClickOffsetX.ToString();
-        _merchantClickOffsetY    = a36.MerchantClickOffsetY.ToString();
-        _merchantRightClick      = a36.MerchantRightClick;
-        _merchantInteractDelayMs = a36.MerchantInteractDelayMs.ToString();
-        _sellTabDelayMs          = a36.SellTabDelayMs.ToString();
-        _useSellAllButton        = a36.UseSellAllButton;
-        _sellRightClick          = a36.SellRightClick;
-        _sellConfirmKey          = a36.SellConfirmKey;
-        _sellItemDelayMs         = a36.SellItemDelayMs.ToString();
-        _merchantCloseKey        = a36.MerchantCloseKey;
-        _merchantCloseDelayMs    = a36.MerchantCloseDelayMs.ToString();
+        _merchantClickOffsetX     = a36.MerchantClickOffsetX.ToString();
+        _merchantClickOffsetY     = a36.MerchantClickOffsetY.ToString();
+        _merchantInteractDelayMs  = a36.MerchantInteractDelayMs.ToString();
+        _tradeDialogDelayMs       = a36.TradeDialogDelayMs.ToString();
+        _sellTabDelayMs           = a36.SellTabDelayMs.ToString();
+        _sellModeConfirmDelayMs   = a36.SellModeConfirmDelayMs.ToString();
+        _sellRightClick           = a36.SellRightClick;
+        _sellItemDelayMs          = a36.SellItemDelayMs.ToString();
+        _sellButtonDelayMs        = a36.SellButtonDelayMs.ToString();
+        _sellConfirmButtonDelayMs = a36.SellConfirmButtonDelayMs.ToString();
+        _sellMatchThreshold       = a36.SellMatchThreshold.ToString("F2", System.Globalization.CultureInfo.InvariantCulture);
+        _merchantCloseKey         = a36.MerchantCloseKey;
+        _merchantCloseDelayMs     = a36.MerchantCloseDelayMs.ToString();
         RefreshMerchantStatus();
+
+        // Faz 35: town/portal ayarlarını yükle (state.json'dan UI'a)
+        _townTpKey             = a36.TownTpKey;
+        _townTpWaitMs          = a36.TownTpWaitMs.ToString();
+        _portalConfirmKey      = a36.PortalConfirmKey;
+        _portalWaitMs          = a36.PortalWaitMs.ToString();
+        _portalClickOffsetX    = a36.PortalClickOffsetX.ToString();
+        _portalClickOffsetY    = a36.PortalClickOffsetY.ToString();
+        _portalInteractDelayMs = a36.PortalInteractDelayMs.ToString();
+        RefreshTownStatus();
 
         // Faz 37: global hotkey (F10 varsayılan) + telemetri + kalibrasyon özeti
         _autonomousHotKey = a36.HotKey;
@@ -161,6 +182,7 @@ public partial class MainViewModel
     [ObservableProperty] private bool   _coordBinInvert;
     [ObservableProperty] private string _coordMinGapPx     = "2";
     [ObservableProperty] private string _coordMinConfidence = "0.60";
+    [ObservableProperty] private string _coordComboRoiStatus = "Birleşik ROI: çizilmedi";
 
     partial void OnCoordBinInvertChanged(bool value)
     {
@@ -193,16 +215,20 @@ public partial class MainViewModel
         var a = _state.Autonomous;
         CoordXRoiStatus = a.CoordXRoiW > 0 ? $"X ROI: ✓ {a.CoordXRoiW}×{a.CoordXRoiH}px" : "X ROI: çizilmedi";
         CoordYRoiStatus = a.CoordYRoiW > 0 ? $"Y ROI: ✓ {a.CoordYRoiW}×{a.CoordYRoiH}px" : "Y ROI: çizilmedi";
+        CoordComboRoiStatus = a.IsCoordComboCalibrated
+            ? $"Birleşik ROI: ✓ {a.CoordComboRoiW}×{a.CoordComboRoiH}px (AKTİF — X,Y birlikte)"
+            : "Birleşik ROI: çizilmedi (çizilirse iki ayrı ROI'nin yerine geçer)";
 
-        var mask = _coordReader.Recognizer.TaughtMask();
-        int n = mask.Count(b => b);
-        var counts = string.Join(" ", Enumerable.Range(0, 10)
-            .Select(d => $"{d}×{_coordReader.Recognizer.SampleCount(d)}"));
-        if (n == 10) CoordGlyphStatus = $"Rakamlar: ✓ 10/10 öğretildi [{counts}]";
+        var rec   = _coordReader.Recognizer;
+        var mask  = rec.TaughtMask();
+        int n     = mask.Count(b => b);
+        var counts = string.Join(" ", Enumerable.Range(0, 10).Select(d => $"{d}×{rec.SampleCount(d)}"));
+        string comma = rec.HasComma ? $"✓ virgül×{rec.SampleCount(10)}" : "✗ virgül (birleşik için gerekli)";
+        if (n == 10) CoordGlyphStatus = $"Rakamlar: ✓ 10/10 [{counts}]  {comma}";
         else
         {
             var missing = string.Join(",", Enumerable.Range(0, 10).Where(d => !mask[d]));
-            CoordGlyphStatus = $"Rakamlar: {n}/10 öğretildi (eksik: {missing})";
+            CoordGlyphStatus = $"Rakamlar: {n}/10 (eksik: {missing})  {comma}";
         }
     }
 
@@ -246,26 +272,59 @@ public partial class MainViewModel
         await PreviewCoordRoisAsync();
     }
 
+    /// <summary>Birleşik "(X, Y)" ROI'sini çiz — tek geniş kutu, virgül dahil. İki ayrı ROI'nin yerine geçer.</summary>
+    [RelayCommand]
+    private async Task CalibrateCoordComboRoiAsync()
+    {
+        var mainWindow = Application.Current.MainWindow;
+        mainWindow.WindowState = WindowState.Minimized;
+        var ov = new Views.CalibrationOverlayWindow(
+            "Birleşik koordinat — TÜM 'X, Y' sayısını (virgül dahil) kapsa: sol-üst köşeye, sonra sağ-alt köşeye tıkla",
+            twoCorner: true);
+        ov.ShowDialog();
+        mainWindow.WindowState = WindowState.Normal;
+        mainWindow.Activate();
+        if (!ov.Confirmed) return;
+        EnsureCalibrationRef();
+        var m = ResolutionMapper.Unmap(ov.SelectedRect.X, ov.SelectedRect.Y, ov.SelectedRect.Width, ov.SelectedRect.Height);
+        var a = _state.Autonomous;
+        a.CoordComboRoiX = m.X; a.CoordComboRoiY = m.Y;
+        a.CoordComboRoiW = Math.Max(1, m.Width); a.CoordComboRoiH = Math.Max(1, m.Height);
+        _store.Save(_state);
+        RefreshCoordStatus();
+        await PreviewCoordRoisAsync();
+    }
+
     [RelayCommand]
     private async Task PreviewCoordRoisAsync()
     {
         var a = _state.Autonomous;
-        if (a.CoordXRoiW <= 0 && a.CoordYRoiW <= 0) { CoordCaptureStatus = "⚠ Önce ROI çiz"; return; }
+        if (!a.IsCoordComboCalibrated && a.CoordXRoiW <= 0 && a.CoordYRoiW <= 0) { CoordCaptureStatus = "⚠ Önce ROI çiz"; return; }
 
         var mainWindow = Application.Current.MainWindow;
         mainWindow.WindowState = WindowState.Minimized;
         await Task.Delay(400);
-        if (a.CoordXRoiW > 0)
+        if (a.IsCoordComboCalibrated)
         {
-            var pr = ResolutionMapper.Map(a.CoordXRoiX, a.CoordXRoiY, a.CoordXRoiW, a.CoordXRoiH);
+            var pr = ResolutionMapper.Map(a.CoordComboRoiX, a.CoordComboRoiY, a.CoordComboRoiW, a.CoordComboRoiH);
             using var bmp = WtmVision.CaptureRegion(pr.X, pr.Y, pr.Width, pr.Height);
             CoordXPreview = BitmapToImageSource(bmp);
+            CoordYPreview = null;
         }
-        if (a.CoordYRoiW > 0)
+        else
         {
-            var pr = ResolutionMapper.Map(a.CoordYRoiX, a.CoordYRoiY, a.CoordYRoiW, a.CoordYRoiH);
-            using var bmp = WtmVision.CaptureRegion(pr.X, pr.Y, pr.Width, pr.Height);
-            CoordYPreview = BitmapToImageSource(bmp);
+            if (a.CoordXRoiW > 0)
+            {
+                var pr = ResolutionMapper.Map(a.CoordXRoiX, a.CoordXRoiY, a.CoordXRoiW, a.CoordXRoiH);
+                using var bmp = WtmVision.CaptureRegion(pr.X, pr.Y, pr.Width, pr.Height);
+                CoordXPreview = BitmapToImageSource(bmp);
+            }
+            if (a.CoordYRoiW > 0)
+            {
+                var pr = ResolutionMapper.Map(a.CoordYRoiX, a.CoordYRoiY, a.CoordYRoiW, a.CoordYRoiH);
+                using var bmp = WtmVision.CaptureRegion(pr.X, pr.Y, pr.Width, pr.Height);
+                CoordYPreview = BitmapToImageSource(bmp);
+            }
         }
         CoordPreviewVisible = true;
         mainWindow.WindowState = WindowState.Normal;
@@ -275,9 +334,34 @@ public partial class MainViewModel
     [RelayCommand]
     private async Task TeachDigitsAsync()
     {
-        if (!_state.Autonomous.IsCoordCalibrated) { CoordCaptureStatus = "⚠ Önce X ve Y ROI'lerini çiz"; return; }
+        var aa = _state.Autonomous;
         string lx = new string((CoordSampleX ?? string.Empty).Where(char.IsDigit).ToArray());
         string ly = new string((CoordSampleY ?? string.Empty).Where(char.IsDigit).ToArray());
+
+        // Birleşik mod: tek ROI'yi segmentle, "X,Y" etiketiyle (virgül dahil) öğret.
+        if (aa.IsCoordComboCalibrated)
+        {
+            if (lx.Length == 0 || ly.Length == 0) { CoordCaptureStatus = "⚠ Ekrandaki X ve Y değerlerini yaz (virgülü öğretmek için ikisi de gerekli)"; return; }
+            string label = lx + "," + ly;
+
+            var mw = Application.Current.MainWindow;
+            mw.WindowState = WindowState.Minimized;
+            await Task.Delay(400);
+            var cCells = _coordReader.CaptureComboCells();
+            mw.WindowState = WindowState.Normal;
+            mw.Activate();
+
+            var m2 = new System.Text.StringBuilder();
+            int t2 = TeachFromComboCells(cCells, label, m2);
+            foreach (var c in cCells) c.Dispose();
+            _coordReader.Recognizer.SaveToSettings(_state.Autonomous);
+            _store.Save(_state);
+            RefreshCoordStatus();
+            CoordCaptureStatus = t2 > 0 ? $"{t2} karakter öğretildi (rakam+virgül '{label}'). {m2}" : $"Öğretilemedi. {m2}";
+            return;
+        }
+
+        if (!aa.IsCoordCalibrated) { CoordCaptureStatus = "⚠ Önce X ve Y ROI'lerini çiz"; return; }
         if (lx.Length == 0 && ly.Length == 0) { CoordCaptureStatus = "⚠ Ekrandaki X ve Y değerlerini yaz"; return; }
 
         var mainWindow = Application.Current.MainWindow;
@@ -317,10 +401,28 @@ public partial class MainViewModel
         return cells.Count;
     }
 
+    // Birleşik "X,Y" etiketinden öğretir — ',' → virgül sınıfı (10), rakamlar → 0-9.
+    private int TeachFromComboCells(List<System.Drawing.Bitmap> cells, string label, System.Text.StringBuilder msg)
+    {
+        if (cells.Count != label.Length)
+        {
+            msg.Append(cells.Count < label.Length
+                ? $"Karakterler birleşiyor ({cells.Count} hücre, {label.Length} karakter '{label}') — Birleşik ROI'yi genişlet veya Min Boşluk'u düşür (şu an {_state.Autonomous.CoordMinGapPx}px)"
+                : $"Fazla hücre ({cells.Count} hücre, {label.Length} karakter '{label}') — Min Boşluk'u artır veya ROI'yi daralt");
+            return 0;
+        }
+        for (int i = 0; i < cells.Count; i++)
+        {
+            int cls = label[i] == ',' ? HomekoWorld.Services.Autonomous.GlyphDigitReader.Comma : (label[i] - '0');
+            _coordReader.Recognizer.SetGlyph(cls, cells[i]);
+        }
+        return cells.Count;
+    }
+
     [RelayCommand]
     private async Task DiagnoseCoordAsync()
     {
-        if (!_state.Autonomous.IsCoordCalibrated) { CoordCaptureStatus = "⚠ Önce X ve Y ROI'lerini çiz"; return; }
+        if (!_state.Autonomous.IsCoordCalibrated && !_state.Autonomous.IsCoordComboCalibrated) { CoordCaptureStatus = "⚠ Önce ROI çiz"; return; }
         var mainWindow = Application.Current.MainWindow;
         mainWindow.WindowState = WindowState.Minimized;
         await Task.Delay(400);
@@ -338,12 +440,24 @@ public partial class MainViewModel
     {
         if (!_coordReader.IsReady)
         {
-            CoordLiveRead = _coordReader.Recognizer.IsReady ? "ROI kalibre değil" : "Rakamlar öğretilmedi (10/10)";
+            var rec = _coordReader.Recognizer;
+            if (!rec.IsReady) CoordLiveRead = "Rakamlar öğretilmedi (10/10)";
+            else if (_state.Autonomous.IsCoordComboCalibrated && !rec.HasComma) CoordLiveRead = "Virgül öğretilmedi";
+            else CoordLiveRead = "ROI kalibre değil";
             return;
         }
         var mainWindow = Application.Current.MainWindow;
         mainWindow.WindowState = WindowState.Minimized;
         await Task.Delay(400);
+        if (_state.Autonomous.IsCoordComboCalibrated)
+        {
+            var (cx, cy, detail) = _coordReader.ReadComboDebug();
+            mainWindow.WindowState = WindowState.Normal;
+            mainWindow.Activate();
+            CoordLiveRead      = (cx is not null && cy is not null) ? $"X={cx}  Y={cy}" : "okunamadı";
+            CoordCaptureStatus = detail;
+            return;
+        }
         var (xVal, xDetail) = _coordReader.ReadValueDebug(isX: true);
         var (yVal, yDetail) = _coordReader.ReadValueDebug(isX: false);
         mainWindow.WindowState = WindowState.Normal;
@@ -371,6 +485,11 @@ public partial class MainViewModel
     [ObservableProperty] private string _navToleranceCoords  = "15";
     [ObservableProperty] private string _navStepMs           = "800";
     [ObservableProperty] private bool   _navCameraInvert;
+    [ObservableProperty] private bool   _navTurnInvert;
+    [ObservableProperty] private bool   _navContinuous = true;
+    [ObservableProperty] private string _navContinuousReadMs = "250";
+    [ObservableProperty] private string _navContinuousSteerGain = "0.5";
+    [ObservableProperty] private bool   _navContinuousHold;
 
     [ObservableProperty]
     private double _navCameraPixPerDeg = 8.5;
@@ -393,6 +512,21 @@ public partial class MainViewModel
         _state.Autonomous.NavCameraInvert = value;
         _store.Save(_state);
     }
+
+    partial void OnNavTurnInvertChanged(bool value)
+    {
+        _state.Autonomous.NavTurnInvert = value;
+        _store.Save(_state);
+    }
+
+    partial void OnNavContinuousChanged(bool value)
+    { _state.Autonomous.NavContinuous = value; _store.Save(_state); }
+    partial void OnNavContinuousReadMsChanged(string v)
+    { if (int.TryParse(v, out int n) && n >= 80) { _state.Autonomous.NavContinuousReadMs = n; _store.Save(_state); } }
+    partial void OnNavContinuousSteerGainChanged(string v)
+    { if (float.TryParse(v, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float f) && f >= 0.1f && f <= 1.5f) { _state.Autonomous.NavContinuousSteerGain = f; _store.Save(_state); } }
+    partial void OnNavContinuousHoldChanged(bool value)
+    { _state.Autonomous.NavContinuousHold = value; _store.Save(_state); }
 
     partial void OnNavToleranceCoordsChanged(string value)
     {
@@ -462,7 +596,7 @@ public partial class MainViewModel
     private async Task CalibrateTurnRateAsync()
     {
         if (!_navigator.IsReady) { NavStatus = "⚠ Koordinat okuyucu hazır değil"; return; }
-        NavStatus = "Dönüş kalibrasyonu — D tuşu 2sn basılı kalacak, hazırlan…";
+        NavStatus = "Dönüş kalibrasyonu — kısa D dönüşleriyle ölçülüyor, hazırlan…";
         var mainWindow = Application.Current.MainWindow;
         mainWindow.WindowState = WindowState.Minimized;
         await Task.Delay(800);
@@ -543,7 +677,7 @@ public partial class MainViewModel
         mainWindow.WindowState = WindowState.Minimized;
         try
         {
-            await _navigator.NavigateToAsync(tx, ty, ct);
+            await _navigator.NavigateToAsync(tx, ty, ct, debugLog: true);
             NavStatus = $"✓ Hedefe ulaşıldı: ({tx},{ty})";
         }
         catch (OperationCanceledException)
@@ -685,42 +819,53 @@ public partial class MainViewModel
         }
     }
 
-    // ── Faz 36: Merchant satış ───────────────────────────────────────────────────
+    // ── Faz 36: Merchant satış (gerçek KO akışı: sol-seç→sağ-menü→trade→Sell Item→
+    //     mod-Confirm→ikon-eşleşen yuvaları taşı→Sell→Confirm) ──────────────────────
 
-    [ObservableProperty] private string _merchantClickOffsetX    = "0";
-    [ObservableProperty] private string _merchantClickOffsetY    = "0";
-    [ObservableProperty] private bool   _merchantRightClick      = true;
-    [ObservableProperty] private string _merchantInteractDelayMs = "1200";
-    [ObservableProperty] private string _sellTabStatus           = "kalibre edilmedi";
-    [ObservableProperty] private string _sellTabDelayMs          = "600";
-    [ObservableProperty] private bool   _useSellAllButton        = false;
-    [ObservableProperty] private string _sellAllButtonStatus     = "kalibre edilmedi";
-    [ObservableProperty] private bool   _sellRightClick          = true;
-    [ObservableProperty] private string _sellConfirmKey          = "";
-    [ObservableProperty] private string _sellItemDelayMs         = "200";
-    [ObservableProperty] private string _sellConfirmButtonStatus = "kalibre edilmedi (opsiyonel)";
-    [ObservableProperty] private string _merchantCloseKey        = "Escape";
-    [ObservableProperty] private string _merchantCloseDelayMs    = "300";
-    [ObservableProperty] private string _sellStatus              = "";
+    [ObservableProperty] private string _merchantClickOffsetX     = "0";
+    [ObservableProperty] private string _merchantClickOffsetY     = "0";
+    [ObservableProperty] private string _merchantInteractDelayMs  = "1200";
+    [ObservableProperty] private string _tradeDialogStatus        = "kalibre edilmedi";
+    [ObservableProperty] private string _tradeDialogDelayMs       = "800";
+    [ObservableProperty] private string _sellTabStatus            = "kalibre edilmedi";
+    [ObservableProperty] private string _sellTabDelayMs           = "600";
+    [ObservableProperty] private string _sellModeConfirmStatus    = "kalibre edilmedi";
+    [ObservableProperty] private string _sellModeConfirmDelayMs   = "500";
+    [ObservableProperty] private string _merchantInvGridStatus    = "kalibre edilmedi";
+    [ObservableProperty] private string _sellIconStatus           = "öğretilmedi";
+    [ObservableProperty] private string _sellMatchThreshold       = "0.80";
+    [ObservableProperty] private bool   _sellRightClick           = true;
+    [ObservableProperty] private string _sellItemDelayMs          = "200";
+    [ObservableProperty] private string _sellButtonStatus         = "kalibre edilmedi";
+    [ObservableProperty] private string _sellButtonDelayMs        = "500";
+    [ObservableProperty] private string _sellConfirmButtonStatus  = "kalibre edilmedi (opsiyonel)";
+    [ObservableProperty] private string _sellConfirmButtonDelayMs = "500";
+    [ObservableProperty] private string _merchantCloseKey         = "Escape";
+    [ObservableProperty] private string _merchantCloseDelayMs     = "300";
+    [ObservableProperty] private string _sellStatus               = "";
 
     partial void OnMerchantClickOffsetXChanged(string v)
     { if (int.TryParse(v, out int n)) { _state.Autonomous.MerchantClickOffsetX = n; _store.Save(_state); } }
     partial void OnMerchantClickOffsetYChanged(string v)
     { if (int.TryParse(v, out int n)) { _state.Autonomous.MerchantClickOffsetY = n; _store.Save(_state); } }
-    partial void OnMerchantRightClickChanged(bool v)
-    { _state.Autonomous.MerchantRightClick = v; _store.Save(_state); }
     partial void OnMerchantInteractDelayMsChanged(string v)
     { if (int.TryParse(v, out int n) && n > 0) { _state.Autonomous.MerchantInteractDelayMs = n; _store.Save(_state); } }
+    partial void OnTradeDialogDelayMsChanged(string v)
+    { if (int.TryParse(v, out int n) && n >= 0) { _state.Autonomous.TradeDialogDelayMs = n; _store.Save(_state); } }
     partial void OnSellTabDelayMsChanged(string v)
     { if (int.TryParse(v, out int n) && n >= 0) { _state.Autonomous.SellTabDelayMs = n; _store.Save(_state); } }
-    partial void OnUseSellAllButtonChanged(bool v)
-    { _state.Autonomous.UseSellAllButton = v; _store.Save(_state); }
-    partial void OnSellRightClickChanged(bool v)
-    { _state.Autonomous.SellRightClick = v; _store.Save(_state); }
-    partial void OnSellConfirmKeyChanged(string v)
-    { _state.Autonomous.SellConfirmKey = v; _store.Save(_state); }
+    partial void OnSellModeConfirmDelayMsChanged(string v)
+    { if (int.TryParse(v, out int n) && n >= 0) { _state.Autonomous.SellModeConfirmDelayMs = n; _store.Save(_state); } }
     partial void OnSellItemDelayMsChanged(string v)
     { if (int.TryParse(v, out int n) && n >= 0) { _state.Autonomous.SellItemDelayMs = n; _store.Save(_state); } }
+    partial void OnSellButtonDelayMsChanged(string v)
+    { if (int.TryParse(v, out int n) && n >= 0) { _state.Autonomous.SellButtonDelayMs = n; _store.Save(_state); } }
+    partial void OnSellConfirmButtonDelayMsChanged(string v)
+    { if (int.TryParse(v, out int n) && n >= 0) { _state.Autonomous.SellConfirmButtonDelayMs = n; _store.Save(_state); } }
+    partial void OnSellRightClickChanged(bool v)
+    { _state.Autonomous.SellRightClick = v; _store.Save(_state); }
+    partial void OnSellMatchThresholdChanged(string v)
+    { if (float.TryParse(v, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float f) && f > 0f && f <= 1f) { _state.Autonomous.SellMatchThreshold = f; _store.Save(_state); } }
     partial void OnMerchantCloseKeyChanged(string v)
     { _state.Autonomous.MerchantCloseKey = v; _store.Save(_state); }
     partial void OnMerchantCloseDelayMsChanged(string v)
@@ -729,68 +874,142 @@ public partial class MainViewModel
     private void RefreshMerchantStatus()
     {
         var a = _state.Autonomous;
-        SellTabStatus       = a.IsSellTabCalibrated          ? $"✓ ({a.SellTabX}, {a.SellTabY})"           : "kalibre edilmedi";
-        SellAllButtonStatus = a.IsSellAllButtonCalibrated    ? $"✓ ({a.SellAllButtonX}, {a.SellAllButtonY})" : "kalibre edilmedi";
+        TradeDialogStatus     = a.IsTradeDialogCalibrated     ? $"✓ ({a.TradeDialogX}, {a.TradeDialogY})"         : "kalibre edilmedi";
+        SellTabStatus         = a.IsSellTabCalibrated         ? $"✓ ({a.SellTabX}, {a.SellTabY})"                 : "kalibre edilmedi";
+        SellModeConfirmStatus = a.IsSellModeConfirmCalibrated ? $"✓ ({a.SellModeConfirmX}, {a.SellModeConfirmY})" : "kalibre edilmedi";
+        MerchantInvGridStatus = a.IsMerchantInvGridCalibrated
+            ? $"✓ {a.MerchantInvGridW}×{a.MerchantInvGridH}px ({a.MerchantInvCols}×{a.MerchantInvRows} yuva)"
+            : "kalibre edilmedi";
+        SellButtonStatus      = a.IsSellButtonCalibrated      ? $"✓ ({a.SellButtonX}, {a.SellButtonY})"           : "kalibre edilmedi";
         SellConfirmButtonStatus = a.IsSellConfirmButtonCalibrated
             ? $"✓ ({a.SellConfirmButtonX}, {a.SellConfirmButtonY})"
             : "kalibre edilmedi (opsiyonel)";
+        SellIconStatus        = _iconMatcher.IsReady ? $"✓ {_iconMatcher.Count} örnek öğretildi" : "öğretilmedi";
     }
 
-    [RelayCommand]
-    private async Task CalibrateSellTabAsync()
+    // Tek-tık buton konumu kalibrasyonu (master uzayda saklanır).
+    private async Task CalibratePointAsync(string prompt, Action<int, int> apply, Action? refresh = null)
     {
         var mainWindow = Application.Current.MainWindow;
         mainWindow.WindowState = WindowState.Minimized;
-        var ov = new Views.CalibrationOverlayWindow("Satış sekmesine/butonuna TEK TIKLA", singleClickMode: true);
+        var ov = new Views.CalibrationOverlayWindow(prompt, singleClickMode: true);
         ov.ShowDialog();
         mainWindow.WindowState = WindowState.Normal;
         mainWindow.Activate();
         if (!ov.Confirmed) return;
         EnsureCalibrationRef();
         var m = ResolutionMapper.Unmap(ov.SelectedRect.X, ov.SelectedRect.Y, 1, 1);
-        _state.Autonomous.SellTabX = m.X;
-        _state.Autonomous.SellTabY = m.Y;
+        apply(m.X, m.Y);
+        _store.Save(_state);
+        (refresh ?? RefreshMerchantStatus)();
+        await Task.CompletedTask;
+    }
+
+    [RelayCommand]
+    private Task CalibrateTradeDialogAsync() => CalibratePointAsync(
+        "'I would like to trade.' yazısına TEK TIKLA",
+        (x, y) => { _state.Autonomous.TradeDialogX = x; _state.Autonomous.TradeDialogY = y; });
+
+    [RelayCommand]
+    private Task CalibrateSellTabAsync() => CalibratePointAsync(
+        "'Sell Item' sekmesine TEK TIKLA",
+        (x, y) => { _state.Autonomous.SellTabX = x; _state.Autonomous.SellTabY = y; });
+
+    [RelayCommand]
+    private Task CalibrateSellModeConfirmAsync() => CalibratePointAsync(
+        "Satış moduna geçiş 'Confirm' butonuna TEK TIKLA",
+        (x, y) => { _state.Autonomous.SellModeConfirmX = x; _state.Autonomous.SellModeConfirmY = y; });
+
+    [RelayCommand]
+    private Task CalibrateSellButtonAsync() => CalibratePointAsync(
+        "'Sell' butonuna TEK TIKLA",
+        (x, y) => { _state.Autonomous.SellButtonX = x; _state.Autonomous.SellButtonY = y; });
+
+    [RelayCommand]
+    private Task CalibrateSellConfirmButtonAsync() => CalibratePointAsync(
+        "Satış sonrası son 'Confirm' butonuna TEK TIKLA (opsiyonel)",
+        (x, y) => { _state.Autonomous.SellConfirmButtonX = x; _state.Autonomous.SellConfirmButtonY = y; });
+
+    [RelayCommand]
+    private async Task CalibrateMerchantInvGridAsync()
+    {
+        var mainWindow = Application.Current.MainWindow;
+        mainWindow.WindowState = WindowState.Minimized;
+        var ov = new Views.CalibrationOverlayWindow(
+            "Merchant penceresindeki ENVANTER ızgarası — sol-üst köşeye, sonra sağ-alt köşeye tıkla",
+            twoCorner: true);
+        ov.ShowDialog();
+        mainWindow.WindowState = WindowState.Normal;
+        mainWindow.Activate();
+        if (!ov.Confirmed) return;
+        EnsureCalibrationRef();
+        var m = ResolutionMapper.Unmap(ov.SelectedRect.X, ov.SelectedRect.Y, ov.SelectedRect.Width, ov.SelectedRect.Height);
+        var a = _state.Autonomous;
+        a.MerchantInvGridX = m.X; a.MerchantInvGridY = m.Y;
+        a.MerchantInvGridW = Math.Max(1, m.Width); a.MerchantInvGridH = Math.Max(1, m.Height);
         _store.Save(_state);
         RefreshMerchantStatus();
         await Task.CompletedTask;
     }
 
     [RelayCommand]
-    private async Task CalibrateSellAllButtonAsync()
+    private async Task TeachSellIconAsync()
     {
         var mainWindow = Application.Current.MainWindow;
         mainWindow.WindowState = WindowState.Minimized;
-        var ov = new Views.CalibrationOverlayWindow("'Hepsini Sat' butonuna TEK TIKLA", singleClickMode: true);
+        var ov = new Views.CalibrationOverlayWindow(
+            "Satılacak eşya ikonunun ÇEVRESİNE kutu çiz (sol-üst → sağ-alt)",
+            twoCorner: true);
         ov.ShowDialog();
+        if (ov.Confirmed)
+        {
+            await Task.Delay(200);   // overlay tam kapansın (seçim çizimi ekrandan silinsin)
+            var rect = ov.SelectedRect;   // fiziksel ekran pikseli
+            if (rect.Width > 2 && rect.Height > 2)
+            {
+                using var bmp = WtmVision.CaptureRegion(rect.X, rect.Y, rect.Width, rect.Height);
+                _iconMatcher.AddTemplate(bmp);
+                _iconMatcher.SaveToSettings(_state.Autonomous);
+                _store.Save(_state);
+                SellStatus = $"İkon öğretildi ({_iconMatcher.Count} örnek)";
+            }
+            else SellStatus = "⚠ Kutu çok küçük — yeniden çiz";
+        }
         mainWindow.WindowState = WindowState.Normal;
         mainWindow.Activate();
-        if (!ov.Confirmed) return;
-        EnsureCalibrationRef();
-        var m = ResolutionMapper.Unmap(ov.SelectedRect.X, ov.SelectedRect.Y, 1, 1);
-        _state.Autonomous.SellAllButtonX = m.X;
-        _state.Autonomous.SellAllButtonY = m.Y;
-        _store.Save(_state);
         RefreshMerchantStatus();
-        await Task.CompletedTask;
     }
 
     [RelayCommand]
-    private async Task CalibrateSellConfirmButtonAsync()
+    private void ResetSellIcons()
+    {
+        _iconMatcher.Clear();
+        _iconMatcher.SaveToSettings(_state.Autonomous);
+        _store.Save(_state);
+        RefreshMerchantStatus();
+        SellStatus = "Satılacak ikon örnekleri silindi — yeniden öğret";
+    }
+
+    // Teşhis: merchant penceresi SATIŞ modunda açıkken envanteri tarar, her yuvanın
+    // eşleşme skorunu merchant_sell_debug.png'ye çizer (+ sell_template_N.png).
+    [RelayCommand]
+    private async Task TestSellScanAsync()
     {
         var mainWindow = Application.Current.MainWindow;
         mainWindow.WindowState = WindowState.Minimized;
-        var ov = new Views.CalibrationOverlayWindow("Toplu satış ONAY butonuna TEK TIKLA (opsiyonel)", singleClickMode: true);
-        ov.ShowDialog();
-        mainWindow.WindowState = WindowState.Normal;
-        mainWindow.Activate();
-        if (!ov.Confirmed) return;
-        EnsureCalibrationRef();
-        var m = ResolutionMapper.Unmap(ov.SelectedRect.X, ov.SelectedRect.Y, 1, 1);
-        _state.Autonomous.SellConfirmButtonX = m.X;
-        _state.Autonomous.SellConfirmButtonY = m.Y;
-        _store.Save(_state);
-        RefreshMerchantStatus();
-        await Task.CompletedTask;
+        SellStatus = "Envanter taranıyor…";
+        try
+        {
+            await Task.Delay(400);   // oyun öne gelsin (merchant SATIŞ modunda açık olmalı)
+            string dir = AppDomain.CurrentDomain.BaseDirectory;
+            SellStatus = _merchantTrader.SaveScanDebug(dir);
+        }
+        catch (Exception ex) { SellStatus = $"Hata: {ex.Message}"; }
+        finally
+        {
+            mainWindow.WindowState = WindowState.Normal;
+            mainWindow.Activate();
+        }
     }
 
     private CancellationTokenSource? _sellTestCts;
@@ -813,8 +1032,12 @@ public partial class MainViewModel
         _merchantTrader.StatusChanged += OnStatus;
         try
         {
-            int sold = await _merchantTrader.TradeAsync(ct);
-            SellStatus = sold < 0 ? "✓ Tümü satıldı (sell-all)" : $"✓ {sold} yuva satıldı";
+            // Minimize sonrası oyun öne gelsin — yoksa ilk NPC tıkı (hâlâ minimize olan)
+            // app'e gidip kaybolur, merchant penceresi açılmaz. Diğer tüm yakalama/test
+            // komutları da bu settle'ı kullanır (try içinde: iptalde finally pencereyi geri açar).
+            await Task.Delay(400, ct);
+            int sold = await _merchantTrader.TradeAsync(ct, saveDebug: true);
+            SellStatus = sold > 0 ? $"✓ {sold} eşya satıldı" : "Hiç eşya satılmadı — ⑤ROI/⑥ikon hizası veya eşik? (🔎 Test Tara ile bak)";
         }
         catch (OperationCanceledException)
         {
@@ -838,6 +1061,7 @@ public partial class MainViewModel
     // ── Faz 35: Town TP + portal ──────────────────────────────────────────────────
 
     [ObservableProperty] private string _townTpKey              = "F7";
+    [ObservableProperty] private string _townTpButtonStatus     = "kalibre edilmedi";
     [ObservableProperty] private string _townTpWaitMs           = "10000";
     [ObservableProperty] private string _portalConfirmKey       = "";
     [ObservableProperty] private string _portalWaitMs           = "10000";
@@ -866,6 +1090,20 @@ public partial class MainViewModel
         _autonomousEngine.RequestGoToTown();
         NavStatus = "Town yolculuğu başlatıldı (GoingToTown)";
     }
+
+    private void RefreshTownStatus()
+    {
+        var a = _state.Autonomous;
+        TownTpButtonStatus = a.IsTownTpButtonCalibrated
+            ? $"✓ ({a.TownTpButtonX}, {a.TownTpButtonY})"
+            : "kalibre edilmedi";
+    }
+
+    [RelayCommand]
+    private Task CalibrateTownTpButtonAsync() => CalibratePointAsync(
+        "Town ışınlanma (UI) butonuna TEK TIKLA",
+        (x, y) => { _state.Autonomous.TownTpButtonX = x; _state.Autonomous.TownTpButtonY = y; },
+        RefreshTownStatus);
 
     // ── Faz 37: Dayanıklılık + Hotkey + Özet ────────────────────────────────────
 

@@ -27,12 +27,15 @@ public sealed class CoordinateReader
     }
 
     public GlyphDigitReader Recognizer => _glyph;
-    public bool IsReady => _glyph.IsReady && _state.Autonomous.IsCoordCalibrated;
+    public bool IsReady => _state.Autonomous.IsCoordComboCalibrated
+        ? (_glyph.IsReady && _glyph.HasComma)
+        : (_glyph.IsReady && _state.Autonomous.IsCoordCalibrated);
 
     /// <summary>Anlık (X,Y) okur. Okunamazsa null.</summary>
     public (int x, int y)? Read()
     {
         if (!IsReady) return null;
+        if (_state.Autonomous.IsCoordComboCalibrated) return ReadCombo();   // birleşik mod
         int? x = ReadValue(isX: true);
         int? y = ReadValue(isX: false);
         if (x is null || y is null) return null;
@@ -106,6 +109,74 @@ public sealed class CoordinateReader
         var pr = ResolutionMapper.Map(mx, my, mw, mh);
         using var bmp = WtmVision.CaptureRegion(pr.X, pr.Y, pr.Width, pr.Height);
         return SegmentDigits(bmp, s);
+    }
+
+    // ── Birleşik "X, Y" ROI (virgül ayıracı) ─────────────────────────────────────
+
+    /// <summary>Birleşik ROI'yi yakalar ve karakter hücrelerine böler.</summary>
+    public List<Bitmap> CaptureComboCells()
+    {
+        var s = _state.Autonomous;
+        if (s.CoordComboRoiW <= 0 || s.CoordComboRoiH <= 0) return new List<Bitmap>();
+        var pr = ResolutionMapper.Map(s.CoordComboRoiX, s.CoordComboRoiY, s.CoordComboRoiW, s.CoordComboRoiH);
+        using var bmp = WtmVision.CaptureRegion(pr.X, pr.Y, pr.Width, pr.Height);
+        return SegmentDigits(bmp, s);
+    }
+
+    /// <summary>
+    /// Birleşik "X, Y" ROI'sini okur: segment → her hücre 0-9/virgül → VİRGÜLDEN böl
+    /// (öncesi X, sonrası Y). Virgül yoksa veya iki taraftan biri boşsa null (bayat değer kullanılmaz).
+    /// Hane sayısı (3↔4) değişse de konuma değil virgüle dayandığından doğru okur.
+    /// </summary>
+    public (int x, int y)? ReadCombo()
+    {
+        var cells = CaptureComboCells();
+        if (cells.Count == 0) return null;
+        try
+        {
+            var s = _state.Autonomous;
+            long xVal = 0, yVal = 0; int xc = 0, yc = 0; bool afterComma = false;
+            foreach (var cell in cells)
+            {
+                var (d, conf) = _glyph.Predict(cell, includeComma: true);
+                if (conf < s.MinDigitConfidence) continue;               // gürültü/boşluk → atla
+                if (d == GlyphDigitReader.Comma) { afterComma = true; continue; }
+                if (!afterComma) { xVal = xVal * 10 + d; if (++xc > 9) return null; }
+                else             { yVal = yVal * 10 + d; if (++yc > 9) return null; }
+            }
+            if (!afterComma || xc == 0 || yc == 0) return null;          // virgül + iki taraf şart
+            return ((int)xVal, (int)yVal);
+        }
+        finally { foreach (var c in cells) c.Dispose(); }
+    }
+
+    /// <summary>Verbose birleşik okuma — her hücrenin tahminini ve güvenini döner. Teşhis için.</summary>
+    public (int? x, int? y, string detail) ReadComboDebug()
+    {
+        var cells = CaptureComboCells();
+        if (cells.Count == 0) return (null, null, "0 hücre");
+        try
+        {
+            var s = _state.Autonomous;
+            var sb = new System.Text.StringBuilder($"{cells.Count} hücre: [");
+            long xVal = 0, yVal = 0; int xc = 0, yc = 0; bool afterComma = false;
+            for (int i = 0; i < cells.Count; i++)
+            {
+                var (d, conf) = _glyph.Predict(cells[i], includeComma: true);
+                char sym = d < 0 ? '?' : (d == GlyphDigitReader.Comma ? ',' : (char)('0' + d));
+                sb.Append($"{sym}={conf:F2}");
+                if (conf < s.MinDigitConfidence) sb.Append('~');
+                else if (d == GlyphDigitReader.Comma) afterComma = true;
+                else if (!afterComma) { xVal = xVal * 10 + d; xc++; }
+                else                  { yVal = yVal * 10 + d; yc++; }
+                if (i < cells.Count - 1) sb.Append(' ');
+            }
+            sb.Append($"] eşik={s.MinDigitConfidence:F2}");
+            int? x = (afterComma && xc > 0) ? (int?)xVal : null;
+            int? y = (afterComma && yc > 0) ? (int?)yVal : null;
+            return (x, y, sb.ToString());
+        }
+        finally { foreach (var c in cells) c.Dispose(); }
     }
 
     // ── Segmentasyon ────────────────────────────────────────────────────────────
@@ -183,19 +254,21 @@ public sealed class CoordinateReader
     /// </summary>
     public string[] SaveDebugImages(string dir)
     {
+        var s = _state.Autonomous;
         var paths = new List<string>();
-        TrySaveDebugRoi(dir, isX: true,  "coord_debug_x.png", paths);
-        TrySaveDebugRoi(dir, isX: false, "coord_debug_y.png", paths);
+        if (s.IsCoordComboCalibrated)
+            TrySaveDebugRoi(dir, s.CoordComboRoiX, s.CoordComboRoiY, s.CoordComboRoiW, s.CoordComboRoiH, "coord_debug_combo.png", paths);
+        else
+        {
+            TrySaveDebugRoi(dir, s.CoordXRoiX, s.CoordXRoiY, s.CoordXRoiW, s.CoordXRoiH, "coord_debug_x.png", paths);
+            TrySaveDebugRoi(dir, s.CoordYRoiX, s.CoordYRoiY, s.CoordYRoiW, s.CoordYRoiH, "coord_debug_y.png", paths);
+        }
         return paths.ToArray();
     }
 
-    private void TrySaveDebugRoi(string dir, bool isX, string filename, List<string> paths)
+    private void TrySaveDebugRoi(string dir, int mx, int my, int mw, int mh, string filename, List<string> paths)
     {
-        var s  = _state.Autonomous;
-        int mx = isX ? s.CoordXRoiX : s.CoordYRoiX;
-        int my = isX ? s.CoordXRoiY : s.CoordYRoiY;
-        int mw = isX ? s.CoordXRoiW : s.CoordYRoiW;
-        int mh = isX ? s.CoordXRoiH : s.CoordYRoiH;
+        var s = _state.Autonomous;
         if (mw <= 0 || mh <= 0) return;
 
         var pr = ResolutionMapper.Map(mx, my, mw, mh);

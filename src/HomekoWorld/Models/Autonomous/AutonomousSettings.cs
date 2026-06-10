@@ -29,7 +29,7 @@ public class AutonomousSettings
     // ── Faz 37: Kalibrasyon özeti (hesaplanmış; JSON'a yazılmaz) ──────────────────
 
     [System.Text.Json.Serialization.JsonIgnore]
-    public bool IsCoordReady => IsCoordCalibrated;
+    public bool IsCoordReady => IsCoordCalibrated || IsCoordComboCalibrated;
 
     [System.Text.Json.Serialization.JsonIgnore]
     public bool IsWaypointsReady =>
@@ -95,6 +95,17 @@ public class AutonomousSettings
     public int CoordYRoiW { get; set; }
     public int CoordYRoiH { get; set; }
 
+    // Faz 34: BİRLEŞİK koord ROI — tek geniş ROI "X, Y" metninin tamamını kapsar; virgül
+    // ayıracıyla bölünür (öncesi X, sonrası Y). X 3↔4 hane değişince ayrı ROI'ler kayıyordu;
+    // bu konuma değil VİRGÜLE dayandığından hane sayısı değişse de doğru okur. Kalibre edilirse
+    // iki-ROI modunun yerini alır; virgül 11. glyph sınıfı olarak öğretilmeli.
+    public int CoordComboRoiX { get; set; }
+    public int CoordComboRoiY { get; set; }
+    public int CoordComboRoiW { get; set; }
+    public int CoordComboRoiH { get; set; }
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool IsCoordComboCalibrated => CoordComboRoiW > 0 && CoordComboRoiH > 0;
+
     /// <summary>Öğretilen rakam glyph'leri — çok örnekli (0-9, her rakam için en fazla 5 PNG base64). DigitGlyphsB64'ün yerini aldı.</summary>
     public string[][] DigitGlyphsMulti { get; set; } = new string[10][];
     /// <summary>Eski tek-örnekli alan (geriye dönük uyumluluk için okunur, artık yazılmaz).</summary>
@@ -139,6 +150,10 @@ public class AutonomousSettings
     /// <summary>Navigasyon dönüşü için A/D tuş süresi (ms/derece). 2000 / ölçülen_derece ile kalibre edilir.</summary>
     public float NavTurnMsPerDeg    { get; set; } = 10f;
 
+    /// <summary>A/D dönüş yönü ters mi — minimap koordinat sistemi sol-elli (Y aşağı artıyor) ise
+    /// bot hesapladığı yönün tersine döner; bu açıkken A↔D rolü değişir, yakınsama düzelir.</summary>
+    public bool  NavTurnInvert      { get; set; } = false;
+
     /// <summary>Sola dönüş tuşu (varsayılan A).</summary>
     public string NavTurnKeyLeft    { get; set; } = "A";
 
@@ -156,6 +171,19 @@ public class AutonomousSettings
 
     /// <summary>Okuma denemeleri arası bekleme (ms).</summary>
     public int   NavReadRetryMs     { get; set; } = 120;
+
+    /// <summary>Nav okumada "ışınlanma" filtresi — son konuma bu birimden uzak okumalar (anlık çöp,
+    /// örn. virgül-misdetection) atılır; karakter bir okuma arası bu kadar yol gidemez.</summary>
+    public int   NavMaxJumpCoords   { get; set; } = 300;
+
+    /// <summary>Akıcı navigasyon: W SÜREKLİ basılı, yürürken A/D ile düzelt (dur-kalk probe yerine). Çok daha akıcı.</summary>
+    public bool  NavContinuous          { get; set; } = true;
+    /// <summary>Akıcı modda okuma aralığı (ms) — karakter bu kadar yürür, sonra konum okunup düzeltilir.</summary>
+    public int   NavContinuousReadMs    { get; set; } = 250;
+    /// <summary>Akıcı modda dönüş kazancı (0.1-1.5) — açı hatasının ne kadarını her düzeltmede dönsün. Düşük=yumuşak kıvrım, yüksek=keskin.</summary>
+    public float NavContinuousSteerGain { get; set; } = 0.5f;
+    /// <summary>Saf akıcı: W'yi BIRAKMA, yürürken oku+düzelt (en akıcı; koord okuması güvenilir + A/D W basılıyken döndürüyorsa). Kapalı=hibrit (yürü-dur-düzelt).</summary>
+    public bool  NavContinuousHold     { get; set; } = false;
 
     // ── Faz 34: Waypoint'ler (oyun koordinatları; ResolutionMapper bağımsız) ──────
 
@@ -223,10 +251,68 @@ public class AutonomousSettings
     /// <summary>Kapat komutu sonrası bekleme (ms).</summary>
     public int    MerchantCloseDelayMs { get; set; } = 300;
 
+    // ── Faz 36 REWRITE: gerçek KO satış akışı ────────────────────────────────────
+    // sol-tık(seç) → sağ-tık(menü) → "I would like to trade." → "Sell Item" sekmesi →
+    // mod-değiştir "Confirm" → ikon-eşleşen yuvaları sağ-tık ile satış çantasına taşı →
+    // "Sell" → son "Confirm". (sağ-tık=anında-sat DEĞİL; çanta + Sell + Confirm gerekir.)
+
+    /// <summary>"I would like to trade." diyalog butonu (master uzay; 0 = kalibre edilmedi).</summary>
+    public int    TradeDialogX       { get; set; }
+    public int    TradeDialogY       { get; set; }
+    /// <summary>Trade seçildikten sonra alış/satış penceresi açılana dek bekleme (ms).</summary>
+    public int    TradeDialogDelayMs { get; set; } = 800;
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool   IsTradeDialogCalibrated => TradeDialogX > 0 || TradeDialogY > 0;
+
+    /// <summary>Purchase→Sell mod değişimi onay butonu ("Confirm"; master uzay).</summary>
+    public int    SellModeConfirmX       { get; set; }
+    public int    SellModeConfirmY       { get; set; }
+    /// <summary>Mod onayından sonra satış arayüzü oturana dek bekleme (ms).</summary>
+    public int    SellModeConfirmDelayMs { get; set; } = 500;
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool   IsSellModeConfirmCalibrated => SellModeConfirmX > 0 || SellModeConfirmY > 0;
+
+    /// <summary>Merchant penceresindeki envanter ızgarası ROI — normal 'I' envanterinden AYRI konumda olabilir (master uzay).</summary>
+    public int    MerchantInvGridX { get; set; }
+    public int    MerchantInvGridY { get; set; }
+    public int    MerchantInvGridW { get; set; }
+    public int    MerchantInvGridH { get; set; }
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool   IsMerchantInvGridCalibrated => MerchantInvGridW > 0 && MerchantInvGridH > 0;
+    /// <summary>Merchant envanter satır sayısı (28 kare; yön ROI en-boy oranından — geniş→4, uzun→7).</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public int    MerchantInvRows => MerchantInvGridW >= MerchantInvGridH ? 4 : 7;
+    /// <summary>Merchant envanter sütun sayısı (geniş→7, uzun→4).</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public int    MerchantInvCols => MerchantInvGridW >= MerchantInvGridH ? 7 : 4;
+
+    /// <summary>"Sell" butonu — satış çantasındaki eşyaları satar (master uzay).</summary>
+    public int    SellButtonX       { get; set; }
+    public int    SellButtonY       { get; set; }
+    /// <summary>Sell butonuna basıldıktan sonra onay penceresi belirene dek bekleme (ms).</summary>
+    public int    SellButtonDelayMs { get; set; } = 500;
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool   IsSellButtonCalibrated => SellButtonX > 0 || SellButtonY > 0;
+
+    /// <summary>Satılacak eşya ikon template'leri (NCC; base64 PNG, en fazla IconMatcher.MaxSamples).</summary>
+    public string[] SellTemplatesB64  { get; set; } = System.Array.Empty<string>();
+    /// <summary>Bir yuva ikonunun "satılacak" sayılması için minimum NCC skoru (0–1).</summary>
+    public float    SellMatchThreshold { get; set; } = 0.80f;
+    /// <summary>Satış çantası kapasitesi (KO: 7×2=14). Bir turda en fazla bu kadar eşya taşınır, sonra Sell+Confirm; kalan varsa döngü tekrarlar.</summary>
+    public int      SellBagCapacity    { get; set; } = 14;
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool     IsSellIconReady => SellTemplatesB64 is { Length: > 0 };
+
     // ── Faz 35: Town TP + portal etkileşimi ──────────────────────────────────────
 
-    /// <summary>Town ışınlanma tuşu (KO'da genellikle F7 veya sınıfa özgü).</summary>
+    /// <summary>Town ışınlanma tuşu — yalnızca UI butonu kalibre EDİLMEMİŞSE fallback (bu oyunda TP sabit UI butonu).</summary>
     public string TownTpKey    { get; set; } = "F7";
+
+    /// <summary>Town ışınlanma UI butonu konumu (master uzay). Bu oyunda TP kısayol DEĞİL, sabit bir UI butonu → buna sol-tık. 0 = kalibre edilmedi → TownTpKey fallback.</summary>
+    public int    TownTpButtonX { get; set; }
+    public int    TownTpButtonY { get; set; }
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool   IsTownTpButtonCalibrated => TownTpButtonX > 0 || TownTpButtonY > 0;
 
     /// <summary>Town TP sonrası harita yükleme bekleme süresi (ms). Yükleme bitene kadar koord okunamaz.</summary>
     public int    TownTpWaitMs { get; set; } = 10_000;

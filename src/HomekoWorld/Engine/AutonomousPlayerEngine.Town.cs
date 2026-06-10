@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using HomekoWorld.Hardware;
 using HomekoWorld.Models.Autonomous;
+using HomekoWorld.Services.Capture;
 
 namespace HomekoWorld.Engine;
 
@@ -21,18 +22,30 @@ public sealed partial class AutonomousPlayerEngine
     {
         var s = _state.Autonomous;
 
-        if (string.IsNullOrWhiteSpace(s.TownTpKey))
+        // Bu oyunda Town TP = sabit UI butonu → kalibre edilmişse ona sol-tık.
+        // Değilse eski kısayol (TownTpKey) fallback; o da yoksa farm'a dön.
+        if (s.IsTownTpButtonCalibrated)
         {
-            Log("⚠ Town TP tuşu ayarlanmamış", "event");
-            SetState(AutoPlayerState.Farming, "Town TP tuşu eksik — farm'a dönüldü");
+            var p = ResolutionMapper.Map(s.TownTpButtonX, s.TownTpButtonY, 1, 1);
+            Log($"Town butonu tıklanıyor ({p.X},{p.Y})", "event");
+            await _transport.MoveAbsAsync(p.X, p.Y, ct);
+            await Task.Delay(120, ct);
+            await _transport.ClickAsync(MouseButton.Left, ct);
+        }
+        else if (!string.IsNullOrWhiteSpace(s.TownTpKey))
+        {
+            Log($"Town TP tuşu: '{s.TownTpKey}' basılıyor (buton kalibre değil)", "event");
+            await _transport.KeyDownAsync(s.TownTpKey, ct);
+            await Task.Delay(80, ct);
+            await _transport.KeyUpAsync(s.TownTpKey, CancellationToken.None);
+        }
+        else
+        {
+            Log("⚠ Town butonu/tuşu ayarlanmamış", "event");
+            SetState(AutoPlayerState.Farming, "Town TP eksik — farm'a dönüldü");
             _farm.Start();
             return;
         }
-
-        Log($"Town TP: '{s.TownTpKey}' basılıyor", "event");
-        await _transport.KeyDownAsync(s.TownTpKey, ct);
-        await Task.Delay(80, ct);
-        await _transport.KeyUpAsync(s.TownTpKey, CancellationToken.None);
 
         StatusChanged?.Invoke(this, $"Town yükleniyor ({s.TownTpWaitMs / 1000} sn)…");
         await Task.Delay(s.TownTpWaitMs, ct);

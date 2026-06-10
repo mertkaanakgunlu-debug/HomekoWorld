@@ -174,6 +174,7 @@ public partial class App : Application
 
         // Faz 32 — Koordinat okuma (glyph eşleştirmeli rakam tanıma)
         services.AddSingleton<Services.Autonomous.GlyphDigitReader>();
+        services.AddSingleton<Services.Autonomous.IconMatcher>();
         services.AddSingleton<Services.Autonomous.CoordinateReader>();
 
         // Faz 34 — WorldNavigator (probe-correct koordinat navigasyonu)

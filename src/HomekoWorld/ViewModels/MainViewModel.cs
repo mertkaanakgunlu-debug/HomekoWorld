@@ -251,6 +251,7 @@ public partial class MainViewModel : ObservableObject
     private readonly HomekoWorld.Services.Autonomous.WorldNavigator   _navigator;
     private readonly HomekoWorld.Services.Autonomous.InventoryReader  _inventoryReader;
     private readonly HomekoWorld.Services.Autonomous.MerchantTrader   _merchantTrader;
+    private readonly HomekoWorld.Services.Autonomous.IconMatcher      _iconMatcher;
 
     private CancellationTokenSource? _reconnectCts;
 
@@ -273,7 +274,8 @@ public partial class MainViewModel : ObservableObject
         HomekoWorld.Services.Autonomous.CoordinateReader coordinateReader,
         HomekoWorld.Services.Autonomous.WorldNavigator   worldNavigator,
         HomekoWorld.Services.Autonomous.InventoryReader  inventoryReader,
-        HomekoWorld.Services.Autonomous.MerchantTrader   merchantTrader)
+        HomekoWorld.Services.Autonomous.MerchantTrader   merchantTrader,
+        HomekoWorld.Services.Autonomous.IconMatcher      iconMatcher)
     {
         _router        = router;
         _transport     = router;
@@ -293,6 +295,7 @@ public partial class MainViewModel : ObservableObject
         _navigator        = worldNavigator;
         _inventoryReader  = inventoryReader;
         _merchantTrader   = merchantTrader;
+        _iconMatcher      = iconMatcher;
         Editor          = editor;
 
         _state         = state;
