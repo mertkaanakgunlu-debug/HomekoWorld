@@ -58,8 +58,17 @@
     </Border>
 
     <!-- ── Mob kataloğu ──────────────────────────────────────── -->
+    <!-- Seçim sayacı + çoklu seçim ipucu -->
+    <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="10,4,10,0" VerticalAlignment="Top">
+      <TextBlock Foreground="{StaticResource TextMuted}" FontSize="10"
+                 ToolTip="Moba tıklayarak seç/kaldır. Birden fazla mob seçebilirsin — bot hepsini avlar, öncelik 'Hedefe Göre' ayarından.">
+        <Run Text="Seçili: "/>
+        <Run Text="{Binding FarmSelectedMobCount}" FontWeight="SemiBold"/>
+        <Run Text=" mob  (tıkla = seç / tekrar tıkla = kaldır)"/>
+      </TextBlock>
+    </StackPanel>
     <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto"
-                  HorizontalScrollBarVisibility="Disabled">
+                  HorizontalScrollBarVisibility="Disabled" Margin="0,22,0,0">
       <ItemsControl ItemsSource="{Binding FarmMobsFiltered}" Margin="6,8,6,8">
         <ItemsControl.ItemsPanel>
           <ItemsPanelTemplate>
@@ -450,6 +459,56 @@
                         Content="🎯 Tespit kutularını göster (YOLO)"
                         ToolTip="Açıkken farm çalışırken seçili mob türü için ekrana tespit kutuları + isim/güven çizilir; saldırılan hedef vurgulanır. Kutular tıklamayı engellemez (click-through)."/>
 
+              <!-- B2: Replay/benchmark kaydı — gerçek kareleri diske kaydet (offline model/runtime A/B) -->
+              <CheckBox IsChecked="{Binding FarmReplayEnabled}"
+                        Foreground="{StaticResource TextMuted}" FontSize="10"
+                        Margin="0,6,0,0"
+                        Content="🎬 Replay kaydı (benchmark için)"
+                        ToolTip="Açıkken farm çalışırken gerçek oyun kareleri + YOLO tespitleri 'replays\&lt;zaman&gt;\' klasörüne kaydedilir (~2 fps, ayrı thread → farm'ı yavaşlatmaz). Sonra tools\yolo_trainer\src\replay_benchmark.py ile farklı model/conf/iou objektif karşılaştırılır. Bir sonraki Başlat'ta geçerli olur. Varsayılan KAPALI."/>
+
+              <!-- P2: Pipelined inference — capture+preprocess ∥ GPU Run overlap → yüksek FPS -->
+              <CheckBox IsChecked="{Binding FarmPipelined}"
+                        Foreground="{StaticResource TextMuted}" FontSize="10"
+                        Margin="0,6,0,0"
+                        Content="⚡ Pipelined inference (yüksek FPS)"
+                        ToolTip="Açıkken ekran yakalama+preprocess (CPU) ile GPU inference AYRI thread'lerde üst üste biner → FPS belirgin artar (combo/click accuracy + daha taze tık). Bir sonraki Başlat'ta geçerli olur. Varsayılan AÇIK; herhangi bir kararsızlıkta KAPAT → kanıtlanmış seri yola döner."/>
+
+              <!-- P3: ROI yakalama — Cap ms'yi düşürmek için yalnız belirtilen ekran bölgesini yakala -->
+              <CheckBox IsChecked="{Binding FarmRoiEnabled}"
+                        Foreground="{StaticResource TextMuted}" FontSize="10"
+                        Margin="0,6,0,0"
+                        Content="✂ ROI yakalama (Cap ms azaltır)"
+                        ToolTip="Açıkken tam ekran (ör. 2560×1600) yerine yalnız belirlenen bölge yakalanır — GPU DMA + CPU readback küçülür, Cap ms düşer, FPS artar. DXGI aktifken çalışır; GDI fallback'te etkisizdir. Bir sonraki Başlat'ta geçerli olur. X değeri 4'ün katı olmalı."/>
+              <!-- ROI koordinat girişleri (yalnız ROI açıkken anlamlı) -->
+              <Grid Margin="16,3,0,0">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="Auto"/>
+                  <ColumnDefinition Width="56"/>
+                  <ColumnDefinition Width="Auto"/>
+                  <ColumnDefinition Width="56"/>
+                  <ColumnDefinition Width="Auto"/>
+                  <ColumnDefinition Width="56"/>
+                  <ColumnDefinition Width="Auto"/>
+                  <ColumnDefinition Width="56"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Text="X:" VerticalAlignment="Center" Foreground="{StaticResource TextMuted}" FontSize="10" Margin="0,0,3,0"/>
+                <TextBox   Grid.Column="1" Text="{Binding FarmRoiX, UpdateSourceTrigger=LostFocus}"
+                           FontSize="10" VerticalContentAlignment="Center" Height="20"
+                           ToolTip="ROI sol kenarı (4'ün katı önerilir)"/>
+                <TextBlock Grid.Column="2" Text="  Y:" VerticalAlignment="Center" Foreground="{StaticResource TextMuted}" FontSize="10" Margin="0,0,3,0"/>
+                <TextBox   Grid.Column="3" Text="{Binding FarmRoiY, UpdateSourceTrigger=LostFocus}"
+                           FontSize="10" VerticalContentAlignment="Center" Height="20"
+                           ToolTip="ROI üst kenarı"/>
+                <TextBlock Grid.Column="4" Text="  G:" VerticalAlignment="Center" Foreground="{StaticResource TextMuted}" FontSize="10" Margin="0,0,3,0"/>
+                <TextBox   Grid.Column="5" Text="{Binding FarmRoiW, UpdateSourceTrigger=LostFocus}"
+                           FontSize="10" VerticalContentAlignment="Center" Height="20"
+                           ToolTip="ROI genişliği (piksel)"/>
+                <TextBlock Grid.Column="6" Text="  Y:" VerticalAlignment="Center" Foreground="{StaticResource TextMuted}" FontSize="10" Margin="0,0,3,0"/>
+                <TextBox   Grid.Column="7" Text="{Binding FarmRoiH, UpdateSourceTrigger=LostFocus}"
+                           FontSize="10" VerticalContentAlignment="Center" Height="20"
+                           ToolTip="ROI yüksekliği (piksel)"/>
+              </Grid>
+
               <!-- T1: YOLO güven eşiği — düşük = daha çok tespit (ağaç riski), yüksek = yalnız emin olunan moblar -->
               <TextBlock FontSize="10" Foreground="{StaticResource TextMuted}" Margin="0,8,0,0">
                 <Run Text="🔍 YOLO güven eşiği: "/><Run Text="{Binding FarmConfidence, StringFormat=F2}"/><Run Text="  (düşük = çok kutu / yüksek = emin)"/>
@@ -457,6 +516,14 @@
               <Slider Minimum="0.30" Maximum="0.90" Value="{Binding FarmConfidence}"
                       IsSnapToTickEnabled="True" TickFrequency="0.05" SmallChange="0.05" LargeChange="0.10"
                       ToolTip="Bu skorun altındaki YOLO tespitleri elenir. Ağaçları/yanlış nesneleri mob sanıyorsa BÜYÜT (0.55-0.65). Gerçek mobları kaçırıyorsa KÜÇÜLT. Değişiklik anında uygulanır (yeniden model yükleme gerekmez)."/>
+
+              <!-- A6: NMS IoU eşiği — dip-dibe moblarda iki kutunun birbirini bastırmasını ayarlar -->
+              <TextBlock FontSize="10" Foreground="{StaticResource TextMuted}" Margin="0,8,0,0">
+                <Run Text="🔗 NMS IoU eşiği: "/><Run Text="{Binding FarmIou, StringFormat=F2}"/><Run Text="  (yüksek = dip-dibe ayrı kutu)"/>
+              </TextBlock>
+              <Slider Minimum="0.20" Maximum="0.80" Value="{Binding FarmIou}"
+                      IsSnapToTickEnabled="True" TickFrequency="0.05" SmallChange="0.05" LargeChange="0.10"
+                      ToolTip="İç içe iki tespitten birini elemenin eşiği. Dip-dibe moblar TEK kutu oluyorsa BÜYÜT (0.55-0.65). Aynı moba ÇİFT kutu çıkıyorsa KÜÇÜLT (0.40-0.45). Değişiklik anında uygulanır."/>
             </StackPanel>
           </Border>
 

@@ -39,13 +39,6 @@ public sealed class CoordinateReader
         return (x.Value, y.Value);
     }
 
-    /// <summary>
-    /// Virgül/boşluk gibi rakam-dışı hücreler için kesin-ret eşiği.
-    /// Bu değerin altındaki hücreler sessizce atlanır (null dönmez).
-    /// MinDigitConfidence üstündeki hücreler kabul edilir; arasındakiler null döner.
-    /// </summary>
-    private const float HardRejectFloor = 0.35f;
-
     /// <summary>Tek bir ROI'yi (X veya Y) okur. Okunamazsa null.</summary>
     public int? ReadValue(bool isX)
     {
@@ -58,8 +51,10 @@ public sealed class CoordinateReader
             foreach (var cell in cells)
             {
                 var (d, conf) = _glyph.Predict(cell);
-                if (conf < HardRejectFloor) continue;          // virgül/boşluk → atla
-                if (d < 0 || conf < s.MinDigitConfidence) return null; // belirsiz → fail
+                // MinDigitConfidence altındaki hücre → gürültü/boşluk → atla (asla fail).
+                // ROI 4 hane için çizilip 3 haneli sayı gelince oluşan boş trailing hücreleri
+                // ve köşeli karakterler bu yolla sessizce geçilir.
+                if (conf < s.MinDigitConfidence) continue;
                 val = val * 10 + d;
                 if (++digitCount > 9) return null;
             }
@@ -77,23 +72,20 @@ public sealed class CoordinateReader
         try
         {
             var sb = new System.Text.StringBuilder($"{cells.Count} hücre: [");
-            long val = 0; int digitCount = 0; bool failed = false;
+            long val = 0; int digitCount = 0;
             for (int i = 0; i < cells.Count; i++)
             {
                 var (d, conf) = _glyph.Predict(cells[i]);
                 sb.Append($"{(d < 0 ? '?' : (char)('0' + d))}={conf:F2}");
-                if (conf < HardRejectFloor)
-                    sb.Append('~');            // atlandı (virgül/boşluk)
-                else if (d < 0 || conf < s.MinDigitConfidence)
-                    { failed = true; sb.Append('!'); }
+                if (conf < s.MinDigitConfidence)
+                    sb.Append('~');   // atlandı (gürültü/boşluk — MinDigitConfidence altı)
                 else
                     { val = val * 10 + d; digitCount++; }
                 if (i < cells.Count - 1) sb.Append(' ');
-                if (digitCount > 9) { failed = true; break; }
+                if (digitCount > 9) break;
             }
             sb.Append($"] eşik={s.MinDigitConfidence:F2}");
-            if (digitCount == 0) failed = true;
-            return failed ? (null, sb.ToString()) : ((int)val, sb.ToString());
+            return digitCount == 0 ? (null, sb.ToString()) : ((int)val, sb.ToString());
         }
         finally { foreach (var c in cells) c.Dispose(); }
     }

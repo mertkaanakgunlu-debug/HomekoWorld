@@ -21,6 +21,10 @@ public sealed class GdiScreenSource : IScreenSource
     private Bitmap? _buffer;
 
     public string BackendName => "GDI";
+    public int CaptureX     => 0;
+    public int CaptureY     => 0;
+    public int FullScreenW  => GetSystemMetrics(0);
+    public int FullScreenH  => GetSystemMetrics(1);
 
     public Bitmap Capture()
     {

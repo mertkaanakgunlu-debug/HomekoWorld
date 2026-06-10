@@ -10,7 +10,8 @@ namespace HomekoWorld.Services.Yolo;
 /// • Evrensel build (varsayılan): <b>DirectML → CPU</b>. DirectML her DX12 GPU'da (NVIDIA/AMD/Intel)
 ///   sıfır ek bağımlılıkla çalışır → çok-cihaz dağıtımı için doğru taban.
 /// • NVIDIA performans build'i (<c>HOMEKO_CUDA</c> derleme sabiti, ayrı csproj configuration):
-///   <b>TensorRT(FP16) → CUDA → CPU</b>. Ağır native bağımlılık (CUDA/cuDNN/TensorRT) gerektirir.
+///   <b>CUDA → CPU</b>. Ağır native bağımlılık (CUDA/cuDNN) gerektirir. (TensorRT şu an proje DIŞI —
+///   ileride ayrı sidecar engine-builder + fallback olarak gelecek; planlanan Faz E.)
 ///
 /// <see cref="InferenceBackend.Auto"/>: birincil donanım GPU'su var mı diye DXGI ile bakar
 /// (T2'de eklenen Vortice yeniden kullanılır) → varsa GPU EP, yoksa CPU.
@@ -72,7 +73,7 @@ public static class OrtEpFactory
         epUsed = "CPU";
 
 #if HOMEKO_CUDA
-        // ── NVIDIA performans build'i: TensorRT(FP16) → CUDA → CPU ──
+        // ── NVIDIA performans build'i: CUDA → CPU (TensorRT ertelendi — planlanan Faz E sidecar) ──
         if (backend != InferenceBackend.Cpu)
         {
             try { opts.AppendExecutionProvider_CUDA(0); epUsed = "CUDA"; return opts; }

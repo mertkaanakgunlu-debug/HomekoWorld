@@ -389,16 +389,31 @@ public static class WtmVision
     }
 
     /// <summary>Verilen ekran dikdörtgenini yakalar ve HSV ile nameplate sınıfı döndürür.</summary>
+    /// <remarks>
+    /// İKİ MOD:
+    ///  (A) Referans-renk (tercih): kullanıcı Normal + Koruma isim renklerini kalibre ettiyse,
+    ///      her renkli-yazı pikseli HUE olarak hangi referansa daha yakınsa ona oy verir.
+    ///      Böylece "koruma = kırmızı" varsayımı YOK; oyun normal=X / koruma=Y ne olursa olsun
+    ///      iki kalibre rengi ayırt eder (bu oyunda seçili hedef başlığı her zaman kırmızı olduğu
+    ///      için sabit "kırmızı=koruma" mantığı her mobu koruma sanıyordu — KÖK NEDEN buydu).
+    ///  (B) Fallback (referanslar yoksa/doygun değilse): eski sabit kırmızı-hue bandı.
+    /// </remarks>
     private static NameplateClass ClassifyNameRect(int rx, int ry, int rw, int rh, WtmSettings s)
     {
         if (rw <= 0 || rh <= 0 || ry < 0) return NameplateClass.Unknown;
+
+        // Referans hue'ları hesapla — her iki referans da YETERİNCE DOYGUN olmalı (gri ref → anlamsız hue).
+        RgbToHsv(s.NormalNameR,   s.NormalNameG,   s.NormalNameB,   out float normalHue,   out float normalSat,   out _);
+        RgbToHsv(s.GuardianNameR, s.GuardianNameG, s.GuardianNameB, out float guardianHue, out float guardianSat, out _);
+        bool useRefHue = normalSat >= s.NameplateMinSat && guardianSat >= s.NameplateMinSat
+                         && HueDist(normalHue, guardianHue) >= 15f; // ayırt edilebilir iki renk
 
         using var bmp  = CaptureRegion(rx, ry, rw, rh);
         var       rect = new Rectangle(0, 0, rw, rh);
         var       data = bmp.LockBits(rect, ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
 
-        int textPixels = 0; // parlak + doygun (renkli yazı) piksel
-        int redPixels  = 0; // kırmızı hue bandındaki piksel
+        int textPixels    = 0; // parlak + doygun (renkli yazı) piksel
+        int guardianVotes = 0; // referans-renk modunda korumaya daha yakın; fallback'te kırmızı
 
         try
         {
@@ -421,20 +436,36 @@ public static class WtmVision
                     if (val < s.NameplateMinVal) continue; // siyah çerçeve/gölge/koyu arka plan
                     if (sat < s.NameplateMinSat) continue; // beyaz/gri → renkli yazı değil
                     textPixels++;
-                    if (hue <= s.NameplateRedHueLo || hue >= s.NameplateRedHueHi)
-                        redPixels++;
+
+                    if (useRefHue)
+                    {
+                        // Hangi referans renge (hue) daha yakın? Koruma'ya yakınsa koruma oyu.
+                        if (HueDist(hue, guardianHue) < HueDist(hue, normalHue))
+                            guardianVotes++;
+                    }
+                    else if (hue <= s.NameplateRedHueLo || hue >= s.NameplateRedHueHi)
+                    {
+                        guardianVotes++;   // fallback: sabit kırmızı bandı
+                    }
                 }
             }
         }
         finally { bmp.UnlockBits(data); }
 
-        // Yalnız emin olunan kırmızıda Guardian (normal mobu yanlış atlamamak için güvenli varsayılan).
-        if (redPixels >= s.NameplateRedMinPx && textPixels > 0 &&
-            (float)redPixels / textPixels >= s.NameplateRedFrac)
+        // Yeterli koruma-oyu oranı → Guardian (normal mobu yanlış atlamamak için eşikli).
+        if (guardianVotes >= s.NameplateRedMinPx && textPixels > 0 &&
+            (float)guardianVotes / textPixels >= s.NameplateRedFrac)
             return NameplateClass.Guardian;
         if (textPixels >= s.NameplateRedMinPx)
             return NameplateClass.Normal;
         return NameplateClass.Unknown;
+    }
+
+    /// <summary>İki hue (0-360) arasındaki dairesel mesafe (0-180).</summary>
+    private static float HueDist(float a, float b)
+    {
+        float d = Math.Abs(a - b) % 360f;
+        return d > 180f ? 360f - d : d;
     }
 
     // Bant taraması için yeniden kullanılan buffer — her çağrıda heap allocation önler.

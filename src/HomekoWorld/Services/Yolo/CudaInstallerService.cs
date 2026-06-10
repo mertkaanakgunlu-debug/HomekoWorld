@@ -24,11 +24,13 @@ public static class CudaInstallerService
         try
         {
             // LoadLibrary ile sistem PATH'inde veya uygulama dizininde DLL'leri arar.
-            bool hasTensorRt = CheckLibrary("nvinfer_10.dll") || CheckLibrary("nvinfer_8.dll");
-            bool hasCublas   = CheckLibrary("cublas64_12.dll") || CheckLibrary("cublas64_11.dll");
-            bool hasCudnn    = CheckLibrary("cudnn64_9.dll") || CheckLibrary("cudnn64_8.dll");
+            // NOT: TensorRT (nvinfer) proje dışı — CUDA Execution Provider yalnız cuBLAS + cuDNN ister.
+            // Eskiden nvinfer aranıyordu → CUDA tam çalışan NVIDIA sistemlerinde her açılışta yanlış
+            // "eksik kütüphane" alarmı + gereksiz indirme penceresi çıkıyordu. (A2)
+            bool hasCublas = CheckLibrary("cublas64_12.dll") || CheckLibrary("cublas64_11.dll");
+            bool hasCudnn  = CheckLibrary("cudnn64_9.dll")   || CheckLibrary("cudnn64_8.dll");
 
-            return !hasTensorRt || !hasCublas || !hasCudnn;
+            return !hasCublas || !hasCudnn;
         }
         catch
         {

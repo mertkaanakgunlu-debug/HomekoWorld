@@ -126,7 +126,8 @@ public sealed partial class FarmEngine
                 // olduğundan ScanningTick'te seçilen konum birkaç on-ms'de bayatlar → bayat yere tık = ıska
                 // ("kutuya tıkladık, mob orada yok"). Mob bu an TAZE karede YOKSA (flicker/kayıp) hiç tıklama
                 // → taramaya dön (asla bayat/hayalet konuma tıklanmaz).
-                var liveTarget = _latestDetections?.Dets
+                var clickSnap = _latestDetections;
+                var liveTarget = clickSnap?.Dets
                     .Where(d => d.ClassId == target.ClassId && d.DistanceTo(target.Center) < 100f)
                     .OrderBy(d => d.DistanceTo(target.Center))
                     .FirstOrDefault();
@@ -135,6 +136,8 @@ public sealed partial class FarmEngine
                     StatusChanged?.Invoke(this, "Hedef taze karede yok — tıklama atlandı, yeniden tarıyor");
                     return false;
                 }
+                // Faz B: tıklanacak tespitin yaşı (capture→şimdi) — objektif "bayat kutu" ölçümü.
+                if (clickSnap is not null) Telemetry.FrameAgeAtClickMs = (int)(NowMs() - clickSnap.CapturedAtMs);
 
                 // Offset deltası ScanningTick hedefinden; konum TAZE tespitten → güncel yere tıkla.
                 int cx = (int)(liveTarget.Center.X + yoloOffsets[i].dx);

@@ -54,6 +54,22 @@ public sealed class MobLibrary
     public MobInfo? FindById(int classId)
         => Mobs.FirstOrDefault(m => m.Id == classId);
 
+    /// <summary>
+    /// İsim listesine karşılık gelen YOLO class id'lerini döner.
+    /// Çoklu mob seçiminde kanditat filtrelemesi için kullanılır.
+    /// Boş liste → tüm tespitler (filtre yok).
+    /// </summary>
+    public HashSet<int> GetSelectedIds(IEnumerable<string> names)
+    {
+        var result = new HashSet<int>();
+        foreach (var n in names)
+        {
+            var m = FindByName(n);
+            if (m is not null) result.Add(m.Id);
+        }
+        return result;
+    }
+
     /// <summary>Mevcut Mobs listesini diske kaydeder.</summary>
     public void Save()
     {

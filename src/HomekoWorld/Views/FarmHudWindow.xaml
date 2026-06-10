@@ -141,6 +141,12 @@
           </StackPanel>
         </Grid>
 
+        <!-- Gecikme bütçesi (A3+P0) + tık-yaşı (B1): yakalama + preprocess + GPU Run + postprocess + tık yaşı.
+             GPU = TensorRT/FP16'nın hızlandırdığı; Prep/Post = CPU (TensorRT yardım etmez). -->
+        <TextBlock FontSize="9" Foreground="#66E8DCC0" Margin="0,0,0,5" TextWrapping="Wrap">
+          <Run Text="Cap "/><Run Text="{Binding FarmCaptureMs, Mode=OneWay, FallbackValue=0}"/><Run Text=" Prep "/><Run Text="{Binding FarmPrepMs, Mode=OneWay, FallbackValue=0}"/><Run Text=" GPU "/><Run Text="{Binding FarmGpuMs, Mode=OneWay, FallbackValue=0}"/><Run Text=" Post "/><Run Text="{Binding FarmPostMs, Mode=OneWay, FallbackValue=0}"/><Run Text="ms · yaş "/><Run Text="{Binding FarmFrameAgeMs, Mode=OneWay, FallbackValue=0}"/><Run Text="ms"/>
+        </TextBlock>
+
         <!-- Adım çubuğu (kombo ateşlerken — manuel veya farm) -->
         <Grid Margin="0,0,0,6">
           <Grid.Style>

@@ -29,7 +29,7 @@
 
       <!-- Selection rectangle drawn programmatically in code-behind -->
       <Rectangle x:Name="SelectionRect"
-                 Stroke="#FF8B6914" StrokeThickness="2"
+                 Stroke="#FF8B6914" StrokeThickness="1"
                  Fill="#33D4A44A"
                  Visibility="Collapsed"/>
     </Canvas>

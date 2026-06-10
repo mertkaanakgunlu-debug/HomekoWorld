@@ -227,9 +227,9 @@ public partial class MainViewModel
         mainWindow.WindowState = WindowState.Minimized;
 
         var ov = new Views.CalibrationOverlayWindow(
-            isX ? "Minimap X sayısının üstüne DİKDÖRTGEN çiz (yalnız rakamlar)"
-                : "Minimap Y sayısının üstüne DİKDÖRTGEN çiz (yalnız rakamlar)",
-            singleClickMode: false);
+            isX ? "Minimap X sayısı — sol-üst köşeye tıkla, sonra sağ-alt köşeye tıkla"
+                : "Minimap Y sayısı — sol-üst köşeye tıkla, sonra sağ-alt köşeye tıkla",
+            twoCorner: true);
         ov.ShowDialog();
 
         mainWindow.WindowState = WindowState.Normal;
@@ -618,8 +618,8 @@ public partial class MainViewModel
         mainWindow.WindowState = WindowState.Minimized;
 
         var ov = new Views.CalibrationOverlayWindow(
-            "Envanter ızgarasının üstüne DİKDÖRTGEN çiz (yalnız yuva alanı)",
-            singleClickMode: false);
+            "Envanter ızgarası — sol-üst yuvanın sol-üst köşesine, sonra sağ-alt yuvanın sağ-alt köşesine tıkla (çerçeveyi DIŞARIDA bırak)",
+            twoCorner: true);
         ov.ShowDialog();
 
         mainWindow.WindowState = WindowState.Normal;

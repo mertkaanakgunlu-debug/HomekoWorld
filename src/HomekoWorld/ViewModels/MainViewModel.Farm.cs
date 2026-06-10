@@ -197,6 +197,12 @@ public partial class MainViewModel
             FarmCurrentKey = t.LastKeyTapped;
             FarmCurrentMob = t.CurrentMob;
             FarmInferenceFps = t.InferenceFps;
+            FarmCaptureMs    = t.CaptureMs;   // A3: gecikme bütçesi HUD
+            FarmInferenceMs  = t.InferenceMs;
+            FarmPrepMs       = t.PreprocessMs;   // P0: darboğaz breakdown
+            FarmGpuMs        = t.GpuRunMs;
+            FarmPostMs       = t.PostprocessMs;
+            FarmFrameAgeMs   = t.FrameAgeAtClickMs;   // B1: stale-box ölçümü
         }
 
         // Aktivite log — tick başına sınırlı sayıda (UI'yı tıkamadan boşalt)
@@ -257,6 +263,11 @@ public partial class MainViewModel
     partial void OnFarmMobsJsonPathChanged(string value)
     {
         _state.Farm.MobsJsonPath = value;
+
+        // Migration: eski state.json'da SelectedMobNames yoktu → SelectedMobName'den taşı.
+        if (_state.Farm.SelectedMobNames.Count == 0 && !string.IsNullOrEmpty(_state.Farm.SelectedMobName))
+            _state.Farm.SelectedMobNames = [_state.Farm.SelectedMobName];
+
         _store.Save(_state);
         FarmMobs.Clear();
         _mobLibrary.Load(value);
@@ -269,15 +280,31 @@ public partial class MainViewModel
     [RelayCommand]
     private void SelectFarmMob(string nameEn)
     {
-        FarmSelectedMobName = nameEn;
-        foreach (var c in _farmMobCards) c.IsSelected = c.NameEn == nameEn;
+        var names = _state.Farm.SelectedMobNames;
+        // Toggle: seçiliyse çıkar, değilse ekle
+        int idx = names.FindIndex(n => n.Equals(nameEn, StringComparison.OrdinalIgnoreCase));
+        if (idx >= 0)
+            names.RemoveAt(idx);
+        else
+            names.Add(nameEn);
+        _state.Farm.SelectedMobNames = names;
+        // Geriye uyumluluk: SelectedMobName = ilk seçili (ya da boş)
+        _state.Farm.SelectedMobName = names.Count > 0 ? names[0] : "";
+        _store.Save(_state);
+
+        foreach (var c in _farmMobCards)
+            c.IsSelected = names.Contains(c.NameEn, StringComparer.OrdinalIgnoreCase);
+        FarmSelectedMobCount = names.Count;
     }
 
     private void RebuildMobCards()
     {
         _farmMobCards.Clear();
+        var names = _state.Farm.SelectedMobNames;
         foreach (var m in _mobLibrary.Mobs)
-            _farmMobCards.Add(new MobCardViewModel(m) { IsSelected = m.NameEn == FarmSelectedMobName });
+            _farmMobCards.Add(new MobCardViewModel(m)
+                { IsSelected = names.Contains(m.NameEn, StringComparer.OrdinalIgnoreCase) });
+        FarmSelectedMobCount = names.Count;
         ApplyMobFilter();
     }
 
@@ -314,6 +341,7 @@ public partial class MainViewModel
             inferrer.Load(value, names.Count > 0 ? names : null, _state.Farm.ModelInputSize, _state.Farm.InferenceBackend);
             // T1: Güven eşiğini ayardan uygula — yoksa sabit 0.35 kalır (ağaç yanlış-pozitifleri).
             inferrer.ConfThreshold = (float)_state.Farm.ConfidenceThreshold;
+            inferrer.IouThreshold  = (float)_state.Farm.IouThreshold;   // A6
 
             // Eski inferrer varsa dispose et
             (_farmEngine.Inferrer as IDisposable)?.Dispose();
@@ -321,12 +349,14 @@ public partial class MainViewModel
 
             FarmStatus = $"Model hazır ({names.Count} sınıf)";
 
-            // T3: TensorRT Motoru için arka planda ilk ısınma işlemini başlat (UI donmasını önler)
+            // GPU (CUDA/DirectML) warm-up'ı arka planda başlat — ilk inference'ın derleme/tahsis
+            // maliyetini Başlat'tan önce öder (UI donmasını önler). (TensorRT şu an yok; ileride
+            // Faz E sidecar gelince burası engine-build durumunu da gösterebilir.)
             IsEngineBuilding = true;
-            
-            // WPF D3D/DXGI initialization ile TensorRT CUDA context creation aynı anda çalışırsa 
-            // NVIDIA sürücüsü (dxgi.dll) deadlock/crash yaşayabilir. Bu nedenle WarmUp işlemini 
-            // WPF'nin UI render işlemi tamamen bittikten (ApplicationIdle) sonraya erteliyoruz.
+
+            // WPF D3D/DXGI init ile GPU context creation aynı anda çalışırsa NVIDIA sürücüsü (dxgi.dll)
+            // deadlock/crash yaşayabilir. Bu nedenle WarmUp'ı WPF UI render'ı bittikten (ApplicationIdle)
+            // sonraya erteliyoruz.
             System.Windows.Application.Current.Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.ApplicationIdle, new Action(() =>
             {
                 _ = inferrer.WarmUpAsync(status =>
@@ -348,9 +378,9 @@ public partial class MainViewModel
 
     partial void OnFarmSelectedMobNameChanged(string value)
     {
+        // Geriye uyumluluk — kart seçimi SelectFarmMob'da yönetilir.
         _state.Farm.SelectedMobName = value;
         _store.Save(_state);
-        foreach (var c in _farmMobCards) c.IsSelected = c.NameEn == value;
     }
 
     partial void OnFarmSelectedComboIdChanged(string value)
@@ -369,6 +399,10 @@ public partial class MainViewModel
     partial void OnFarmTestClickKeyChanged(string value) { _state.Farm.TestClickKey  = value; _store.Save(_state); }
     partial void OnFarmLootEnabledChanged(bool value)    { _state.Farm.LootEnabled    = value; _store.Save(_state); }
     partial void OnFarmShowDetectionOverlayChanged(bool value) { _state.Farm.ShowDetectionOverlay = value; _store.Save(_state); }
+    // B2: replay kaydı toggle — bir SONRAKİ farm Start'ında geçerli olur (DetectionLoop recorder'ı başta kurar).
+    partial void OnFarmReplayEnabledChanged(bool value) { _state.Farm.ReplayEnabled = value; _store.Save(_state); }
+    // P2: pipelined inference toggle — bir SONRAKİ farm Start'ında geçerli olur (thread yapısı başta kurulur).
+    partial void OnFarmPipelinedChanged(bool value) { _state.Farm.PipelinedInference = value; _store.Save(_state); }
     partial void OnFarmRecordingModeChanged(bool value) { _state.Farm.RecordingMode = value; _store.Save(_state); }
     partial void OnFarmArcherModeChanged(bool value)
     {
@@ -388,6 +422,15 @@ public partial class MainViewModel
         if (_farmEngine.Inferrer is { } inf) inf.ConfThreshold = (float)v;
     }
 
+    // A6: IoU eşiği kaydırıcısı — ayara yaz + çalışan inferrer'a CANLI uygula (dip-dibe mob çift-kutu tuning).
+    partial void OnFarmIouChanged(double value)
+    {
+        double v = Math.Clamp(value, 0.20, 0.80);
+        _state.Farm.IouThreshold = v;
+        _store.Save(_state);
+        if (_farmEngine.Inferrer is { } inf) inf.IouThreshold = (float)v;
+    }
+
     // T2: DXGI/GDI yakalama anahtarı. Farm bir sonraki başlatıldığında geçerli olur (DetectionLoop kaynağı başta kurar).
     partial void OnFarmDxgiCaptureChanged(bool value)
     {
@@ -404,6 +447,13 @@ public partial class MainViewModel
             OnFarmModelPathChanged(_state.Farm.ModelPath); // yeniden yükle → yeni EP uygulanır
     }
     partial void OnFarmHpBarModeChanged(Models.HpBarDetectionMode value) { _state.Wtm.HpBarMode = value; _store.Save(_state); }
+
+    // P3: ROI yakalama — bir sonraki farm Start'ında geçerli olur (DetectionLoop kaynağı başta kurulur).
+    partial void OnFarmRoiEnabledChanged(bool value)   { _state.Farm.CaptureRoiEnabled = value; _store.Save(_state); }
+    partial void OnFarmRoiXChanged(int value)          { _state.Farm.CaptureRoiX = value; _store.Save(_state); }
+    partial void OnFarmRoiYChanged(int value)          { _state.Farm.CaptureRoiY = value; _store.Save(_state); }
+    partial void OnFarmRoiWChanged(int value)          { _state.Farm.CaptureRoiW = value; _store.Save(_state); }
+    partial void OnFarmRoiHChanged(int value)          { _state.Farm.CaptureRoiH = value; _store.Save(_state); }
 
     // ── Otomatik dosya keşfi ──────────────────────────────────────────────────
 

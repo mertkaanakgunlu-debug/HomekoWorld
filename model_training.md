@@ -1,6 +1,10 @@
 # HomekoWorld — Model Eğitim Rehberi
 ## YOLOv8n Detection (BBox) · Roboflow + SAM · Tyon
 
+> **Not (Faz 39):** Aktif model = **YOLOv8n @ 640** (`FarmSettings.ModelInputSize=640`). Export artık
+> `dynamic=False, simplify=True, nms=False` ile alınır (C# raw-parser uyumu + ileride TensorRT için).
+> İleride **YOLO11n / 960** veya **YOLO26n**'e geçilirse bu rehber + `ModelInputSize` birlikte güncellenmeli.
+
 ---
 
 ## Yöntem Özeti

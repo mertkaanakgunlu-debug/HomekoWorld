@@ -96,10 +96,11 @@ public sealed partial class FarmEngine
         bool comboFiring  = false;
         bool engageStarted = !archerApproach; // archer dışı: yaklaşma yok → hemen kombo
         // Ölüm tespiti ZAMAN-tabanlı: HP barı (HSV ROI) bu kadar ms KESİNTİSİZ "kırmızı yok" okursa öldü.
-        // Tick'ten BAĞIMSIZ sabit (WtmTick 15/50 fark etmez). Tek titrek HSV karesinde yanlış-ölüm →
-        // canlı mob'u bırakma (#2) engeller. YALNIZ ölüm anında kill başına bir kez ödenir — combat/
-        // acquisition'ı yavaşlatmaz. Ölüm temiz/kalıcı sinyal (panel tamamen kaybolur) → ~60ms (≈2 teyit) yeter.
-        const int HpDeathConfirmMs = 60;
+        // Tick'ten BAĞIMSIZ (WtmTick 15/50 fark etmez). Tek titrek HSV karesinde yanlış-ölüm → canlı mob'u
+        // bırakma (#2) engeller. YALNIZ ölüm anında kill başına bir kez ödenir — combat/acquisition'ı
+        // yavaşlatmaz. A6: ayardan (FarmSettings.HpDeathConfirmMs, varsayılan ~60ms ≈ 2 teyit; titrek
+        // HSV'de 100-150 daha güvenli). Min 20ms tabanına kıstırılır.
+        int hpDeathConfirmMs = Math.Max(20, s.HpDeathConfirmMs);
         long firstHpMissMs = -1;     // HP'nin ilk "yok" okunduğu an (-1 = canlı)
         long lastHpCheck   = -1000;  // HSV/HP ekran yakalamasını ≤~33ms'de bire sınırla (GDI yükü)
         // Alive-gate (#1): bu angajmanda HP barını en az bir kez "canlı" gördük mü?
@@ -147,7 +148,7 @@ public sealed partial class FarmEngine
                     // T2 sinerji: taze snapshot HSV hedef-canlı değeri varsa onu kullan (ek GDI yakalama YOK);
                     // yoksa (ML/ColorScan modu veya snapshot bayat) eski yola düş.
                     var hpSnap = _latestDetections;
-                    bool targetAlive = (hpSnap?.TargetAliveHsv is bool av && NowMs() - hpSnap.CaptureMs < 200)
+                    bool targetAlive = (hpSnap?.TargetAliveHsv is bool av && NowMs() - hpSnap.PublishedAtMs < 200)
                         ? av
                         : WtmVision.IsTargetAliveSmoothed(_appState.Wtm, HpClassifier);
 
@@ -158,7 +159,7 @@ public sealed partial class FarmEngine
                         if (hadHpOnce)
                         {
                             if (firstHpMissMs < 0) firstHpMissMs = sw.ElapsedMilliseconds;
-                            else if (sw.ElapsedMilliseconds - firstHpMissMs >= HpDeathConfirmMs)
+                            else if (sw.ElapsedMilliseconds - firstHpMissMs >= hpDeathConfirmMs)
                                 return true; // HP barı ~60ms kesintisiz yok → mob öldü / seçim düştü
                         }
                     }
@@ -177,7 +178,7 @@ public sealed partial class FarmEngine
                 {
                     var snap = _latestDetections;
                     // Snapshot çok eskiyse (tespit thread'i takıldıysa) bayat veriye güvenme.
-                    var dets = (snap is not null && NowMs() - snap.CaptureMs < 1000)
+                    var dets = (snap is not null && NowMs() - snap.PublishedAtMs < 1000)
                         ? snap.Dets
                         : (IReadOnlyList<Detection>)Array.Empty<Detection>();
 

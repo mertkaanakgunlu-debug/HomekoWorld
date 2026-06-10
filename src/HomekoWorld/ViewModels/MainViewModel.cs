@@ -140,19 +140,35 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private string _farmCurrentMob = "";   // anlık hedef adı
     [ObservableProperty] private string _farmElapsed     = "00:00"; // oturum süresi
     [ObservableProperty] private int    _farmKillsPerHour;          // kill/saat
-    [ObservableProperty] private int    _farmInferenceFps;          // Inference FPS
+    [ObservableProperty] private int    _farmInferenceFps;          // Inference FPS (gerçek, başarılı inference)
+    [ObservableProperty] private int    _farmCaptureMs;             // A3: ekran yakalama ms/kare (ort)
+    [ObservableProperty] private int    _farmInferenceMs;           // A3: YOLO inference toplam ms/kare (ort)
+    [ObservableProperty] private int    _farmPrepMs;                // P0: preprocess (CPU) ms
+    [ObservableProperty] private int    _farmGpuMs;                 // P0: GPU Run (saf inference) ms
+    [ObservableProperty] private int    _farmPostMs;                // P0: postprocess (CPU) ms
+    [ObservableProperty] private int    _farmFrameAgeMs;            // B1: son tıklamada tespit yaşı (stale-box)
     [ObservableProperty] private bool   _farmPaused;                // engine duraklatıldı mı
     [ObservableProperty] private bool   _hudExpanded;               // HUD genişletildi mi
     [ObservableProperty] private bool   _logHudVisible;             // Log HUD görünür mü
     [ObservableProperty] private bool   _farmLootEnabled;           // loot adımı açık mı (varsayılan kapalı)
     [ObservableProperty] private bool   _farmShowDetectionOverlay;  // YOLO tespit kutuları overlay'i açık mı
+    [ObservableProperty] private bool   _farmReplayEnabled;         // B2: replay/benchmark kaydı açık mı (OFF default)
+    [ObservableProperty] private bool   _farmPipelined;             // P2: pipelined inference (yüksek FPS, ON default)
     [ObservableProperty] private bool   _farmRecordingMode;         // A4: kayıt/performans modu (GPU'ya nefes ver)
     [ObservableProperty] private bool   _farmArcherMode;            // B1: archer (yaklaş+yönel) vs archer dışı (kombo hemen)
     [ObservableProperty] private int    _farmArcherRangePx;         // B2: archer yaklaşma mesafesi (px) — UI kaydırıcı
     [ObservableProperty] private Models.HpBarDetectionMode _farmHpBarMode; // HP bar tespit yöntemi (Hsv/Ml/ColorScan)
     [ObservableProperty] private double _farmConfidence;            // T1: YOLO güven eşiği (0-1) — UI kaydırıcı
+    [ObservableProperty] private double _farmIou;                   // A6: NMS IoU eşiği (0.20-0.80) — UI kaydırıcı
     [ObservableProperty] private bool   _farmDxgiCapture;           // T2: DXGI hızlı yakalama (kapalı = GDI)
     [ObservableProperty] private Models.Farm.InferenceBackend _farmInferenceBackend; // T4: ONNX EP (Auto/DirectML/Cpu)
+    [ObservableProperty] private int    _farmSelectedMobCount;      // çoklu seçimde kaç mob seçili (UI badge)
+    // P3: ROI yakalama — tam ekran yerine belirlenen bölge (Cap ms düşer)
+    [ObservableProperty] private bool   _farmRoiEnabled;
+    [ObservableProperty] private int    _farmRoiX;
+    [ObservableProperty] private int    _farmRoiY;
+    [ObservableProperty] private int    _farmRoiW;
+    [ObservableProperty] private int    _farmRoiH;
 
     /// <summary>HP bar tespit yöntemi seçenekleri (ComboBox ItemsSource).</summary>
     public Array HpBarModeOptions { get; } = Enum.GetValues(typeof(Models.HpBarDetectionMode));
@@ -311,13 +327,22 @@ public partial class MainViewModel : ObservableObject
         _farmTestClickKey    = _state.Farm.TestClickKey;
         _farmLootEnabled     = _state.Farm.LootEnabled;
         _farmShowDetectionOverlay = _state.Farm.ShowDetectionOverlay;
+        _farmReplayEnabled   = _state.Farm.ReplayEnabled;
+        _farmPipelined       = _state.Farm.PipelinedInference;
         _farmRecordingMode   = _state.Farm.RecordingMode;
         _farmArcherMode      = _state.Farm.EngageMovement == Models.Farm.EngageMovement.ArcherWalkAndFace;
         _farmArcherRangePx   = _state.Farm.ArcherApproachRangePx;
         _farmHpBarMode       = _state.Wtm.HpBarMode;
         _farmConfidence      = _state.Farm.ConfidenceThreshold;
+        _farmIou             = _state.Farm.IouThreshold;
         _farmDxgiCapture     = _state.Farm.CaptureBackend == Models.Farm.CaptureBackend.Dxgi;
         _farmInferenceBackend = _state.Farm.InferenceBackend;
+        _farmSelectedMobCount = _state.Farm.SelectedMobNames.Count;
+        _farmRoiEnabled      = _state.Farm.CaptureRoiEnabled;
+        _farmRoiX            = _state.Farm.CaptureRoiX;
+        _farmRoiY            = _state.Farm.CaptureRoiY;
+        _farmRoiW            = _state.Farm.CaptureRoiW;
+        _farmRoiH            = _state.Farm.CaptureRoiH;
         _hpBarRoiPreviewStatus = _state.Wtm.IsHpBarRoiCalibrated
             ? $"✓ Mob HP barı  X={_state.Wtm.HpBarRoiX}  Y={_state.Wtm.HpBarRoiY}  {_state.Wtm.HpBarRoiW}×{_state.Wtm.HpBarRoiH}px"
             : "✗ Kalibre edilmedi (Ana kalibrasyon 3. adım)";

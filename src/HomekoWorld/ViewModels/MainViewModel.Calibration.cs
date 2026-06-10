@@ -148,6 +148,12 @@ public partial class MainViewModel
 
             _store.Save(_state);
 
+            // Üstteki "Mob HP barı X=.. Y=.." status'unu TAZELE — yoksa sihirbaz yeni ROI'yi
+            // yazar ama o metin yükleme-anı değerinde kalır (kullanıcı yanlış Y görür → "ölü" teşhisi şaşar).
+            HpBarRoiPreviewStatus = _state.Wtm.IsHpBarRoiCalibrated
+                ? $"✓ Mob HP barı  X={_state.Wtm.HpBarRoiX}  Y={_state.Wtm.HpBarRoiY}  {_state.Wtm.HpBarRoiW}×{_state.Wtm.HpBarRoiH}px"
+                : "✗ Kalibre edilmedi (Ana kalibrasyon 3. adım)";
+
             FarmCalibrationState =
                 "✓" +
                 (hpOk   ? " HP✓"  : " HP—") +
@@ -166,6 +172,63 @@ public partial class MainViewModel
         {
             _isFarmCalibrating = false;
             // Pencereyi geri getir
+            mainWindow.WindowState = WindowState.Normal;
+            mainWindow.Activate();
+        }
+    }
+
+    /// <summary>
+    /// Duyuru Δy — oyun bir duyuru gösterince Mob HP barı (+ isim) aşağı kayar. Kullanıcı duyuru
+    /// AÇIKKEN kayan barın sol-üst köşesine tek tıklar; normal HpBarRoiY ile farkı AnnounceShiftY
+    /// olarak saklanır. Runtime'da alive/nameplate kontrolü alan1 başarısızsa alan2 (+Δy) dener.
+    /// </summary>
+    [RelayCommand]
+    private async Task CalibrateAnnounceShiftAsync()
+    {
+        if (_isFarmCalibrating) return;
+        if (!_state.Wtm.IsHpBarRoiCalibrated)
+        {
+            FarmCalibrationState = "⚠ Önce Ana Kalibrasyon ile Mob HP barını öğret";
+            return;
+        }
+
+        _isFarmCalibrating = true;
+        var mainWindow = Application.Current.MainWindow;
+        try
+        {
+            mainWindow.WindowState = WindowState.Minimized;
+            await Task.Yield();
+            EnsureCalibrationRef();
+
+            FarmCalibrationState = "Duyuru AÇIKKEN kayan Mob HP barının SOL-ÜST köşesine TIKLA";
+            var ov = new Views.CalibrationOverlayWindow(
+                "Duyuru gösterilirken KAYAN Mob HP barının SOL-ÜST köşesine tek tıkla",
+                singleClickMode: true);
+            ov.ShowDialog();
+
+            mainWindow.WindowState = WindowState.Normal;
+            mainWindow.Activate();
+            if (!ov.Confirmed) { FarmCalibrationState = "İptal edildi"; return; }
+
+            // Tıklanan fiziksel nokta → master uzayı (Unmap). Kayma = kayan Y − normal HpBarRoiY.
+            var m = ResolutionMapper.Unmap(ov.SelectedRect.X, ov.SelectedRect.Y, 1, 1);
+            int shift = m.Y - _state.Wtm.HpBarRoiY;
+            if (shift <= 0)
+            {
+                FarmCalibrationState =
+                    $"⚠ Kayan bar normalden yukarıda/aynı (Δy={shift}). Duyuru AÇIKKEN tekrar dene.";
+                return;
+            }
+
+            _state.Wtm.AnnounceShiftY = shift;
+            _store.Save(_state);
+            FarmCalibrationState = $"✓ Duyuru kayması Δy={shift}px kaydedildi";
+        }
+        catch (OperationCanceledException) { FarmCalibrationState = "İptal edildi"; }
+        catch (Exception ex)              { FarmCalibrationState = $"Hata: {ex.Message}"; }
+        finally
+        {
+            _isFarmCalibrating = false;
             mainWindow.WindowState = WindowState.Normal;
             mainWindow.Activate();
         }
@@ -350,8 +413,8 @@ public partial class MainViewModel
         mainWindow.WindowState = WindowState.Minimized;
 
         var ov = new Views.CalibrationOverlayWindow(
-            "Yaratığın ismini DİKDÖRTGENLE çiz (soldan sağa) — taranacak bant",
-            singleClickMode: false);
+            "Yaratığın isminin SOL-ÜST köşesine, sonra SAĞ-ALT köşesine tıkla — taranacak bant",
+            twoCorner: true);
         ov.ShowDialog();
 
         mainWindow.WindowState = WindowState.Normal;

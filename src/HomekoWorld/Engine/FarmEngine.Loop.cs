@@ -70,10 +70,11 @@ public sealed partial class FarmEngine
 
         var dets = snap.Dets;
 
-        var mob = _mobLibrary.FindByName(s.SelectedMobName);
-        var candidates = mob is null
+        // Çoklu mob seçimi: SelectedMobNames içindeki sınıfları filtrele; boşsa tümü.
+        var selectedIds = _mobLibrary.GetSelectedIds(s.SelectedMobNames);
+        var candidates = selectedIds.Count == 0
             ? dets
-            : dets.Where(d => d.ClassId == mob.Id).ToList();
+            : dets.Where(d => selectedIds.Contains(d.ClassId)).ToList();
 
         // (Overlay yayını DetectionLoop'tan yapılır — burada tekrar yayınlanmaz.)
         // Pot: tek otorite global AutoPotService (ayrı thread, combo'yu/akışı KESMEZ). Farm-içi pot

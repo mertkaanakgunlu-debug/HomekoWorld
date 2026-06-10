@@ -7,7 +7,24 @@ public sealed class FarmTelemetry
     public int    HpPotsUsed   { get; set; }
     public int    MpPotsUsed   { get; set; }
     public int    LoopFps      { get; set; }   // FarmEngine tick FPS
-    public int    InferenceFps { get; set; }   // YOLO detection FPS
+    public int    InferenceFps { get; set; }   // YOLO detection FPS (yalnız BAŞARILI inference sayılır)
+    // ── Gecikme bütçesi (A3): saniyelik ortalama, başarılı inference başına ─────
+    /// <summary>Ekran yakalama süresi (ms/kare ortalaması) — DXGI ~1-3ms, GDI ~15-30ms.</summary>
+    public int    CaptureMs    { get; set; }
+    /// <summary>Toplam inference süresi (preprocess+GPU+postprocess, ms/kare ort) = Prep+Gpu+Post.</summary>
+    public int    InferenceMs  { get; set; }
+    /// <summary>FPS-cap için beklenen süre (ms/kare ortalaması) — yüksekse GPU boşta, cap'i gevşetebilirsin.</summary>
+    public int    WaitMs       { get; set; }
+    // ── P0: inference alt-zamanlaması (darboğaz teşhisi) — TensorRT yalnız GpuRunMs'i hızlandırır ──
+    /// <summary>Preprocess (CPU letterbox+tensor) ms/kare ort. Yüksekse darboğaz CPU → TensorRT YARDIM ETMEZ.</summary>
+    public int    PreprocessMs { get; set; }
+    /// <summary>GPU Run (saf inference) ms/kare ort. Yüksekse darboğaz GPU → FP16/TensorRT yardım eder.</summary>
+    public int    GpuRunMs     { get; set; }
+    /// <summary>Postprocess (CPU parse+NMS) ms/kare ort.</summary>
+    public int    PostprocessMs { get; set; }
+    /// <summary>Faz B: son tıklamada kullanılan tespitin yaşı (ms) = NowMs - CapturedAtMs. Yüksekse bayat
+    /// kutuya tıklanıyor demektir (capture→inference→karar gecikmesi). Objektif "stale-box" ölçümü.</summary>
+    public int    FrameAgeAtClickMs { get; set; }
     public long   SessionMs    { get; set; }   // ms since Start()
     public string CurrentMob   { get; set; } = "";
     /// <summary>Farm engine'in son gönderdiği tuş (TapKeyAsync'den güncellenir).</summary>
@@ -17,6 +34,8 @@ public sealed class FarmTelemetry
     public void Reset()
     {
         Kills = HpPotsUsed = MpPotsUsed = LoopFps = 0;
+        InferenceFps = CaptureMs = InferenceMs = WaitMs = FrameAgeAtClickMs = 0;
+        PreprocessMs = GpuRunMs = PostprocessMs = 0;
         SessionMs   = 0;
         CurrentMob  = "";
         LastKeyTapped = "";

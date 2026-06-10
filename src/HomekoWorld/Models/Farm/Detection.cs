@@ -34,4 +34,13 @@ public sealed record Detection(
         var dy = Center.Y - other.Y;
         return MathF.Sqrt(dx * dx + dy * dy);
     }
+
+    /// <summary>
+    /// ROI-yerel koordinatları ekran-uzayına çevirmek için sabit ofset ekler.
+    /// </summary>
+    public Detection WithOffset(int dx, int dy) => this with
+    {
+        BBox     = new RectangleF(BBox.X + dx, BBox.Y + dy, BBox.Width, BBox.Height),
+        KeyPoint = KeyPoint.HasValue ? new PointF(KeyPoint.Value.X + dx, KeyPoint.Value.Y + dy) : null,
+    };
 }
