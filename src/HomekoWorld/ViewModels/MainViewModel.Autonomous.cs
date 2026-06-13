@@ -108,7 +108,6 @@ public partial class MainViewModel
         // Faz 37: global hotkey (F10 varsayılan) + telemetri + kalibrasyon özeti
         _autonomousHotKey = a36.HotKey;
         _maxConsecutiveFailures = a36.MaxConsecutiveFailures.ToString();
-        _hook.KeyDown += OnAutonomousHotkeyDown;
 
         // StateChanged tetiklenince telemetriyi de güncelle
         _autonomousEngine.StateChanged += (_, _) =>
@@ -138,19 +137,10 @@ public partial class MainViewModel
     }
 
     [RelayCommand]
-    private void ToggleAutonomous()
-    {
-        if (AutonomousRunning) StopAutonomous();
-        else                   StartAutonomous();
-    }
+    private void ToggleAutonomous() => ToggleSelectedMode();
 
     private void StartAutonomous()
     {
-        if (!Active)
-        {
-            AutonomousStatus = "⚠ Önce üst menüden 'Başlat' aktif edin";
-            return;
-        }
         if (_farmEngine.Inferrer is null)
         {
             AutonomousStatus = "⚠ Model yüklü değil — Oto-Farm sekmesinden .onnx seçin";
@@ -1122,13 +1112,6 @@ public partial class MainViewModel
     {
         if (int.TryParse(v, out int n) && n >= 1)
         { _state.Autonomous.MaxConsecutiveFailures = n; _store.Save(_state); }
-    }
-
-    private void OnAutonomousHotkeyDown(object? sender, Hooks.HookKeyEventArgs e)
-    {
-        if (!e.Key.ToString().Equals(_state.Autonomous.HotKey, StringComparison.OrdinalIgnoreCase)) return;
-        // Hook thread'inden → UI'a yönlendir
-        Application.Current.Dispatcher.BeginInvoke(ToggleAutonomous);
     }
 
     private void RefreshCalibrationSummary()

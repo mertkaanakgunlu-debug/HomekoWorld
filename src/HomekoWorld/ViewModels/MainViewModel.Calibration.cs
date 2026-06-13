@@ -26,56 +26,6 @@ namespace HomekoWorld.ViewModels;
 public partial class MainViewModel
 {
     [RelayCommand]
-    private async Task CalibrateWtmAsync()
-    {
-        if (_isWtmCalibrating) return;
-        _isWtmCalibrating = true;
-        _wtmEngine.PauseForCalibration = true;
-
-        // Make sure the mouse hook is running during calibration
-        bool hooksStartedForCalib = false;
-        if (!_state.Wtm.Enabled)
-        {
-            _mouseHook.Start();
-            hooksStartedForCalib = true;
-        }
-
-        try
-        {
-            // Step 1 — character center (karakterin üstüne tıkla)
-            WtmCalibrationState = "1/2  Karakterinizin üzerine tıklayın…";
-            var charPt = await WaitForCalibClickAsync();
-            _state.Wtm.CharacterCenterX = charPt.X;
-            _state.Wtm.CharacterCenterY = charPt.Y;
-
-            // Step 2 — ring colour (yeşil halkanın üstüne tıkla)
-            WtmCalibrationState = "2/2  Yeşil halkanın üzerine tıklayın…";
-            var ringPt    = await WaitForCalibClickAsync();
-            var ringColor = WtmVision.SamplePixel(ringPt);
-            WtmVision.RgbToHsv(ringColor, out float hue, out _, out _);
-            _state.Wtm.RingHue = (int)hue;
-
-            _store.Save(_state);
-            WtmCalibrationState = "✓ Kalibre edildi";
-            await Task.Delay(2000);
-        }
-        catch (OperationCanceledException)
-        {
-            WtmCalibrationState = "İptal edildi";
-            await Task.Delay(1000);
-        }
-        finally
-        {
-            WtmCalibrationState = "";
-            _isWtmCalibrating   = false;
-            _wtmEngine.PauseForCalibration = false;
-
-            if (hooksStartedForCalib && !_state.Wtm.Enabled)
-                _mouseHook.Stop();
-        }
-    }
-
-    [RelayCommand]
     private async Task CalibrateFarmCenterAsync()
     {
         if (_isFarmCalibrating) return;
@@ -457,27 +407,6 @@ public partial class MainViewModel
 
         mainWindow.WindowState = WindowState.Normal;
         mainWindow.Activate();
-    }
-
-    private void TryLoadHpBarClassifier(string path)
-    {
-        if (string.IsNullOrWhiteSpace(path)) return;
-        var resolvedPath = System.IO.Path.IsPathRooted(path)
-            ? path
-            : System.IO.Path.Combine(AppContext.BaseDirectory, path);
-        try
-        {
-            var clf = new HpBarPresenceClassifier();
-            clf.Load(resolvedPath, _state.Farm.InferenceBackend);
-            (_farmEngine.HpClassifier as IDisposable)?.Dispose();
-            _farmEngine.HpClassifier = clf.IsLoaded ? clf : null;
-            if (clf.IsLoaded)
-                System.Diagnostics.Debug.WriteLine($"[HpBarClassifier] Yüklendi: {resolvedPath}");
-        }
-        catch (Exception ex)
-        {
-            System.Diagnostics.Debug.WriteLine($"[HpBarClassifier] Yüklenemedi: {ex.Message}");
-        }
     }
 
     // ── Test Click — click injection diagnostic ───────────────────────────────

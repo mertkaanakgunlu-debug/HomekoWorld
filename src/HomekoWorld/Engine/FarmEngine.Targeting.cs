@@ -276,12 +276,11 @@ public sealed partial class FarmEngine
     // Bar seçimden hemen sonra geldiğinde smoothed=True için 4 True frame gerekir.
     private async Task<bool> PollHpBarAsync(CancellationToken ct)
     {
-        WtmVision.ClearHpHistory();
         // Agresif: HSV ham sonuç → ilk pozitifte hemen dön (tıklama sonrası bar anında yakalanır).
-        // ~6×25ms = ~150ms bütçe (eski 6×50ms=300ms'nin yarısı). ML modunda 4/6 smoothing gerekir.
+        // ~6×25ms = ~150ms bütçe (eski 6×50ms=300ms'nin yarısı).
         for (int i = 0; i < 6; i++)
         {
-            if (WtmVision.IsTargetAliveSmoothed(_appState.Wtm, HpClassifier))
+            if (WtmVision.IsTargetAliveSmoothed(_appState.Wtm))
                 return true;
             await Task.Delay(25, ct);
         }

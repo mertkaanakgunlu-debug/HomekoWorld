@@ -169,6 +169,17 @@
           </StackPanel>
         </Border>
 
+        <!-- Yarı-Oto (yakında — devre dışı) -->
+        <Border Margin="6,2" CornerRadius="8" Padding="4,10" Opacity="0.4"
+                ToolTip="Yarı-Oto (Genie) modu yakında eklenecek.">
+          <StackPanel HorizontalAlignment="Center">
+            <TextBlock Text="🎮" FontSize="18" HorizontalAlignment="Center"
+                       Foreground="{StaticResource TextMuted}"/>
+            <TextBlock Text="Yarı-Oto" FontSize="8" TextAlignment="Center" Margin="0,3,0,0"
+                       TextWrapping="Wrap" Foreground="{StaticResource TextMuted}"/>
+          </StackPanel>
+        </Border>
+
       </StackPanel>
 
       <!-- Active indicator dot at bottom -->

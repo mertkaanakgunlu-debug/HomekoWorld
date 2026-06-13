@@ -158,13 +158,6 @@ public partial class App : Application
             sp.GetRequiredService<IKeyDeviceTransport>(),
             sp.GetRequiredService<ISkillResolver>()));
 
-        services.AddSingleton<WalkToMobEngine>(sp => new WalkToMobEngine(
-            sp.GetRequiredService<ComboEngine>(),
-            sp.GetRequiredService<GlobalMouseHook>(),
-            sp.GetRequiredService<GlobalKeyboardHook>(),
-            sp.GetRequiredService<AppState>(),
-            sp.GetRequiredService<IKeyDeviceTransport>()));
-
         // Faz 17 — Farm
         services.AddSingleton<MobLibrary>();
         services.AddSingleton<FarmEngine>();

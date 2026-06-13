@@ -32,8 +32,6 @@ public partial class MainViewModel : ObservableObject
     private readonly SkillLibrary        _skillLibrary;
     private readonly SkillBarResolver    _skillResolver;
     private readonly GlobalKeyboardHook  _hook;
-    private readonly GlobalMouseHook     _mouseHook;
-    private readonly WalkToMobEngine     _wtmEngine;
     private AppState _state;
 
     // ---- Connection ----
@@ -104,13 +102,6 @@ public partial class MainViewModel : ObservableObject
     /// <summary>Live preview shown in the settings panel for a 350 ms base delay.</summary>
     [ObservableProperty] private string _adaptPreview    = "";
 
-    // ---- WtM (Walk to Mob) ----
-    [ObservableProperty] private bool   _wtmEnabled;
-    [ObservableProperty] private string _wtmStatus           = "Pasif";
-    [ObservableProperty] private string _wtmCalibrationState = "";
-    [ObservableProperty] private string? _wtmComboId;
-    private bool _isWtmCalibrating;
-    private TaskCompletionSource<System.Drawing.Point>? _calibClickTcs;
     private bool _isFarmCalibrating;
 
     // ---- Faz 17: Oto Farm ----
@@ -157,7 +148,7 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private bool   _farmRecordingMode;         // A4: kayıt/performans modu (GPU'ya nefes ver)
     [ObservableProperty] private bool   _farmArcherMode;            // B1: archer (yaklaş+yönel) vs archer dışı (kombo hemen)
     [ObservableProperty] private int    _farmArcherRangePx;         // B2: archer yaklaşma mesafesi (px) — UI kaydırıcı
-    [ObservableProperty] private Models.HpBarDetectionMode _farmHpBarMode; // HP bar tespit yöntemi (Hsv/Ml/ColorScan)
+    [ObservableProperty] private Models.HpBarDetectionMode _farmHpBarMode; // HP bar tespit yöntemi (Hsv/ColorScan)
     [ObservableProperty] private double _farmConfidence;            // T1: YOLO güven eşiği (0-1) — UI kaydırıcı
     [ObservableProperty] private double _farmIou;                   // A6: NMS IoU eşiği (0.20-0.80) — UI kaydırıcı
     [ObservableProperty] private bool   _farmDxgiCapture;           // T2: DXGI hızlı yakalama (kapalı = GDI)
@@ -237,12 +228,12 @@ public partial class MainViewModel : ObservableObject
 
     private readonly List<MobCardViewModel> _farmMobCards = [];
 
-    /// <summary>Enables the toggle button: can stop anytime (FarmRunning), or start when Active.</summary>
-    public bool   FarmToggleEnabled => Active || FarmRunning;
+    /// <summary>Başlat/Durdur butonu her zaman aktif (mod sistemi başlatmayı doğrular).</summary>
+    public bool   FarmToggleEnabled => true;
     /// <summary>Button label showing current action + configurable hotkey.</summary>
     public string FarmStartLabel    => FarmRunning
-        ? $"Farm Durdur  ({FarmHotKey})"
-        : $"Farm Başlat  ({FarmHotKey})";
+        ? $"Farm Durdur  ({GlobalStartKey})"
+        : $"Farm Başlat  ({GlobalStartKey})";
     private readonly FarmEngine      _farmEngine;
     private readonly MobLibrary      _mobLibrary;
     private readonly AutoPotService  _autoPotService;
@@ -265,8 +256,6 @@ public partial class MainViewModel : ObservableObject
         SkillLibrary         skillLibrary,
         SkillBarResolver     skillResolver,
         GlobalKeyboardHook   hook,
-        GlobalMouseHook      mouseHook,
-        WalkToMobEngine      wtmEngine,
         FarmEngine           farmEngine,
         MobLibrary           mobLibrary,
         AutoPotService       autoPotService,
@@ -285,8 +274,6 @@ public partial class MainViewModel : ObservableObject
         _skillLibrary  = skillLibrary;
         _skillResolver = skillResolver;
         _hook          = hook;
-        _mouseHook     = mouseHook;
-        _wtmEngine     = wtmEngine;
         _farmEngine     = farmEngine;
         _mobLibrary     = mobLibrary;
         _autoPotService = autoPotService;
@@ -299,20 +286,6 @@ public partial class MainViewModel : ObservableObject
         Editor          = editor;
 
         _state         = state;
-
-        // WtM — load persisted settings
-        _wtmEnabled = _state.Wtm.Enabled;
-        _wtmComboId = _state.Wtm.ComboId;
-
-        // WtM — wire engine events
-        _mouseHook.MouseDown      += OnCalibrationMouseDown;
-        _wtmEngine.StatusChanged  += (_, s) =>
-            Application.Current.Dispatcher.BeginInvoke(() => WtmStatus = s);
-        if (_state.Wtm.Enabled && _state.Active)
-        {
-            _mouseHook.Start();
-            _wtmEngine.Start();
-        }
 
         // Faz 17: Farm — load persisted settings
         _farmEnabled         = _state.Farm.Enabled;
@@ -418,15 +391,14 @@ public partial class MainViewModel : ObservableObject
         if (!string.IsNullOrWhiteSpace(_farmModelPath))
             OnFarmModelPathChanged(_farmModelPath);
 
-        // Faz 19: HP bar classifier — auto-load on startup
-        TryLoadHpBarClassifier(_state.Wtm.HpBarClassifierPath);
-
-        // Faz 17: Farm — configurable hotkey (start/stop farm loop)
-        _hook.KeyDown += OnFarmHotkeyDown;
+        // FujiMacro: tek başlat/durdur tuşu (F12) — seçili modu aç/kapat
+        _hook.KeyDown += OnModeToggleHotkeyDown;
         // Test Click hotkey — oyun önde iken test tıklaması tetikle
         _hook.KeyDown += OnTestClickHotkeyDown;
-        // Faz 19: AutoPot toggle hotkey
+        // Faz 19: AutoPot toggle hotkey (bağımsız overlay)
         _hook.KeyDown += OnAutoPotHotkeyDown;
+        // Hook'u şimdi başlat — F12 + hotkey'ler her zaman dinlensin (mod çalışmasa bile)
+        _hook.Start();
 
         _savedWifiHost = _state.SerialHost;
         PhonePort      = _state.SerialPort;
@@ -439,6 +411,7 @@ public partial class MainViewModel : ObservableObject
         CurrentProfile    = _state.ProfileId;
         CurrentClass      = _state.ClassId;
         CurrentPage       = _state.CurrentPage;
+        SyncSelectedModeFromPage();   // FujiMacro: seçili modu sayfadan türet
 
 
         // Faz 14/15: load adaptive delay settings
@@ -454,14 +427,8 @@ public partial class MainViewModel : ObservableObject
         LoadClasses();
         ApplyFilter();
 
-        _dispatcher.ActiveToggled += (_, _) =>
-        {
-            Application.Current.Dispatcher.BeginInvoke(() =>
-            {
-                Active = _dispatcher.Active;
-                LogMessage = Active ? "Aktif — F12 ile durdur" : "Durduruldu";
-            });
-        };
+        // FujiMacro: AutoPot bağımsız — kalıcı durum açıksa servisi şimdi başlat
+        if (_state.AutoPot.Enabled) _autoPotService.Start();
 
         _engine.ComboFired += (_, e) =>
         {
@@ -693,10 +660,7 @@ public partial class MainViewModel : ObservableObject
     private void ToggleLanguage() => Language = Language == "tr" ? "en" : "tr";
 
     [RelayCommand]
-    private void ToggleActive()
-    {
-        _dispatcher.SetActive(!_dispatcher.Active);
-    }
+    private void ToggleActive() => ToggleSelectedMode();
 
     public void SetCapturing(bool capturing)
     {
@@ -706,6 +670,12 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand]
     private void SelectPage(string page)
     {
+        // Mod çalışırken sayfa/mod değiştirmeyi engelle (önce Durdur)
+        if (Active)
+        {
+            LogMessage = "Mod çalışıyor — önce Durdur (F12), sonra modu değiştir.";
+            return;
+        }
         CurrentPage = page;
     }
 
@@ -713,6 +683,7 @@ public partial class MainViewModel : ObservableObject
     {
         _state.CurrentPage = value;
         _store.Save(_state);
+        SyncSelectedModeFromPage();   // FujiMacro: sayfa seçimi = çalıştırılacak mod
     }
 
     private void UpdateStats(string comboId, double elapsedMs)

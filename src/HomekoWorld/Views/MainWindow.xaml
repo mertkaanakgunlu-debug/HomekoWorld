@@ -4,7 +4,7 @@
         xmlns:ctrl="clr-namespace:HomekoWorld.Views.Controls"
         xmlns:pages="clr-namespace:HomekoWorld.Views.Pages"
         xmlns:sys="clr-namespace:System;assembly=mscorlib"
-        Title="Combo Assistant"
+        Title="FujiMacro 1.0.0"
         Width="1100" Height="700"
         MinWidth="900" MinHeight="560"
         WindowStyle="None"
@@ -474,7 +474,7 @@
                     <TextBlock Grid.Column="0" Text="OTO POT" Style="{StaticResource SectionHeader}"/>
                     <CheckBox Grid.Column="1" IsChecked="{Binding AutoPotEnabled}"
                               VerticalAlignment="Center"
-                              ToolTip="F12 (Aktif) açıkken paralel olarak HP/MP barlarını izler."/>
+                              ToolTip="Bağımsız overlay: HP/MP barlarını izleyip pot basar (F11 veya Aç/Kapa). Ana moddan bağımsız çalışır."/>
                   </Grid>
                   <!-- AutoPot başlatma tuşu -->
                   <Grid Margin="0,0,0,4">
@@ -499,11 +499,13 @@
                   <!-- HP Pot satırı -->
                   <StackPanel>
                     <StackPanel.Style>
+                      <!-- FujiMacro: ayarlar HER ZAMAN görünür; AutoPot AKTİFKEN kilitli + soluk
+                           (aktifken pot tuşları input'a yazılmasın → yalnız kapalıyken düzenle). -->
                       <Style TargetType="StackPanel">
-                        <Setter Property="Visibility" Value="Collapsed"/>
                         <Style.Triggers>
                           <DataTrigger Binding="{Binding AutoPotEnabled}" Value="True">
-                            <Setter Property="Visibility" Value="Visible"/>
+                            <Setter Property="IsEnabled" Value="False"/>
+                            <Setter Property="Opacity"   Value="0.5"/>
                           </DataTrigger>
                         </Style.Triggers>
                       </Style>
@@ -850,91 +852,6 @@
                   </StackPanel>
                 </Border>
 
-                <!-- Walk to Mob -->
-                <Border Style="{StaticResource PanelCard}" Padding="10" Margin="0,0,0,6">
-                  <StackPanel>
-                    <TextBlock Text="WALK TO MOB" Style="{StaticResource SectionHeader}" Margin="0,0,0,8"/>
-
-                    <Grid Margin="0,0,0,6">
-                      <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="Auto"/>
-                      </Grid.ColumnDefinitions>
-                      <TextBlock Grid.Column="0" FontSize="11" Foreground="{StaticResource TextSoft}"
-                                 Text="WtM Aktif"
-                                 ToolTip="Moba tıkladığında karakter önce hedef konumuna yürür, sonra komboyu ateşler."/>
-                      <CheckBox Grid.Column="1" IsChecked="{Binding WtmEnabled}" VerticalAlignment="Center"/>
-                    </Grid>
-
-                    <StackPanel>
-                      <StackPanel.Style>
-                        <Style TargetType="StackPanel">
-                          <Setter Property="Visibility" Value="Collapsed"/>
-                          <Style.Triggers>
-                            <DataTrigger Binding="{Binding WtmEnabled}" Value="True">
-                              <Setter Property="Visibility" Value="Visible"/>
-                            </DataTrigger>
-                          </Style.Triggers>
-                        </Style>
-                      </StackPanel.Style>
-
-                      <TextBlock Text="Ateşlenecek kombo" FontSize="10"
-                                 Foreground="{StaticResource TextMuted}" Margin="0,0,0,2"/>
-                      <ComboBox Style="{StaticResource ComboBase}"
-                                Margin="0,0,0,6"
-                                ItemsSource="{Binding Combos}"
-                                SelectedValuePath="Id"
-                                SelectedValue="{Binding WtmComboId}"
-                                DisplayMemberPath="Name"
-                                FontSize="11"/>
-
-                      <TextBlock FontSize="9" Foreground="{StaticResource TextDim}"
-                                 TextWrapping="Wrap" Margin="0,0,0,4"
-                                 Text="Halka rengini kalibre et — karakter merkezi + hedef HP global kalibrasyondan alınır."/>
-
-                      <Button Command="{Binding CalibrateWtmCommand}"
-                              Style="{StaticResource BtnGhost}"
-                              Margin="0,0,0,4" Padding="6,4" FontSize="11"
-                              ToolTip="Yeşil halka rengini kalibre et.">
-                        <TextBlock Text="Kalibre Et (halka rengi)"/>
-                      </Button>
-
-                      <TextBlock Text="{Binding WtmCalibrationState}"
-                                 FontSize="10" Foreground="{StaticResource Gold}"
-                                 TextWrapping="Wrap" Margin="0,0,0,4">
-                        <TextBlock.Style>
-                          <Style TargetType="TextBlock">
-                            <Setter Property="Visibility" Value="Visible"/>
-                            <Style.Triggers>
-                              <DataTrigger Binding="{Binding WtmCalibrationState}" Value="">
-                                <Setter Property="Visibility" Value="Collapsed"/>
-                              </DataTrigger>
-                            </Style.Triggers>
-                          </Style>
-                        </TextBlock.Style>
-                      </TextBlock>
-                    </StackPanel>
-
-                    <Border Margin="0,2,0,0" Padding="6,3" CornerRadius="3"
-                            Background="{StaticResource BgPanel2}"
-                            BorderBrush="{StaticResource Border1}" BorderThickness="1">
-                      <Border.Style>
-                        <Style TargetType="Border">
-                          <Setter Property="Visibility" Value="Collapsed"/>
-                          <Style.Triggers>
-                            <DataTrigger Binding="{Binding WtmEnabled}" Value="True">
-                              <Setter Property="Visibility" Value="Visible"/>
-                            </DataTrigger>
-                          </Style.Triggers>
-                        </Style>
-                      </Border.Style>
-                      <TextBlock Text="{Binding WtmStatus}"
-                                 FontFamily="{StaticResource FontMono}"
-                                 FontSize="10" Foreground="{StaticResource TextMuted}"
-                                 TextWrapping="Wrap"/>
-                    </Border>
-                  </StackPanel>
-                </Border>
 
               </StackPanel>
 

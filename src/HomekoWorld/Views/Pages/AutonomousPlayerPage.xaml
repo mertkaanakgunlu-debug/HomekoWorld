@@ -23,7 +23,7 @@
                 Background="{StaticResource BgPanel2}"
                 BorderBrush="{StaticResource Border1}" BorderThickness="1">
           <TextBlock TextWrapping="Wrap" FontSize="10" Foreground="{StaticResource TextDim}"
-                     Text="ⓘ Gereksinimler: 'Başlat' (Aktif) açık + YOLO modeli + HP bar kalibrasyonu. Tam döngü: Farm → envanter dolu → Town TP → Merchant → Sat → Portal → Farm noktası → Farm. F10 (veya Faz 37 hotkey) ile aç/kapat. Kalibrasyon özeti aşağıda görünür."/>
+                     Text="ⓘ Gereksinimler: YOLO modeli + HP bar kalibrasyonu. Tam döngü: Farm → envanter dolu → Town TP → Merchant → Sat → Portal → Farm noktası → Farm. Sol menüden Otonom seç → F12 (ya da Başlat butonu) ile başlat/durdur. Kalibrasyon özeti aşağıda görünür."/>
         </Border>
       </StackPanel>
     </Border>

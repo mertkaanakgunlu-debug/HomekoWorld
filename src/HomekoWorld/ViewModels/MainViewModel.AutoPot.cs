@@ -28,7 +28,14 @@ public partial class MainViewModel
     partial void OnGlobalStartKeyChanged(string value)  { _state.GlobalStartKey  = value; _store.Save(_state); }
     partial void OnLanguageChanged(string value)        { _state.Language = value; _store.Save(_state); LogMessage = value == "en" ? "Language change takes effect on restart." : "Dil değişikliği yeniden başlatmada geçerli olur."; }
     partial void OnKeyboardTestKeyChanged(string value) { _state.KeyboardTestKey = value; _store.Save(_state); }
-    partial void OnAutoPotEnabledChanged(bool value)    { _state.AutoPot.Enabled      = value; _store.Save(_state); }
+    partial void OnAutoPotEnabledChanged(bool value)
+    {
+        _state.AutoPot.Enabled = value;
+        _store.Save(_state);
+        // Bağımsız overlay: aç/kapa doğrudan servisi başlat/durdur (ana mod'dan bağımsız)
+        if (value) _autoPotService.Start();
+        else       _autoPotService.Stop();
+    }
     partial void OnAutoPotHpEnabledChanged(bool value)  { _state.AutoPot.HpPotEnabled = value; _store.Save(_state); }
     partial void OnAutoPotHpPercentChanged(int value)   { _state.AutoPot.HpPotPercent = value; _store.Save(_state); }
     partial void OnAutoPotHpKeyChanged(string value)    { _state.AutoPot.HpPotKey     = value; _store.Save(_state); }
@@ -45,7 +52,6 @@ public partial class MainViewModel
 
     private void OnAutoPotHotkeyDown(object? sender, HookKeyEventArgs e)
     {
-        if (!Active) return;
         var key = string.IsNullOrWhiteSpace(_state.AutoPot.StartKey) ? "F11" : _state.AutoPot.StartKey;
         if (!e.Key.ToString().Equals(key, StringComparison.OrdinalIgnoreCase)) return;
         Application.Current.Dispatcher.BeginInvoke(ToggleAutoPot);

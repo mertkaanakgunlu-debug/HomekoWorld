@@ -25,7 +25,6 @@ public sealed partial class FarmEngine
     // ── Bağımlılıklar ──────────────────────────────────────────────────────────
     private readonly TransportRouter      _router;
     private readonly ComboEngine          _combo;
-    private readonly WalkToMobEngine      _wtm;
     private readonly GlobalKeyboardHook   _keyHook;
     private readonly GlobalMouseHook      _mouseHook;
     private readonly MobLibrary           _mobLibrary;
@@ -150,12 +149,10 @@ public sealed partial class FarmEngine
     public FarmTelemetry Telemetry { get; } = new();
 
     public IYoloInferrer?            Inferrer   { get; set; }
-    public HpBarPresenceClassifier? HpClassifier { get; set; }
 
     public FarmEngine(
         TransportRouter    router,
         ComboEngine        combo,
-        WalkToMobEngine    wtm,
         GlobalKeyboardHook keyHook,
         GlobalMouseHook    mouseHook,
         MobLibrary         mobLibrary,
@@ -163,7 +160,6 @@ public sealed partial class FarmEngine
     {
         _router     = router;
         _combo      = combo;
-        _wtm        = wtm;
         _keyHook    = keyHook;
         _mouseHook  = mouseHook;
         _mobLibrary = mobLibrary;
@@ -182,8 +178,6 @@ public sealed partial class FarmEngine
             SetState(FarmState.Idle, "⚠ Farm kalibrasyonu eksik — 4. adımı tamamlayın (hedef HP bar)");
             return;
         }
-
-        _wtm.PauseForFarm = true;
 
         _keyHook.KeyDown += OnKeyDown;
         _cts = new CancellationTokenSource();
@@ -281,7 +275,6 @@ public sealed partial class FarmEngine
         cts?.Dispose();
 
         _combo.CancelAll();
-        _wtm.PauseForFarm = false;
         _paused = false;
         _currentTargetForOverlay = null; // detection thread CT ile durur
         SetState(FarmState.Idle, "Pasif");

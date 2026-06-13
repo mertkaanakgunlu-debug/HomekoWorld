@@ -13,7 +13,6 @@ public sealed class BindingDispatcher : IDisposable
     private bool           _active;
     private volatile bool  _testPaused;
 
-    public event EventHandler? ActiveToggled;
     public bool Active => _active;
     public bool IsCapturingBinding { get; set; }
 
@@ -37,10 +36,7 @@ public sealed class BindingDispatcher : IDisposable
         if (_active)
             _hook.Start();
         else
-        {
             _engine.CancelAll();
-        }
-        ActiveToggled?.Invoke(this, EventArgs.Empty);
     }
 
     private void OnKeyDown(object? sender, HookKeyEventArgs e)
@@ -48,13 +44,6 @@ public sealed class BindingDispatcher : IDisposable
         if (_testPaused) return;
         // Tuş atama modundayken hook hiçbir tuşu yutmaz
         if (IsCapturingBinding) return;
-
-        if (KeyCode.ToName(e.Key) == _state.GlobalStartKey && e.Modifiers == KeyboardModifiers.None)
-        {
-            SetActive(!_active);
-            e.Handled = true;
-            return;
-        }
 
         if (!_active) return;
 

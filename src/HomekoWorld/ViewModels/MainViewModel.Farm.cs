@@ -36,55 +36,14 @@ public partial class MainViewModel
             StopFarm();
     }
 
-    partial void OnActiveChanged(bool value)
-    {
-        // Makro "Başlat" kapatılınca otonom modu + aktif farm döngüsünü durdur
-        if (!value && AutonomousRunning)
-            StopAutonomous();
-        if (!value && FarmRunning)
-            StopFarm();
-
-        if (value)
-        {
-            // AutoPot servisi başlat
-            _autoPotService.Start();
-            // WtM: Enabled ise motor aktifleştir
-            if (_state.Wtm.Enabled)
-            {
-                _mouseHook.Start();
-                _wtmEngine.Start();
-                WtmStatus = "Pasif — hedef bekliyor";
-            }
-        }
-        else
-        {
-            // AutoPot servisi durdur
-            _autoPotService.Stop();
-            // WtM: her durumda durdur (Enabled olsa bile Active=OFF susturur)
-            _wtmEngine.Stop();
-            if (!_isWtmCalibrating) _mouseHook.Stop();
-        }
-    }
-
     // ── Farm başlat / durdur ──────────────────────────────────────────────────
 
     [RelayCommand]
-    private void ToggleFarm()
-    {
-        if (FarmRunning)
-            StopFarm();
-        else
-            StartFarm();
-    }
+    private void ToggleFarm() => ToggleSelectedMode();
 
     private void StartFarm()
     {
-        if (!FarmEnabled) return;
-        if (!Active)
-        {
-            FarmStatus = "⚠ Önce üst menüden 'Başlat' aktif edin";
-            return;
-        }
+        // FujiMacro: sidebar'dan Oto Farm seçili olması = mod aktif (eski FarmEnabled kapısı kaldırıldı).
         if (_farmEngine.Inferrer is null)
         {
             FarmStatus = "⚠ Model yüklü değil — .onnx seç";
@@ -236,28 +195,6 @@ public partial class MainViewModel
             ? $"{(int)span.TotalHours}:{span.Minutes:00}:{span.Seconds:00}"
             : $"{span.Minutes:00}:{span.Seconds:00}";
         FarmKillsPerHour = span.TotalHours > 0.0001 ? (int)(FarmKills / span.TotalHours) : 0;
-    }
-
-    // F9 global hotkey handler
-    private void OnFarmHotkeyDown(object? sender, HookKeyEventArgs e)
-    {
-        if (!FarmEnabled) return;
-        var hotkey = string.IsNullOrWhiteSpace(_state.Farm.HotKey) ? "F9" : _state.Farm.HotKey;
-        if (!e.Key.ToString().Equals(hotkey, StringComparison.OrdinalIgnoreCase)) return;
-
-        // KRİTİK (A2): durdurma UI thread'ine BAĞLI OLMAMALI. UI dolu/donmuş olsa bile
-        // hotkey botu anında durdurmalı → engine.Stop()'u burada (hook thread'inde) DOĞRUDAN
-        // çağır (thread-safe: CTS cancel + combo CancelAll). UI temizliği sonra BeginInvoke ile.
-        // (Eski davranış: BeginInvoke(ToggleFarm) → donmuş UI kuyruğuna düşer, asla çalışmazdı.)
-        if (FarmRunning)
-        {
-            _farmEngine.Stop();                                  // bot anında durur
-            Application.Current.Dispatcher.BeginInvoke(StopFarm); // Stop() idempotent → UI bookkeeping
-        }
-        else
-        {
-            Application.Current.Dispatcher.BeginInvoke(StartFarm);
-        }
     }
 
     partial void OnFarmMobsJsonPathChanged(string value)

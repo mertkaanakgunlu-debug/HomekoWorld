@@ -173,6 +173,8 @@ public partial class MainViewModel
                 vm.Description.ToLowerInvariant().Contains(q))
                 Filtered.Add(vm);
         }
+        // FujiMacro: farm combo seçicisi de canlı kalsın (yeni/silinen combo anında yansısın)
+        RefreshFarmAvailableCombos();
     }
 
     private void LoadProfiles()
@@ -273,47 +275,5 @@ public partial class MainViewModel
 
     // ── Walk to Mob (WtM) ────────────────────────────────────────────────────
 
-    partial void OnWtmEnabledChanged(bool value)
-    {
-        _state.Wtm.Enabled = value;
-        _store.Save(_state);
-
-        // WtM yalnızca Active=ON iken uyandırılır
-        if (value && _state.Active)
-        {
-            _mouseHook.Start();
-            _wtmEngine.Start();
-            WtmStatus = "Pasif — hedef bekliyor";
-        }
-        else
-        {
-            _wtmEngine.Stop();
-            if (!_isWtmCalibrating) _mouseHook.Stop();
-            WtmStatus = value ? "Pasif — Active OFF" : "Pasif";
-        }
-    }
-
-    partial void OnWtmComboIdChanged(string? value)
-    {
-        _state.Wtm.ComboId = value;
-        _store.Save(_state);
-    }
-
-    // Called from OnCalibrationMouseDown when calibration is active.
-    private Task<System.Drawing.Point> WaitForCalibClickAsync()
-    {
-        // RunContinuationsAsynchronously: TrySetResult mouse hook thread'inde çağrılır;
-        // kalibrasyon devamı o thread'de senkron koşmasın (hook'u bloke etmesin).
-        _calibClickTcs = new TaskCompletionSource<System.Drawing.Point>(
-            TaskCreationOptions.RunContinuationsAsynchronously);
-        return _calibClickTcs.Task;
-    }
-
-    private void OnCalibrationMouseDown(object? sender, System.Drawing.Point p)
-    {
-        if (_isWtmCalibrating)
-            _calibClickTcs?.TrySetResult(p);
-        // Farm now uses CalibrationOverlayWindow (ShowDialog) — no click TCS needed
-    }
 
 }

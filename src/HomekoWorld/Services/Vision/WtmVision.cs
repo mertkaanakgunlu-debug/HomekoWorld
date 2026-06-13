@@ -483,69 +483,21 @@ public static class WtmVision
                              Math.Max(1, r.Width), Math.Max(1, r.Height));
     }
 
-    // Temporal smoothing: son HpBarTemporalWindow karedeki karar geçmişi.
-    // IsTargetAliveSmoothed birden fazla thread'den çağrılmayacak (FarmEngine tek döngü).
-    private static readonly Queue<bool> _hpHistory = new();
-
-    public static void ClearHpHistory() => _hpHistory.Clear();
-
     /// <summary>
-    /// ML classifier + temporal smoothing ile HP bar varlığını kontrol eder.
-    /// Dispatch sırası: 1) classifier (ONNX) + temporal, 2) renk tarama, 3) false.
+    /// HP bar varlığını seçili yönteme göre kontrol eder: Hsv (varsayılan) veya ColorScan.
     /// </summary>
-    public static bool IsTargetAliveSmoothed(WtmSettings s, object? classifier)
+    public static bool IsTargetAliveSmoothed(WtmSettings s)
     {
         // ── HSV kırmızı-oran (varsayılan, en hızlı) ──────────────────────────
-        // ML ROI kutusu VEYA renk noktası kalibre ise çalışır. Smoothing kullanmaz;
-        // ölüm debounce'unu FarmEngine.maxHpMisses sağlar.
+        // Mob HP bar ROI kutusu VEYA renk noktası kalibre ise çalışır.
         if (s.HpBarMode == HpBarDetectionMode.Hsv && s.IsHpBarLocated)
-        {
-            _hpHistory.Clear();
             return IsTargetAliveByHsv(s);
-        }
 
         // ── RGB renk taraması ────────────────────────────────────────────────
         if (s.HpBarMode == HpBarDetectionMode.ColorScan && s.IsTargetHpColorCalibrated)
-        {
-            _hpHistory.Clear();
             return IsTargetSelectedByHpColor(s);
-        }
 
-        // ── ML ONNX + temporal smoothing ─────────────────────────────────────
-        if (s.HpBarMode == HpBarDetectionMode.Ml &&
-            classifier is HpBarPresenceClassifier clf && clf.IsLoaded && s.IsHpBarRoiCalibrated)
-        {
-            using var roi = CaptureHpBarRoi(s);
-            float prob = clf.Predict(roi);
-            bool rawResult = prob >= s.HpBarClassifierThreshold;
-
-            // Temporal smoothing
-            _hpHistory.Enqueue(rawResult);
-            while (_hpHistory.Count > s.HpBarTemporalWindow)
-                _hpHistory.Dequeue();
-
-            int positives = _hpHistory.Count(x => x);
-            bool smoothed = positives >= s.HpBarTemporalMinPositive;
-
-            // Debug log — yalnız açıkça istenirse (senkron disk I/O performansı düşürür → varsayılan KAPALI).
-            if (s.HpBarDebugLog)
-            {
-                try
-                {
-                    string logPath = System.IO.Path.Combine(AppContext.BaseDirectory, "debug_hp.txt");
-                    string line = $"[{DateTime.Now:HH:mm:ss.fff}] prob={prob:F3} raw={rawResult} pos={positives}/{s.HpBarTemporalWindow} smoothed={smoothed}\n";
-                    if (new System.IO.FileInfo(logPath) is { Exists: true, Length: > 500_000 })
-                        System.IO.File.Delete(logPath);
-                    System.IO.File.AppendAllText(logPath, line);
-                }
-                catch { }
-            }
-
-            return smoothed;
-        }
-
-        // ── Fallback: seçili mod için kalibrasyon/model yok → renk taraması ───
-        _hpHistory.Clear();
+        // ── Fallback: seçili mod için kalibrasyon yok → renk taraması ─────────
         return IsTargetAlive(s);
     }
 }

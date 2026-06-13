@@ -144,13 +144,11 @@ public sealed class JsonStateStore
 
             // WtmSettings guardian / ROI defaults — tolerans 0 ise set
             if (state.Wtm.NameplateColorTol == 0)          state.Wtm.NameplateColorTol = 50;
-            if (state.Wtm.HpBarTemporalWindow == 0)        state.Wtm.HpBarTemporalWindow = 6;
-            if (state.Wtm.HpBarTemporalMinPositive == 0)   state.Wtm.HpBarTemporalMinPositive = 4;
-            if (state.Wtm.HpBarClassifierThreshold == 0f)  state.Wtm.HpBarClassifierThreshold = 0.6f;
             if (state.Wtm.HpBarRoiW == 0) state.Wtm.HpBarRoiW = 240;
             if (state.Wtm.HpBarRoiH == 0) state.Wtm.HpBarRoiH = 60;
-            if (string.IsNullOrWhiteSpace(state.Wtm.HpBarClassifierPath))
-                state.Wtm.HpBarClassifierPath = "Assets/HpBar/hpbar_classifier.onnx";
+            // ML HP-bar modu kaldırıldı (FujiMacro 1.0.0) → eski Ml (=1) veya tanımsız değer HSV'ye düşer.
+            if (!Enum.IsDefined(typeof(Models.HpBarDetectionMode), state.Wtm.HpBarMode))
+                state.Wtm.HpBarMode = Models.HpBarDetectionMode.Hsv;
 
             // Kendi HP/MP barı: eski tek-satır (HpBarY mid-row) → iki-köşe dikdörtgen geçişi.
             // Eski kalibrasyonu tek-satır dikdörtgene taşı (Top=eski Y, Height=1) ki kullanıcı

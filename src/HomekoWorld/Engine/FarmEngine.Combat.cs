@@ -38,7 +38,7 @@ public sealed partial class FarmEngine
                 // HP bar yoksa veya CT iptal olduysa döngüden çık.
             }
             while (!died && !ct.IsCancellationRequested &&
-                   WtmVision.IsTargetAliveSmoothed(_appState.Wtm, HpClassifier)); // renk tarama veya template — kalibre ise kontrol et
+                   WtmVision.IsTargetAliveSmoothed(_appState.Wtm)); // renk tarama — kalibre ise kontrol et
         }
         finally
         {
@@ -150,7 +150,7 @@ public sealed partial class FarmEngine
                     var hpSnap = _latestDetections;
                     bool targetAlive = (hpSnap?.TargetAliveHsv is bool av && NowMs() - hpSnap.PublishedAtMs < 200)
                         ? av
-                        : WtmVision.IsTargetAliveSmoothed(_appState.Wtm, HpClassifier);
+                        : WtmVision.IsTargetAliveSmoothed(_appState.Wtm);
 
                     if (!targetAlive)
                     {

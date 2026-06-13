@@ -83,19 +83,12 @@ public class WtmSettings
     public float NameplateRedFrac  { get; set; } = 0.45f; // kırmızı / renkli-yazı oranı eşiği
     public int   NameplateRedMinPx { get; set; } = 12;    // mutlak min kırmızı piksel
 
-    // ── ML HP bar ROI + binary classifier ────────────────────────────────────
-    // CaptureHpBarRoi ile (HpBarRoiX, HpBarRoiY, W, H) bölgesi her tick alınır.
-    // hpbar_classifier.onnx yüklüyse HpBarPresenceClassifier predict eder.
+    // ── Mob HP bar ROI (iki-köşe dikdörtgen) ─────────────────────────────────
+    // (HpBarRoiX, HpBarRoiY, W, H) bölgesi HSV kırmızı-oran tespiti için kullanılır.
     public int    HpBarRoiX               { get; set; }
     public int    HpBarRoiY               { get; set; }
     public int    HpBarRoiW               { get; set; } = 240;
     public int    HpBarRoiH               { get; set; } = 60;
-    public string HpBarClassifierPath     { get; set; } = "Assets/HpBar/hpbar_classifier.onnx";
-    public float  HpBarClassifierThreshold { get; set; } = 0.6f;
-    public int    HpBarTemporalWindow      { get; set; } = 6;
-    public int    HpBarTemporalMinPositive { get; set; } = 4;
-    /// <summary>ML modunda her HP kontrolünde debug_hp.txt'ye yaz (varsayılan KAPALI — senkron disk I/O performansı düşürür).</summary>
-    public bool   HpBarDebugLog            { get; set; } = false;
 
     [System.Text.Json.Serialization.JsonIgnore]
     public bool IsHpBarRoiCalibrated => HpBarRoiX > 0 && HpBarRoiY > 0;
@@ -131,9 +124,7 @@ public class WtmSettings
 public enum HpBarDetectionMode
 {
     /// <summary>HSV kırmızı-oran (varsayılan, en hızlı; koruma mobu yöntemiyle aynı).</summary>
-    Hsv,
-    /// <summary>ONNX binary classifier + temporal smoothing (eski birincil).</summary>
-    Ml,
-    /// <summary>RGB renk taraması (HpColor* eşikleri).</summary>
-    ColorScan,
+    Hsv = 0,
+    /// <summary>RGB renk taraması (HpColor* eşikleri). (1 = eski Ml, kaldırıldı; ColorScan değeri state.json uyumu için korunur.)</summary>
+    ColorScan = 2,
 }

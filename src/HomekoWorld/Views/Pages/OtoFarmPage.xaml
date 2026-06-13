@@ -166,8 +166,8 @@
           <ColumnDefinition Width="60"/>
         </Grid.ColumnDefinitions>
 
-        <!-- Başlat/Durdur butonu -->
-        <Button Grid.Column="0" Command="{Binding ToggleFarmCommand}"
+        <!-- Başlat/Durdur butonu (tek F12 ile çalışır; ayrı tuş alanı kaldırıldı) -->
+        <Button Grid.Column="0" Grid.ColumnSpan="5" Command="{Binding ToggleFarmCommand}"
                 IsEnabled="{Binding FarmToggleEnabled}"
                 Padding="10,7" FontSize="13">
           <Button.Style>
@@ -205,15 +205,6 @@
           </StackPanel>
         </Button>
 
-        <!-- Başlat/Durdur tuşu etiketi -->
-        <TextBlock Grid.Column="2" Text="Tuş" FontSize="10"
-                   Foreground="{StaticResource TextMuted}" VerticalAlignment="Center"/>
-
-        <!-- Başlat/Durdur tuşu input -->
-        <TextBox Grid.Column="4" Style="{StaticResource InputMono}" FontSize="11"
-                 Text="{Binding FarmHotKey, UpdateSourceTrigger=LostFocus}"
-                 VerticalAlignment="Center"
-                 ToolTip="Farm döngüsünü başlatıp durduracak tuş (örn: F9)"/>
       </Grid>
     </Border>
 
@@ -308,7 +299,7 @@
                 <ComboBox Grid.Column="2" Style="{StaticResource ComboBase}" FontSize="10"
                           ItemsSource="{Binding HpBarModeOptions}"
                           SelectedItem="{Binding FarmHpBarMode}"
-                          ToolTip="Hsv: hızlı kırmızı-oran tespiti (varsayılan, önerilen). Ml: ONNX classifier (ROI kalibrasyonu gerekir). ColorScan: RGB renk taraması."/>
+                          ToolTip="Hsv: hızlı kırmızı-oran tespiti (varsayılan, önerilen). ColorScan: RGB renk taraması."/>
               </Grid>
 
               <!-- Mob HP barı önizleme görüntüsü -->
