@@ -43,7 +43,7 @@ public class AutonomousSettings
     /// </summary>
     [System.Text.Json.Serialization.JsonIgnore]
     public bool IsFullyConfigured =>
-        IsCoordCalibrated &&
+        IsCoordReady &&                       // birleşik VEYA iki-ayrı ROI (eskiden yalnız iki-ROI'ye bakıp birleşik modu "eksik" sayıyordu)
         IsInventoryGridCalibrated &&
         IsWaypointsReady;
 
@@ -176,14 +176,10 @@ public class AutonomousSettings
     /// örn. virgül-misdetection) atılır; karakter bir okuma arası bu kadar yol gidemez.</summary>
     public int   NavMaxJumpCoords   { get; set; } = 300;
 
-    /// <summary>Akıcı navigasyon: W SÜREKLİ basılı, yürürken A/D ile düzelt (dur-kalk probe yerine). Çok daha akıcı.</summary>
-    public bool  NavContinuous          { get; set; } = true;
-    /// <summary>Akıcı modda okuma aralığı (ms) — karakter bu kadar yürür, sonra konum okunup düzeltilir.</summary>
+    /// <summary>Adaptif akıcı navigasyon: bir segment yürüme + okuma aralığı (ms). Karakter bu kadar yürür, sonra konum okunup yön düzeltilir. Düşük=sık düzelt, yüksek=uzun adım.</summary>
     public int   NavContinuousReadMs    { get; set; } = 250;
-    /// <summary>Akıcı modda dönüş kazancı (0.1-1.5) — açı hatasının ne kadarını her düzeltmede dönsün. Düşük=yumuşak kıvrım, yüksek=keskin.</summary>
+    /// <summary>Dönüş kazancı (0.1-1.5) — açı hatasının ne kadarını her düzeltmede dönsün. Düşük=yumuşak kıvrım, yüksek=keskin.</summary>
     public float NavContinuousSteerGain { get; set; } = 0.5f;
-    /// <summary>Saf akıcı: W'yi BIRAKMA, yürürken oku+düzelt (en akıcı; koord okuması güvenilir + A/D W basılıyken döndürüyorsa). Kapalı=hibrit (yürü-dur-düzelt).</summary>
-    public bool  NavContinuousHold     { get; set; } = false;
 
     // ── Faz 34: Waypoint'ler (oyun koordinatları; ResolutionMapper bağımsız) ──────
 

@@ -72,10 +72,8 @@ public partial class MainViewModel
         _navCameraInvert        = _state.Autonomous.NavCameraInvert;
         _navToleranceCoords     = _state.Autonomous.NavToleranceCoords.ToString();
         _navStepMs              = _state.Autonomous.NavStepMs.ToString();
-        _navContinuous          = _state.Autonomous.NavContinuous;
         _navContinuousReadMs    = _state.Autonomous.NavContinuousReadMs.ToString();
         _navContinuousSteerGain = _state.Autonomous.NavContinuousSteerGain.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture);
-        _navContinuousHold      = _state.Autonomous.NavContinuousHold;
         RefreshNavWaypoints();
 
         // Faz 36: merchant satış ayarlarını yükle (gerçek KO akışı)
@@ -473,6 +471,66 @@ public partial class MainViewModel
         }
     }
 
+    // ── Koordinat Kararlılık & Hız Testi ───────────────────────────────────────────
+    [ObservableProperty] private string _coordStabilityStatus = "";
+
+    /// <summary>Sabit dururken ~30 okuma yapar; hız (okuma/sn) ve doğruluk (uyum %, hane-düşmesi) raporlar.
+    /// Navigasyonun ön-koşulu: okuma HIZLI ve TUTARLI olmalı.</summary>
+    [RelayCommand]
+    private async Task CoordStabilityTestAsync()
+    {
+        if (!_coordReader.IsReady)
+        {
+            CoordStabilityStatus = "⚠ Önce ROI çiz + rakamları (10/10) öğret";
+            return;
+        }
+        var mainWindow = Application.Current.MainWindow;
+        mainWindow.WindowState = WindowState.Minimized;
+        CoordStabilityStatus = "Kararlılık testi — sabit dur, okunuyor…";
+        await Task.Delay(400);
+
+        const int N = 30;
+        string report = await Task.Run(() =>
+        {
+            var reads = new List<(int x, int y)?>(N);
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            for (int i = 0; i < N; i++) reads.Add(_coordReader.Read());
+            sw.Stop();
+
+            int    ok     = reads.Count(r => r is not null);
+            double perSec = N / Math.Max(0.001, sw.Elapsed.TotalSeconds);
+            double avgMs  = sw.Elapsed.TotalMilliseconds / N;
+
+            var sb = new System.Text.StringBuilder();
+            sb.Append($"Hız: {perSec:0} okuma/sn (~{avgMs:0.0} ms).  Başarılı: {ok}/{N}.  ");
+            if (ok == 0) { sb.Append("Hiç okunamadı — ROI/glyph/eşik kontrol et."); return sb.ToString(); }
+
+            var xs = reads.Where(r => r is not null).Select(r => r!.Value.x).ToList();
+            var ys = reads.Where(r => r is not null).Select(r => r!.Value.y).ToList();
+            sb.Append(AxisReport("X", xs)).Append("   ").Append(AxisReport("Y", ys));
+            return sb.ToString();
+
+            static string AxisReport(string name, List<int> vals)
+            {
+                var grp = vals.GroupBy(v => v).OrderByDescending(g => g.Count()).ToList();
+                var top = grp[0];
+                int pct = (int)(100.0 * top.Count() / vals.Count);
+                int topLen = top.Key.ToString().Length;
+                int fewerDigits = vals.Count(v => v.ToString().Length < topLen);
+                string s = $"{name}: en sık {top.Key} (%{pct}, {grp.Count} farklı değer)";
+                if (fewerDigits > 0)
+                    s += $" ⚠ {fewerDigits} okuma HANE EKSİK → ROI'yi tüm haneyi kapsayacak şekilde genişlet / rakamı yeniden öğret";
+                else if (pct < 90)
+                    s += " ⚠ tutarsız — eşik/segment ayarlarını gözden geçir";
+                return s;
+            }
+        });
+
+        mainWindow.WindowState = WindowState.Normal;
+        mainWindow.Activate();
+        CoordStabilityStatus = report;
+    }
+
     // ── Faz 34: Navigasyon ────────────────────────────────────────────────────────
 
     [ObservableProperty] private string _navStatus           = "Hazır";
@@ -485,10 +543,8 @@ public partial class MainViewModel
     [ObservableProperty] private string _navStepMs           = "800";
     [ObservableProperty] private bool   _navCameraInvert;
     [ObservableProperty] private bool   _navTurnInvert;
-    [ObservableProperty] private bool   _navContinuous = true;
     [ObservableProperty] private string _navContinuousReadMs = "250";
     [ObservableProperty] private string _navContinuousSteerGain = "0.5";
-    [ObservableProperty] private bool   _navContinuousHold;
 
     [ObservableProperty]
     private double _navCameraPixPerDeg = 8.5;
@@ -518,14 +574,10 @@ public partial class MainViewModel
         _store.Save(_state);
     }
 
-    partial void OnNavContinuousChanged(bool value)
-    { _state.Autonomous.NavContinuous = value; _store.Save(_state); }
     partial void OnNavContinuousReadMsChanged(string v)
     { if (int.TryParse(v, out int n) && n >= 80) { _state.Autonomous.NavContinuousReadMs = n; _store.Save(_state); } }
     partial void OnNavContinuousSteerGainChanged(string v)
     { if (float.TryParse(v, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float f) && f >= 0.1f && f <= 1.5f) { _state.Autonomous.NavContinuousSteerGain = f; _store.Save(_state); } }
-    partial void OnNavContinuousHoldChanged(bool value)
-    { _state.Autonomous.NavContinuousHold = value; _store.Save(_state); }
 
     partial void OnNavToleranceCoordsChanged(string value)
     {
@@ -1310,10 +1362,13 @@ public partial class MainViewModel
     {
         var a = _state.Autonomous;
         var mask = _coordReader.Recognizer.TaughtMask();
-        bool glyphsOk = mask.All(b => b);
 
         var lines = new System.Text.StringBuilder();
-        lines.AppendLine(a.IsCoordCalibrated && glyphsOk ? "✅ Koordinat okuyucu" : $"❌ Koordinat okuyucu (ROI:{a.IsCoordCalibrated} Glyph:{mask.Count(b => b)}/10)");
+        // Okuyucunun GERÇEK durumu (birleşik ROI'yi de sayar; combo modda virgülü de kontrol eder).
+        // Eskiden yalnız iki-ayrı-ROI bayrağına bakıp birleşik modu yanlışlıkla "eksik" gösteriyordu.
+        lines.AppendLine(_coordReader.IsReady
+            ? "✅ Koordinat okuyucu"
+            : $"❌ Koordinat okuyucu (ROI:{a.IsCoordReady} Glyph:{mask.Count(b => b)}/10)");
         lines.AppendLine(a.IsInventoryGridCalibrated ? "✅ Envanter ızgara" : "❌ Envanter ızgara kalibre edilmedi");
         bool merchantSet = a.MerchantX != 0 || a.MerchantY != 0;
         bool portalSet   = a.PortalX   != 0 || a.PortalY   != 0;

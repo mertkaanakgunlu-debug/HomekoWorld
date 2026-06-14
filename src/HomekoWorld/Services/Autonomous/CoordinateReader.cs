@@ -54,9 +54,8 @@ public sealed class CoordinateReader
             foreach (var cell in cells)
             {
                 var (d, conf) = _glyph.Predict(cell);
-                // MinDigitConfidence altındaki hücre → gürültü/boşluk → atla (asla fail).
-                // ROI 4 hane için çizilip 3 haneli sayı gelince oluşan boş trailing hücreleri
-                // ve köşeli karakterler bu yolla sessizce geçilir.
+                // Eşik altı hücre = kenar gürültüsü/boşluk → atla. (Navigasyon güvenilirliği
+                // ReadReliableAsync'in kümeleme kapısında sağlanır; tek-okuma yolu yine en iyi tahmini döndürür.)
                 if (conf < s.MinDigitConfidence) continue;
                 val = val * 10 + d;
                 if (++digitCount > 9) return null;
@@ -139,7 +138,10 @@ public sealed class CoordinateReader
             foreach (var cell in cells)
             {
                 var (d, conf) = _glyph.Predict(cell, includeComma: true);
-                if (conf < s.MinDigitConfidence) continue;               // gürültü/boşluk → atla
+                // Eşik altı hücre = ROI kenarındaki kırpık glyph/gürültü (ör. baştaki yarım ikon, sondaki
+                // virgül artığı) → ATLA. Aralıklı hane-düşmesine karşı koruma navigasyonda ReadReliableAsync'in
+                // kümeleme kapısındadır; burada katı "tümünü reddet" geçerli okumaları da boğuyordu.
+                if (conf < s.MinDigitConfidence) continue;
                 if (d == GlyphDigitReader.Comma) { afterComma = true; continue; }
                 if (!afterComma) { xVal = xVal * 10 + d; if (++xc > 9) return null; }
                 else             { yVal = yVal * 10 + d; if (++yc > 9) return null; }

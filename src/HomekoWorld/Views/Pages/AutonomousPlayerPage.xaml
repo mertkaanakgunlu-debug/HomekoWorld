@@ -351,6 +351,13 @@
                            FontFamily="{StaticResource FontMono}" Foreground="{StaticResource Gold}"
                            VerticalAlignment="Center"/>
               </Grid>
+
+              <!-- Kararlılık & hız testi (navigasyonun ön-koşulu: okuma hızlı + tutarlı olmalı) -->
+              <Button Style="{StaticResource BtnMuted}" Command="{Binding CoordStabilityTestCommand}"
+                      Padding="5,3" FontSize="10" Margin="0,6,0,0" HorizontalAlignment="Left"
+                      ToolTip="Sabit dururken 30 okuma yapar; hız (okuma/sn) ve tutarlılık (hane-düşmesi var mı) raporlar">⏱ Kararlılık &amp; Hız Testi</Button>
+              <TextBlock Text="{Binding CoordStabilityStatus}" FontSize="9" Foreground="{StaticResource TextDim}"
+                         Margin="0,3,0,0" TextWrapping="Wrap"/>
             </StackPanel>
           </Border>
         </Expander>
@@ -853,17 +860,11 @@
                   BorderBrush="{StaticResource Border1}" BorderThickness="1">
             <StackPanel>
               <TextBlock TextWrapping="Wrap" FontSize="9" Foreground="{StaticResource TextDim}" Margin="0,0,0,6"
-                         Text="Akıcı mod (hibrit): bir segment yürür → kısa durup okur+yön düzeltir → tekrar yürür. Probe-correct'ten az duraklamalı ama güvenilir (hareketken okuma çöp yakaladığı için durup okur). Kapatılırsa tam probe-correct. Faz 32 hazır olmalı."/>
-              <CheckBox Content="🚗 Akıcı mod (yürü→dur→düzelt; az duraklama)" FontSize="10" FontWeight="SemiBold"
-                        Foreground="{StaticResource Gold}" Margin="0,0,0,4"
-                        IsChecked="{Binding NavContinuous}"/>
-              <CheckBox Content="↳ W'yi bırakma (SAF akıcı — koord güvenilirse, en akıcı)" FontSize="9"
-                        Foreground="{StaticResource TextDim}" Margin="14,0,0,4"
-                        IsChecked="{Binding NavContinuousHold}"/>
+                         Text="Adaptif akıcı navigasyon: W sürekli basılı, karakter yürürken A/D kısa tap ile hedefe doğru KIVRILIR. Konum güvenilir okunur (hane-düşmesi/çöp elenir); okuma tıkanırsa kısa durup okur. Dönüş yönü çalışırken kendini düzeltir. Önce ⏱ Kararlılık testi'ni geç."/>
               <Grid Margin="0,0,0,8">
                 <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="8"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                 <StackPanel Grid.Column="0">
-                  <TextBlock Text="Yürüme adımı (ms)" FontSize="9" Foreground="{StaticResource TextDim}" Margin="0,0,0,2"/>
+                  <TextBlock Text="Yürüme/okuma adımı (ms)" FontSize="9" Foreground="{StaticResource TextDim}" Margin="0,0,0,2"/>
                   <TextBox Style="{StaticResource InputMono}" FontSize="10"
                            Text="{Binding NavContinuousReadMs, UpdateSourceTrigger=PropertyChanged}"
                            ToolTip="Bir segmentte ne kadar yürünsün — yüksek=uzun adım/daha akıcı, düşük=sık dur/düzelt (en az 200)"/>
@@ -897,8 +898,9 @@
                         Command="{Binding CalibrateTurnRateCommand}"
                         Padding="5,2" FontSize="9">🔧 Kalibre (D dönüş)</Button>
               </Grid>
-              <CheckBox Content="Dönüş yönü ters (bot yanlış yöne dönüp varamıyorsa AÇ)" FontSize="9"
+              <CheckBox Content="Dönüş yönü başlangıç tahmini (çalışırken otomatik düzeltilir)" FontSize="9"
                         Foreground="{StaticResource TextDim}" Margin="0,0,0,8"
+                        ToolTip="Sadece başlangıç tahmini; bot ilk dönüşte yanlış yöne döndüğünü fark edip kendi düzeltir"
                         IsChecked="{Binding NavTurnInvert}"/>
 
               <!-- Kamera px/derece (Farm scan overlay için) -->
@@ -940,10 +942,11 @@
                            Text="{Binding NavToleranceCoords, UpdateSourceTrigger=PropertyChanged}"/>
                 </StackPanel>
                 <StackPanel Grid.Column="2">
-                  <TextBlock Text="Adım süresi (ms)" FontSize="9"
+                  <TextBlock Text="Engel-aşma adımı (ms)" FontSize="9"
                              Foreground="{StaticResource TextDim}" Margin="0,0,0,2"/>
                   <TextBox Style="{StaticResource InputMono}" FontSize="10"
-                           Text="{Binding NavStepMs, UpdateSourceTrigger=PropertyChanged}"/>
+                           Text="{Binding NavStepMs, UpdateSourceTrigger=PropertyChanged}"
+                           ToolTip="Takılınca recovery'de ne kadar ileri yürünsün (detour adımı)"/>
                 </StackPanel>
               </Grid>
 
