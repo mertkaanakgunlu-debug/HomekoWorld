@@ -9,6 +9,9 @@ public sealed class AutonomousTelemetry
     /// <summary>Satılan toplam eşya (Faz 36).</summary>
     public int ItemsSold { get; set; }
 
+    /// <summary>Tamamlanan tamir sayısı (Faz 40).</summary>
+    public int RepairsDone { get; set; }
+
     /// <summary>Kurtarma gerektiren hata sayısı.</summary>
     public int Failures { get; set; }
 
@@ -32,7 +35,7 @@ public sealed class AutonomousTelemetry
 
     public void Reset()
     {
-        TripsCompleted = ItemsSold = Failures = 0;
+        TripsCompleted = ItemsSold = RepairsDone = Failures = 0;
         SessionStart   = DateTime.Now;
     }
 }

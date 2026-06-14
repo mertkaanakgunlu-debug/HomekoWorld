@@ -102,6 +102,75 @@ public sealed class MerchantTrader
         return sold;
     }
 
+    // ── Tamir (Faz 40) ──────────────────────────────────────────────────────────
+    /// <summary>
+    /// AYNI merchant NPC'de tamir: NPC sol-seç→sağ-menü → "I want to make repairs." → envanter
+    /// (çekiç imleç) açılır → kullanıcının seçtiği giyili-ekipman slotlarına SIRAYLA birer sol tık
+    /// (anında onarır, onay penceresi yok) → kapat. Onarılan slot sayısını döndürür.
+    /// </summary>
+    public async Task<int> RepairAsync(CancellationToken ct)
+    {
+        var s = _state.Autonomous;
+
+        if (!s.IsRepairDialogCalibrated || !s.IsRepairEquipGridCalibrated)
+        { Status("⚠ Tamir kalibre edilmedi (diyalog / ekipman ızgarası) — tamir atlandı"); return 0; }
+
+        var slots = s.RepairSlots;
+        if (slots is null || slots.Length == 0)
+        { Status("⚠ Tamir edilecek slot seçilmedi — tamir atlandı"); return 0; }
+
+        // 1-2. NPC: sol-tık (seç) → sağ-tık (menü) — satışla aynı offset
+        Status("Tamir için NPC seçiliyor…");
+        int sw = GetSystemMetrics(0), sh = GetSystemMetrics(1);
+        int cx = sw / 2 + s.MerchantClickOffsetX;
+        int cy = sh / 2 + s.MerchantClickOffsetY;
+        await _transport.MoveAbsAsync(cx, cy, ct);
+        await Task.Delay(80, ct);
+        await _transport.ClickAsync(MouseButton.Left, ct);
+        await Task.Delay(150, ct);
+        await _transport.ClickAsync(MouseButton.Right, ct);
+        await Task.Delay(s.MerchantInteractDelayMs, ct);
+
+        // 3. "I want to make repairs." → envanter açılır, imleç çekiç olur
+        Status("Tamir seçiliyor…");
+        await ClickMasterAsync(s.RepairDialogX, s.RepairDialogY, MouseButton.Left, ct);
+        await Task.Delay(s.RepairDialogDelayMs, ct);
+
+        // 4. Seçili ekipman slotlarına sırayla birer sol tık (çekiç imleç anında onarır)
+        var roi   = ResolutionMapper.Map(s.RepairEquipGridX, s.RepairEquipGridY, s.RepairEquipGridW, s.RepairEquipGridH);
+        int cols  = s.RepairEquipCols, rows = s.RepairEquipRows;
+        int slotW = roi.Width / cols, slotH = roi.Height / rows;
+        int repaired = 0;
+        if (slotW > 0 && slotH > 0)
+        {
+            foreach (int idx in slots)
+            {
+                ct.ThrowIfCancellationRequested();
+                if (idx < 0 || idx >= rows * cols) continue;
+                int r  = idx / cols, c = idx % cols;
+                int px = roi.X + c * slotW + slotW / 2;
+                int py = roi.Y + r * slotH + slotH / 2;
+                Status($"Slot #{idx + 1} onarılıyor ({px},{py})…");
+                await _transport.MoveAbsAsync(px, py, ct);
+                await Task.Delay(60, ct);
+                await _transport.ClickAsync(MouseButton.Left, ct);
+                await Task.Delay(s.RepairItemDelayMs, ct);
+                repaired++;
+            }
+        }
+
+        // 5. Pencereyi kapat
+        Status("Tamir penceresi kapatılıyor…");
+        string closeKey = string.IsNullOrWhiteSpace(s.MerchantCloseKey) ? "Escape" : s.MerchantCloseKey;
+        await _transport.KeyDownAsync(closeKey, ct);
+        await Task.Delay(60, ct);
+        await _transport.KeyUpAsync(closeKey, CancellationToken.None);
+        await Task.Delay(s.MerchantCloseDelayMs, ct);
+
+        Status(repaired > 0 ? $"✓ {repaired} ekipman onarıldı" : "Hiç ekipman onarılmadı");
+        return repaired;
+    }
+
     // ── Satış döngüsü ─────────────────────────────────────────────────────────────
     // Her tur: ikon-eşleşen yuvaları tara → çanta kapasitesi kadarını sağ-tık ile taşı →
     // "Sell" → son "Confirm". Satış sonrası yeniden tarar (yuva boşaldı/sıkışma olası);

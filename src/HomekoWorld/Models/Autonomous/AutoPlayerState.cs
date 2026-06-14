@@ -24,6 +24,9 @@ public enum AutoPlayerState
     /// <summary>Merchant'a eşyalar satılıyor (Faz 36).</summary>
     Selling,
 
+    /// <summary>Aynı merchant'ta eşyalar tamir ediliyor (Faz 40; RepairEnabled açıksa).</summary>
+    Repairing,
+
     /// <summary>Koordinatla portala yürünüyor (Faz 34/35).</summary>
     NavToPortal,
 

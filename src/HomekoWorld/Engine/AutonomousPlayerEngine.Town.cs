@@ -6,9 +6,10 @@ using HomekoWorld.Services.Capture;
 namespace HomekoWorld.Engine;
 
 /// <summary>
-/// Faz 35 — Town TP, Selling stub, portal etkileşimi.
-/// GoingToTownAsync: Town TP tuşu bas → yükleme bekle → NavToMerchant.
-/// SellingTickAsync: Faz 36 MerchantTrader gelene kadar stub → NavToPortal.
+/// Faz 35/40 — Town TP, satış, tamir, portal etkileşimi.
+/// GoingToTownAsync: Town TP butonu/tuşu → yükleme bekle → NavToMerchant.
+/// SellingTickAsync: MerchantTrader.TradeAsync → (RepairEnabled ? Repairing : NavToPortal).
+/// RepairingTickAsync: MerchantTrader.RepairAsync (seçili ekipman slotlarına tık) → NavToPortal.
 /// UsingPortalAsync: portal konumunda sol-tık → onay tuşu → yükleme bekle → NavToFarmSpot.
 /// </summary>
 public sealed partial class AutonomousPlayerEngine
@@ -74,13 +75,40 @@ public sealed partial class AutonomousPlayerEngine
         }
         finally { _merchantTrader.StatusChanged -= OnMerchantStatus; }
 
-        SetState(AutoPlayerState.NavToPortal, "Portala yürünüyor…");
+        if (_state.Autonomous.RepairEnabled)
+            SetState(AutoPlayerState.Repairing, "Eşyalar tamir ediliyor…");
+        else
+            SetState(AutoPlayerState.NavToPortal, "Portala yürünüyor…");
     }
 
     private void OnMerchantStatus(object? sender, string msg)
     {
         StatusChanged?.Invoke(this, msg);
         Log(msg, "event");
+    }
+
+    // ── Tamir (Faz 40: MerchantTrader.RepairAsync) ───────────────────────────────
+
+    private async Task RepairingTickAsync(CancellationToken ct)
+    {
+        Log("Tamir için merchant ile etkileşime giriliyor…", "event");
+        _merchantTrader.StatusChanged += OnMerchantStatus;
+        try
+        {
+            int repaired = await _merchantTrader.RepairAsync(ct);
+            if (repaired > 0) Telemetry.RepairsDone++;
+            Log(repaired > 0
+                ? $"Tamir tamamlandı ({repaired} ekipman, tur: {Telemetry.RepairsDone}) — portala yürünüyor"
+                : "Tamir atlandı (kalibrasyon/slot eksik) — portala yürünüyor", "event");
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception ex)
+        {
+            Log($"Tamir hatası: {ex.Message} — portala yine de yürünüyor", "event");
+        }
+        finally { _merchantTrader.StatusChanged -= OnMerchantStatus; }
+
+        SetState(AutoPlayerState.NavToPortal, "Portala yürünüyor…");
     }
 
     // ── Portal etkileşimi ─────────────────────────────────────────────────────────

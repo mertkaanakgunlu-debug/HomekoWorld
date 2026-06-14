@@ -219,23 +219,10 @@ public class AutonomousSettings
     [System.Text.Json.Serialization.JsonIgnore]
     public bool   IsSellTabCalibrated => SellTabX > 0 || SellTabY > 0;
 
-    /// <summary>true = tek bir "Hepsini Sat" butonuna bas; false = her dolu yuvayı ayrı ayrı tıkla.</summary>
-    public bool   UseSellAllButton          { get; set; } = false;
-    /// <summary>"Hepsini Sat" butonu X (master uzay).</summary>
-    public int    SellAllButtonX            { get; set; }
-    /// <summary>"Hepsini Sat" butonu Y (master uzay).</summary>
-    public int    SellAllButtonY            { get; set; }
-    [System.Text.Json.Serialization.JsonIgnore]
-    public bool   IsSellAllButtonCalibrated => SellAllButtonX > 0 || SellAllButtonY > 0;
-
     /// <summary>Yuva-başına satış: true = sağ-tık; false = sol-tık.</summary>
     public bool   SellRightClick     { get; set; } = true;
-    /// <summary>Her satış sonrası basılacak onay tuşu (boş = yok).</summary>
-    public string SellConfirmKey     { get; set; } = "";
     /// <summary>Her yuva satışı arasında bekleme (ms).</summary>
     public int    SellItemDelayMs    { get; set; } = 200;
-    /// <summary>Onay diyaloğu bekleme (ms) — SellConfirmKey öncesi.</summary>
-    public int    SellConfirmDelayMs { get; set; } = 300;
 
     /// <summary>Toplu satış onay butonu X (master uzay; 0 = kullanılmıyor).</summary>
     public int    SellConfirmButtonX            { get; set; }
@@ -331,4 +318,40 @@ public class AutonomousSettings
 
     /// <summary>Portal geçişi sonrası harita yükleme bekleme süresi (ms).</summary>
     public int    PortalWaitMs         { get; set; } = 10_000;
+
+    // ── Faz 40: Merchant tamir (repair) ──────────────────────────────────────────
+    // Satıştan sonra AYNI merchant NPC'de: NPC sol-seç→sağ-menü (satışla aynı offset)
+    // → "I want to make repairs." → envanter açılır (çekiç imleç) → seçili giyili ekipman
+    // slotlarına sırayla birer sol tık (anında onarır, onay yok) → kapat.
+
+    /// <summary>Tamir adımı etkin mi — kapalıysa Selling'den doğrudan portala geçilir.</summary>
+    public bool   RepairEnabled { get; set; } = false;
+
+    /// <summary>"I want to make repairs." diyalog butonu (master uzay; 0 = kalibre edilmedi).</summary>
+    public int    RepairDialogX       { get; set; }
+    public int    RepairDialogY       { get; set; }
+    /// <summary>Diyalogdan sonra envanter (çekiç imleç) açılana dek bekleme (ms).</summary>
+    public int    RepairDialogDelayMs { get; set; } = 1000;
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool   IsRepairDialogCalibrated => RepairDialogX > 0 || RepairDialogY > 0;
+
+    /// <summary>Giyili ekipman ızgarası ROI (3×5=15 slot; master uzay). Envanterdeki worn-gear paneli.</summary>
+    public int    RepairEquipGridX { get; set; }
+    public int    RepairEquipGridY { get; set; }
+    public int    RepairEquipGridW { get; set; }
+    public int    RepairEquipGridH { get; set; }
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool   IsRepairEquipGridCalibrated => RepairEquipGridW > 0 && RepairEquipGridH > 0;
+    /// <summary>Ekipman ızgarası sütun sayısı (KO worn-gear: 3).</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public int    RepairEquipCols => 3;
+    /// <summary>Ekipman ızgarası satır sayısı (KO worn-gear: 5).</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public int    RepairEquipRows => 5;
+
+    /// <summary>Tamir edilecek ekipman slot indeksleri — SEÇİM SIRASINDA (index = satır*3 + sütun, 0-14).</summary>
+    public int[]  RepairSlots { get; set; } = System.Array.Empty<int>();
+
+    /// <summary>Tamir için slot tıklamaları arası bekleme (ms).</summary>
+    public int    RepairItemDelayMs { get; set; } = 250;
 }

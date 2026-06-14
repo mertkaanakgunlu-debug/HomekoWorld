@@ -167,6 +167,10 @@ public sealed partial class AutonomousPlayerEngine
                 await SellingTickAsync(ct);
                 break;
 
+            case AutoPlayerState.Repairing:
+                await RepairingTickAsync(ct);
+                break;
+
             case AutoPlayerState.NavToPortal:
                 await NavToPortalAsync(ct);
                 break;

@@ -110,6 +110,7 @@ public sealed partial class AutonomousPlayerEngine
         if (_lastFailedState is
             AutoPlayerState.NavToMerchant or
             AutoPlayerState.Selling       or
+            AutoPlayerState.Repairing     or
             AutoPlayerState.NavToPortal   or
             AutoPlayerState.UsingPortal)
         {

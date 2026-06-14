@@ -95,6 +95,15 @@ public partial class MainViewModel
         _merchantCloseDelayMs     = a36.MerchantCloseDelayMs.ToString();
         RefreshMerchantStatus();
 
+        // Faz 40: tamir ayarlarını yükle + 3×5 slot picker'ı kur
+        _repairEnabled       = a36.RepairEnabled;
+        _repairDialogDelayMs = a36.RepairDialogDelayMs.ToString();
+        _repairItemDelayMs   = a36.RepairItemDelayMs.ToString();
+        for (int i = 0; i < a36.RepairEquipRows * a36.RepairEquipCols; i++)
+            RepairSlotCells.Add(new RepairSlotCell(i));
+        SyncRepairSlotCells();
+        RefreshRepairStatus();
+
         // Faz 35: town/portal ayarlarını yükle (state.json'dan UI'a)
         _townTpKey             = a36.TownTpKey;
         _townTpWaitMs          = a36.TownTpWaitMs.ToString();
@@ -1048,6 +1057,153 @@ public partial class MainViewModel
     [RelayCommand]
     private void StopSellTest() { _sellTestCts?.Cancel(); SellStatus = "Durduruldu"; }
 
+    // ── Faz 40: Merchant tamir (repair) — giyili ekipman slot seçici ───────────────
+    // NPC seç→sağ-menü→"I want to make repairs."→envanter(çekiç imleç)→seçili 3×5
+    // ekipman slotlarına sırayla birer sol tık→kapat. Slotlar offline (bot çalışmadan) seçilir.
+
+    [ObservableProperty] private bool   _repairEnabled;
+    [ObservableProperty] private string _repairDialogStatus    = "kalibre edilmedi";
+    [ObservableProperty] private string _repairDialogDelayMs   = "1000";
+    [ObservableProperty] private string _repairEquipGridStatus = "kalibre edilmedi";
+    [ObservableProperty] private string _repairSlotsStatus     = "slot seçilmedi";
+    [ObservableProperty] private string _repairItemDelayMs     = "250";
+    [ObservableProperty] private string _repairStatus          = "";
+    [ObservableProperty] private System.Windows.Media.ImageSource? _repairEquipPreview;
+
+    /// <summary>3×5 ekipman slot seçici hücreleri (önizleme görseli üstüne overlay).</summary>
+    public ObservableCollection<RepairSlotCell> RepairSlotCells { get; } = new();
+
+    partial void OnRepairEnabledChanged(bool v)
+    { _state.Autonomous.RepairEnabled = v; _store.Save(_state); }
+    partial void OnRepairDialogDelayMsChanged(string v)
+    { if (int.TryParse(v, out int n) && n >= 0) { _state.Autonomous.RepairDialogDelayMs = n; _store.Save(_state); } }
+    partial void OnRepairItemDelayMsChanged(string v)
+    { if (int.TryParse(v, out int n) && n >= 0) { _state.Autonomous.RepairItemDelayMs = n; _store.Save(_state); } }
+
+    private void RefreshRepairStatus()
+    {
+        var a = _state.Autonomous;
+        RepairDialogStatus    = a.IsRepairDialogCalibrated    ? $"✓ ({a.RepairDialogX}, {a.RepairDialogY})" : "kalibre edilmedi";
+        RepairEquipGridStatus = a.IsRepairEquipGridCalibrated ? $"✓ {a.RepairEquipGridW}×{a.RepairEquipGridH}px (3×5)" : "kalibre edilmedi";
+        int n = a.RepairSlots?.Length ?? 0;
+        RepairSlotsStatus = n > 0 ? $"✓ {n} slot seçili (sırayla onarılır)" : "slot seçilmedi";
+    }
+
+    /// <summary>Hücrelerin seçili/sıra durumunu ayarlardaki RepairSlots dizisinden tazeler.</summary>
+    private void SyncRepairSlotCells()
+    {
+        var slots = _state.Autonomous.RepairSlots ?? System.Array.Empty<int>();
+        foreach (var cell in RepairSlotCells)
+        {
+            int orderIdx = System.Array.IndexOf(slots, cell.Index);
+            cell.Selected = orderIdx >= 0;
+            cell.Order    = orderIdx >= 0 ? orderIdx + 1 : 0;
+        }
+    }
+
+    [RelayCommand]
+    private Task CalibrateRepairDialogAsync() => CalibratePointAsync(
+        "'I want to make repairs.' yazısına TEK TIKLA",
+        (x, y) => { _state.Autonomous.RepairDialogX = x; _state.Autonomous.RepairDialogY = y; },
+        RefreshRepairStatus);
+
+    [RelayCommand]
+    private async Task CalibrateRepairEquipGridAsync()
+    {
+        var mainWindow = Application.Current.MainWindow;
+        mainWindow.WindowState = WindowState.Minimized;
+        var ov = new Views.CalibrationOverlayWindow(
+            "Giyili EKİPMAN ızgarası (3×5) — envanter açıkken sol-üst slotun sol-üst köşesine, sonra sağ-alt slotun sağ-alt köşesine tıkla",
+            twoCorner: true);
+        ov.ShowDialog();
+        mainWindow.WindowState = WindowState.Normal;
+        mainWindow.Activate();
+        if (!ov.Confirmed) return;
+        EnsureCalibrationRef();
+        var m = ResolutionMapper.Unmap(ov.SelectedRect.X, ov.SelectedRect.Y, ov.SelectedRect.Width, ov.SelectedRect.Height);
+        var a = _state.Autonomous;
+        a.RepairEquipGridX = m.X; a.RepairEquipGridY = m.Y;
+        a.RepairEquipGridW = Math.Max(1, m.Width); a.RepairEquipGridH = Math.Max(1, m.Height);
+        _store.Save(_state);
+        RefreshRepairStatus();
+        await RefreshRepairPreviewAsync();
+    }
+
+    [RelayCommand]
+    private async Task RefreshRepairPreviewAsync()
+    {
+        var a = _state.Autonomous;
+        if (!a.IsRepairEquipGridCalibrated) { RepairStatus = "⚠ Önce ekipman ızgarasını kalibre et"; return; }
+        var mainWindow = Application.Current.MainWindow;
+        mainWindow.WindowState = WindowState.Minimized;
+        await Task.Delay(400);
+        var pr = ResolutionMapper.Map(a.RepairEquipGridX, a.RepairEquipGridY, a.RepairEquipGridW, a.RepairEquipGridH);
+        using (var bmp = WtmVision.CaptureRegion(pr.X, pr.Y, pr.Width, pr.Height))
+            RepairEquipPreview = BitmapToImageSource(bmp);
+        mainWindow.WindowState = WindowState.Normal;
+        mainWindow.Activate();
+        RepairStatus = "Önizleme güncellendi — onarılacak slotlara tıkla (tekrar tık = kaldır)";
+    }
+
+    /// <summary>Bir slotu seçim listesine ekler/çıkarır (sıra korunur — sona eklenir).</summary>
+    [RelayCommand]
+    private void ToggleRepairSlot(int index)
+    {
+        var list = (_state.Autonomous.RepairSlots ?? System.Array.Empty<int>()).ToList();
+        if (!list.Remove(index)) list.Add(index);   // varsa çıkar, yoksa sona ekle
+        _state.Autonomous.RepairSlots = list.ToArray();
+        _store.Save(_state);
+        SyncRepairSlotCells();
+        RefreshRepairStatus();
+    }
+
+    [RelayCommand]
+    private void ClearRepairSlots()
+    {
+        _state.Autonomous.RepairSlots = System.Array.Empty<int>();
+        _store.Save(_state);
+        SyncRepairSlotCells();
+        RefreshRepairStatus();
+        RepairStatus = "Seçim temizlendi";
+    }
+
+    private CancellationTokenSource? _repairTestCts;
+
+    [RelayCommand]
+    private async Task TestMerchantRepairAsync()
+    {
+        _repairTestCts?.Cancel();
+        _repairTestCts?.Dispose();
+        _repairTestCts = new CancellationTokenSource();
+        var ct = _repairTestCts.Token;
+
+        RepairStatus = "Tamir testi başladı…";
+        var mainWindow = Application.Current.MainWindow;
+        mainWindow.WindowState = WindowState.Minimized;
+
+        void OnStatus(object? s, string msg) =>
+            Application.Current.Dispatcher.BeginInvoke(() => RepairStatus = msg);
+
+        _merchantTrader.StatusChanged += OnStatus;
+        try
+        {
+            await Task.Delay(400, ct);
+            int n = await _merchantTrader.RepairAsync(ct);
+            RepairStatus = n > 0 ? $"✓ {n} ekipman onarıldı" : "Hiç onarılmadı — ①diyalog / ②ızgara / slot seçimi?";
+        }
+        catch (OperationCanceledException) { RepairStatus = "İptal edildi"; }
+        catch (Exception ex) { RepairStatus = $"Hata: {ex.Message}"; }
+        finally
+        {
+            _merchantTrader.StatusChanged -= OnStatus;
+            mainWindow.WindowState = WindowState.Normal;
+            mainWindow.Activate();
+        }
+    }
+
+    [RelayCommand]
+    private void StopRepairTest() { _repairTestCts?.Cancel(); RepairStatus = "Durduruldu"; }
+
     // ── Faz 35: Town TP + portal ──────────────────────────────────────────────────
 
     [ObservableProperty] private string _townTpKey              = "F7";
@@ -1139,6 +1295,6 @@ public partial class MainViewModel
         var t = _autonomousEngine.Telemetry;
         string elapsed = _autonomousEngine.IsRunning ? $"  |  ⏱ {t.ElapsedText}" : "";
         AutonomousTelemetrySummary =
-            $"Tur: {t.TripsCompleted}  |  Satılan: {t.ItemsSold}  |  Hata: {t.Failures}{elapsed}";
+            $"Tur: {t.TripsCompleted}  |  Satılan: {t.ItemsSold}  |  Tamir: {t.RepairsDone}  |  Hata: {t.Failures}{elapsed}";
     }
 }

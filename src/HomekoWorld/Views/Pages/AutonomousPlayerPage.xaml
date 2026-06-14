@@ -23,7 +23,7 @@
                 Background="{StaticResource BgPanel2}"
                 BorderBrush="{StaticResource Border1}" BorderThickness="1">
           <TextBlock TextWrapping="Wrap" FontSize="10" Foreground="{StaticResource TextDim}"
-                     Text="ⓘ Gereksinimler: YOLO modeli + HP bar kalibrasyonu. Tam döngü: Farm → envanter dolu → Town TP → Merchant → Sat → Portal → Farm noktası → Farm. Sol menüden Otonom seç → F12 (ya da Başlat butonu) ile başlat/durdur. Kalibrasyon özeti aşağıda görünür."/>
+                     Text="ⓘ Gereksinimler: YOLO modeli + HP bar kalibrasyonu. Tam döngü: Farm → envanter dolu → Town TP → Merchant → Sat → Tamir → Portal → Farm noktası → Farm. Sol menüden Otonom seç → F12 (ya da Başlat butonu) ile başlat/durdur. Kalibrasyon özeti aşağıda görünür."/>
         </Border>
       </StackPanel>
     </Border>
@@ -568,6 +568,131 @@
                         Command="{Binding StopSellTestCommand}"
                         Padding="7,3" FontSize="10">⏹ Dur</Button>
                 <TextBlock Grid.Column="4" Text="{Binding SellStatus}" FontSize="10"
+                           FontFamily="{StaticResource FontMono}" Foreground="{StaticResource TextMuted}"
+                           VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+              </Grid>
+            </StackPanel>
+          </Border>
+        </Expander>
+
+        <!-- ── Merchant Tamir (Faz 40) ──────────────────────────── -->
+        <Expander Header="🔧 Merchant Tamir (Faz 40)" Foreground="{StaticResource TextMuted}"
+                  FontSize="11" Margin="0,8,0,0">
+          <Border Padding="10,8" Margin="0,6,0,0" CornerRadius="5"
+                  Background="{StaticResource BgPanel2}"
+                  BorderBrush="{StaticResource Border1}" BorderThickness="1">
+            <StackPanel>
+              <TextBlock TextWrapping="Wrap" FontSize="9" Foreground="{StaticResource TextDim}" Margin="0,0,0,8"
+                         Text="Satıştan sonra AYNI merchant NPC'de tamir: NPC sol-seç→sağ-menü (satışla aynı ① ofset)→'I want to make repairs.'→envanter açılır (çekiç imleç)→seçili giyili ekipmanlara sırayla birer sol tık→kapat. 'Tamir etkin' kapalıysa adım atlanır."/>
+
+              <CheckBox Content="Tamir adımı etkin (Satış → Tamir → Portal)" FontSize="10" Margin="0,0,0,8"
+                        Foreground="{StaticResource TextMuted}" IsChecked="{Binding RepairEnabled}"/>
+
+              <!-- ① "I want to make repairs." -->
+              <TextBlock Text="① 'I want to make repairs.' BUTONU" FontSize="9" FontWeight="SemiBold"
+                         Foreground="{StaticResource TextMuted}" Margin="0,0,0,4"/>
+              <TextBlock Text="{Binding RepairDialogStatus}" FontSize="10" Foreground="{StaticResource Gold}"
+                         Margin="0,0,0,4" TextWrapping="Wrap"/>
+              <Grid Margin="0,0,0,8">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="Auto"/><ColumnDefinition Width="8"/>
+                  <ColumnDefinition Width="*"/><ColumnDefinition Width="8"/><ColumnDefinition Width="60"/>
+                </Grid.ColumnDefinitions>
+                <Button Grid.Column="0" Style="{StaticResource BtnMuted}" Command="{Binding CalibrateRepairDialogCommand}"
+                        Padding="5,3" FontSize="10">🖊 Kalibre</Button>
+                <TextBlock Grid.Column="2" Text="Envanter açılma bekleme (ms)" FontSize="9"
+                           Foreground="{StaticResource TextDim}" VerticalAlignment="Center"/>
+                <TextBox Grid.Column="4" Style="{StaticResource InputMono}" FontSize="10"
+                         Text="{Binding RepairDialogDelayMs, UpdateSourceTrigger=PropertyChanged}"/>
+              </Grid>
+
+              <!-- ② Giyili ekipman ızgarası + slot seçici -->
+              <TextBlock Text="② GİYİLİ EKİPMAN IZGARASI (3×5) + SLOT SEÇİMİ" FontSize="9" FontWeight="SemiBold"
+                         Foreground="{StaticResource TextMuted}" Margin="0,0,0,4"/>
+              <TextBlock TextWrapping="Wrap" FontSize="9" Foreground="{StaticResource TextDim}" Margin="0,0,0,4"
+                         Text="Envanteri aç (I) → 'Izgara Kalibre' ile 15 ekipman slotunun çevresine kutu çiz. Önizlemede onarılacak slotlara TIKLA (yeşil + sıra no). Tekrar tıkla = kaldır. Bot bu slotları SIRAYLA onarır."/>
+              <TextBlock Text="{Binding RepairEquipGridStatus}" FontSize="10" Foreground="{StaticResource Gold}"
+                         Margin="0,0,0,4" TextWrapping="Wrap"/>
+              <Grid Margin="0,0,0,6">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="Auto"/><ColumnDefinition Width="6"/>
+                  <ColumnDefinition Width="Auto"/><ColumnDefinition Width="6"/>
+                  <ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <Button Grid.Column="0" Style="{StaticResource BtnMuted}" Command="{Binding CalibrateRepairEquipGridCommand}"
+                        Padding="5,3" FontSize="10">🖊 Izgara Kalibre</Button>
+                <Button Grid.Column="2" Style="{StaticResource BtnMuted}" Command="{Binding RefreshRepairPreviewCommand}"
+                        Padding="5,3" FontSize="10">🔄 Önizleme</Button>
+                <Button Grid.Column="4" Style="{StaticResource BtnMuted}" Command="{Binding ClearRepairSlotsCommand}"
+                        Padding="5,3" FontSize="10">🗑 Seçimi Temizle</Button>
+              </Grid>
+              <TextBlock Text="{Binding RepairSlotsStatus}" FontSize="10" Foreground="{StaticResource Gold}"
+                         Margin="0,0,0,4" TextWrapping="Wrap"/>
+
+              <!-- Slot seçici: ekipman önizleme görseli + 3×5 tıklanabilir overlay -->
+              <Border BorderBrush="{StaticResource Border1}" BorderThickness="1" CornerRadius="4"
+                      HorizontalAlignment="Left" Margin="0,0,0,8" Background="{StaticResource BgInset}">
+                <Grid Width="156" Height="260" Margin="3">
+                  <Image Source="{Binding RepairEquipPreview}" Stretch="Fill" SnapsToDevicePixels="True"/>
+                  <ItemsControl ItemsSource="{Binding RepairSlotCells}">
+                    <ItemsControl.ItemsPanel>
+                      <ItemsPanelTemplate><UniformGrid Rows="5" Columns="3"/></ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate>
+                        <Button Command="{Binding DataContext.ToggleRepairSlotCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                CommandParameter="{Binding Index}" Cursor="Hand">
+                          <Button.Template>
+                            <ControlTemplate TargetType="Button">
+                              <Grid Background="Transparent">
+                                <Border x:Name="hl" BorderThickness="2" CornerRadius="3" Margin="1"
+                                        BorderBrush="Transparent" Background="Transparent"/>
+                                <TextBlock x:Name="ord" Text="{Binding Order}" FontSize="13" FontWeight="Bold"
+                                           Foreground="#FF39FF14" HorizontalAlignment="Right" VerticalAlignment="Top"
+                                           Margin="3" Visibility="Collapsed"/>
+                              </Grid>
+                              <ControlTemplate.Triggers>
+                                <DataTrigger Binding="{Binding Selected}" Value="True">
+                                  <Setter TargetName="hl"  Property="BorderBrush" Value="#FF39FF14"/>
+                                  <Setter TargetName="hl"  Property="Background"  Value="#5539FF14"/>
+                                  <Setter TargetName="ord" Property="Visibility"  Value="Visible"/>
+                                </DataTrigger>
+                              </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                          </Button.Template>
+                        </Button>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                </Grid>
+              </Border>
+
+              <!-- ③ Tıklama arası gecikme -->
+              <Grid Margin="0,0,0,8">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="*"/><ColumnDefinition Width="8"/><ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <StackPanel Grid.Column="0">
+                  <TextBlock Text="Slot tıklama arası (ms)" FontSize="9" Foreground="{StaticResource TextDim}" Margin="0,0,0,2"/>
+                  <TextBox Style="{StaticResource InputMono}" FontSize="10"
+                           Text="{Binding RepairItemDelayMs, UpdateSourceTrigger=PropertyChanged}"/>
+                </StackPanel>
+              </Grid>
+
+              <!-- Test -->
+              <Grid>
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="Auto"/><ColumnDefinition Width="6"/>
+                  <ColumnDefinition Width="Auto"/><ColumnDefinition Width="8"/>
+                  <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <Button Grid.Column="0" Style="{StaticResource BtnMuted}"
+                        Command="{Binding TestMerchantRepairCommand}"
+                        Padding="7,3" FontSize="10">🔧 Test Tamir</Button>
+                <Button Grid.Column="2" Style="{StaticResource BtnMuted}"
+                        Command="{Binding StopRepairTestCommand}"
+                        Padding="7,3" FontSize="10">⏹ Dur</Button>
+                <TextBlock Grid.Column="4" Text="{Binding RepairStatus}" FontSize="10"
                            FontFamily="{StaticResource FontMono}" Foreground="{StaticResource TextMuted}"
                            VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
               </Grid>
