@@ -708,7 +708,7 @@
                   BorderBrush="{StaticResource Border1}" BorderThickness="1">
             <StackPanel>
               <TextBlock TextWrapping="Wrap" FontSize="9" Foreground="{StaticResource TextDim}" Margin="0,0,0,8"
-                         Text="Tam döngü: Farm → Town TP → Merchant nav → Satış (Faz 36) → Portal nav → Portal giriş → Farm nav → Farm. 'Şehre Git' butonu manuel test için çalışan otonom mod gerektirir."/>
+                         Text="Tam döngü: Farm → Town TP → Merchant nav → Satış (Faz 36) → Tamir (Faz 40) → Portal nav → Portal giriş → Farm nav → Farm. '🏙 Town TP Test' otonom modu başlatmadan yalnız ışınlanmayı dener; 'Şehre Git' ise tüm yolculuğu tetikler (çalışan otonom mod gerektirir)."/>
 
               <!-- Town TP (UI butonu) -->
               <TextBlock Text="TOWN IŞINLANMA (UI butonu)" FontSize="9" FontWeight="SemiBold"
@@ -742,6 +742,23 @@
                 <TextBox Style="{StaticResource InputMono}" FontSize="10"
                          Text="{Binding TownTpKey, UpdateSourceTrigger=PropertyChanged}"/>
               </StackPanel>
+
+              <!-- Town TP testi (otonom modu başlatmadan) + durum -->
+              <Grid Margin="0,2,0,4">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="Auto"/><ColumnDefinition Width="6"/>
+                  <ColumnDefinition Width="Auto"/><ColumnDefinition Width="8"/>
+                  <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <Button Grid.Column="0" Command="{Binding TestTownTpCommand}" Style="{StaticResource BtnMuted}"
+                        Padding="7,3" FontSize="10"
+                        ToolTip="Otonom modu BAŞLATMADAN yalnız Town TP butonunu/tuşunu test eder">🏙 Town TP Test</Button>
+                <Button Grid.Column="2" Command="{Binding StopTownTestCommand}" Style="{StaticResource BtnMuted}"
+                        Padding="7,3" FontSize="10">⏹ Dur</Button>
+                <TextBlock Grid.Column="4" Text="{Binding NavStatus}" FontSize="10"
+                           FontFamily="{StaticResource FontMono}" Foreground="{StaticResource TextMuted}"
+                           VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+              </Grid>
 
               <!-- Portal -->
               <TextBlock Text="PORTAL ETKİLEŞİMİ" FontSize="9" FontWeight="SemiBold"

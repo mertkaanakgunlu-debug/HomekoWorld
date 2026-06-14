@@ -1237,6 +1237,42 @@ public partial class MainViewModel
         NavStatus = "Town yolculuğu başlatıldı (GoingToTown)";
     }
 
+    private CancellationTokenSource? _townTestCts;
+
+    /// <summary>Otonom modu BAŞLATMADAN yalnız Town TP butonunu/tuşunu test eder (kalibrasyon doğrulama).</summary>
+    [RelayCommand]
+    private async Task TestTownTpAsync()
+    {
+        var a = _state.Autonomous;
+        if (!a.IsTownTpButtonCalibrated && string.IsNullOrWhiteSpace(a.TownTpKey))
+        { NavStatus = "⚠ Önce Town butonunu kalibre et (veya TP tuşu gir)"; return; }
+
+        _townTestCts?.Cancel();
+        _townTestCts?.Dispose();
+        _townTestCts = new CancellationTokenSource();
+        var ct = _townTestCts.Token;
+
+        NavStatus = "Town TP testi — oyun öne geliyor…";
+        var mainWindow = Application.Current.MainWindow;
+        mainWindow.WindowState = WindowState.Minimized;
+        try
+        {
+            await Task.Delay(400, ct);   // oyun öne gelsin; yoksa tık/tuş app'e gider
+            await _autonomousEngine.TestTownTpAsync(ct);
+            NavStatus = "✓ Town TP tetiklendi — haritanın yüklenmesini bekle";
+        }
+        catch (OperationCanceledException) { NavStatus = "İptal edildi"; }
+        catch (Exception ex) { NavStatus = $"Hata: {ex.Message}"; }
+        finally
+        {
+            mainWindow.WindowState = WindowState.Normal;
+            mainWindow.Activate();
+        }
+    }
+
+    [RelayCommand]
+    private void StopTownTest() { _townTestCts?.Cancel(); NavStatus = "Durduruldu"; }
+
     private void RefreshTownStatus()
     {
         var a = _state.Autonomous;

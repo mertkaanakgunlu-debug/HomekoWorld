@@ -23,24 +23,7 @@ public sealed partial class AutonomousPlayerEngine
     {
         var s = _state.Autonomous;
 
-        // Bu oyunda Town TP = sabit UI butonu → kalibre edilmişse ona sol-tık.
-        // Değilse eski kısayol (TownTpKey) fallback; o da yoksa farm'a dön.
-        if (s.IsTownTpButtonCalibrated)
-        {
-            var p = ResolutionMapper.Map(s.TownTpButtonX, s.TownTpButtonY, 1, 1);
-            Log($"Town butonu tıklanıyor ({p.X},{p.Y})", "event");
-            await _transport.MoveAbsAsync(p.X, p.Y, ct);
-            await Task.Delay(120, ct);
-            await _transport.ClickAsync(MouseButton.Left, ct);
-        }
-        else if (!string.IsNullOrWhiteSpace(s.TownTpKey))
-        {
-            Log($"Town TP tuşu: '{s.TownTpKey}' basılıyor (buton kalibre değil)", "event");
-            await _transport.KeyDownAsync(s.TownTpKey, ct);
-            await Task.Delay(80, ct);
-            await _transport.KeyUpAsync(s.TownTpKey, CancellationToken.None);
-        }
-        else
+        if (!await PressTownTpAsync(ct))
         {
             Log("⚠ Town butonu/tuşu ayarlanmamış", "event");
             SetState(AutoPlayerState.Farming, "Town TP eksik — farm'a dönüldü");
@@ -53,6 +36,41 @@ public sealed partial class AutonomousPlayerEngine
 
         Log("Town'a gelindi — merchant'a yürünüyor", "event");
         SetState(AutoPlayerState.NavToMerchant, "Merchant'a yürünüyor…");
+    }
+
+    /// <summary>
+    /// Town TP aksiyonu: UI butonu kalibre ise ona sol-tık, değilse <see cref="AutonomousSettings.TownTpKey"/>.
+    /// Hiçbiri ayarlı değilse false (çağıran karar verir). GoingToTown + bağımsız test bunu paylaşır.
+    /// </summary>
+    private async Task<bool> PressTownTpAsync(CancellationToken ct)
+    {
+        var s = _state.Autonomous;
+        // Bu oyunda Town TP = sabit UI butonu → kalibre edilmişse ona sol-tık; değilse kısayol fallback.
+        if (s.IsTownTpButtonCalibrated)
+        {
+            var p = ResolutionMapper.Map(s.TownTpButtonX, s.TownTpButtonY, 1, 1);
+            Log($"Town butonu tıklanıyor ({p.X},{p.Y})", "event");
+            await _transport.MoveAbsAsync(p.X, p.Y, ct);
+            await Task.Delay(120, ct);
+            await _transport.ClickAsync(MouseButton.Left, ct);
+            return true;
+        }
+        if (!string.IsNullOrWhiteSpace(s.TownTpKey))
+        {
+            Log($"Town TP tuşu: '{s.TownTpKey}' basılıyor (buton kalibre değil)", "event");
+            await _transport.KeyDownAsync(s.TownTpKey, ct);
+            await Task.Delay(80, ct);
+            await _transport.KeyUpAsync(s.TownTpKey, CancellationToken.None);
+            return true;
+        }
+        return false;
+    }
+
+    /// <summary>Test: Otonom modu/loop BAŞLATMADAN yalnız Town TP aksiyonunu yapar (kalibrasyon doğrulama).</summary>
+    public async Task TestTownTpAsync(CancellationToken ct)
+    {
+        if (!await PressTownTpAsync(ct))
+            throw new InvalidOperationException("Town butonu/tuşu ayarlanmamış");
     }
 
     // ── Satış (Faz 36: MerchantTrader) ──────────────────────────────────────────
