@@ -58,6 +58,14 @@ public sealed partial class FarmEngine
 
     // TrackAndCombat'in son bilinen hedef merkezi — kill sonrası ölü kara listesi için.
     private PointF _lastEngagedCenter;
+    // TrackAndCombat'in son bilinen hedef iz kimliği — kill sonrası MobTracker.MarkDead için (-1 = yok).
+    private int    _lastEngagedTrackId = -1;
+
+    // ── Object tracker (ByteTrack-lite) ──────────────────────────────────────
+    // YOLO kutularına kalıcı kimlik atar (ekstra inference yok). Ceset yok sayma (#3),
+    // doğru overlay vurgusu (#4), stabil hedef puanı (#2) için. Tespit thread'i Update,
+    // combat thread'i MarkDead çağırır → MobTracker içinde kilitlidir.
+    private readonly MobTracker _tracker = new();
 
     // ── Decoupled YOLO tespit thread'i (Sorun 2) ─────────────────────────────
     // Inference kendi thread'inde sürekli döner; scanning/combat döngüleri bu anlık
@@ -188,6 +196,12 @@ public sealed partial class FarmEngine
         _deadBlacklist.Clear();
         _latestDetections        = null;
         _currentTargetForOverlay = null;
+        _lastEngagedTrackId      = -1;
+
+        // Object tracker'ı sıfırla + ayarlardan eşikleri uygula (yeni oturum = temiz izler).
+        _tracker.Reset();
+        _tracker.IouThreshold = _appState.Farm.TrackIouThreshold;
+        _tracker.MaxAgeFrames = _appState.Farm.TrackMaxAgeFrames;
 
         // Faz B: replay recorder (yalnız açıksa) — DetectionLoop başlamadan ÖNCE kurulmalı.
         _replay = null;

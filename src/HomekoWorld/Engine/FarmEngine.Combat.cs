@@ -55,6 +55,9 @@ public sealed partial class FarmEngine
 
         Telemetry.Kills++;
         EmitTelemetry();
+        // #3: öldürülen izi tracker'da "ölü" damgala → ceset tespit edilmeye devam etse de aday dışı
+        // (4 ceset yan yana olsa bile tekrar denenmez; iz despawn olunca düşer). Pozisyon-blacklist yedek.
+        _tracker.MarkDead(_lastEngagedTrackId);
         // Ölü mob kara listesi: cesedi (son bilinen konum) kısa süre atla → sonraki tarama
         // en yakın DİĞER mob'a geçer, ölüye tekrar tıklamaz (Sorun 5).
         long corpseExpire = NowMs() + s.DeadBlacklistMs;
@@ -91,7 +94,8 @@ public sealed partial class FarmEngine
         bool archerApproach = s.EngageMovement == EngageMovement.ArcherWalkAndFace;
 
         Detection currentTarget = target;
-        _lastEngagedCenter = target.Center; // ilk tick'te HP ile ölüm tespit edilse de geçerli konum
+        _lastEngagedCenter  = target.Center;  // ilk tick'te HP ile ölüm tespit edilse de geçerli konum
+        _lastEngagedTrackId = target.TrackId; // kill sonrası MobTracker.MarkDead için kilitli iz kimliği
         bool walkHeld     = false;
         bool comboFiring  = false;
         bool engageStarted = !archerApproach; // archer dışı: yaklaşma yok → hemen kombo
@@ -103,6 +107,7 @@ public sealed partial class FarmEngine
         int hpDeathConfirmMs = Math.Max(20, s.HpDeathConfirmMs);
         long firstHpMissMs = -1;     // HP'nin ilk "yok" okunduğu an (-1 = canlı)
         long lastHpCheck   = -1000;  // HSV/HP ekran yakalamasını ≤~33ms'de bire sınırla (GDI yükü)
+        long lastBarDiag   = -10000; // koyu-oluk/kırmızı tanılama log'u throttle (eşik tune'u için)
         // Alive-gate (#1): bu angajmanda HP barını en az bir kez "canlı" gördük mü?
         // Görülmeden ölüm bildirme → angajman başında HP barının henüz yüklenmediği kısa pencerede
         // yanlış-ölüm üretmez (mob sadece seçildi, bar çıkmadı → hemen "öldü" deme).
@@ -168,6 +173,16 @@ public sealed partial class FarmEngine
                         hadHpOnce     = true;  // bu angajmanda en az bir kez canlı gördük
                         firstHpMissMs = -1;    // canlı okuma → debounce sıfırla
                     }
+
+                    // Tune yardımı: son HP-bar taramasının kırmızı/koyu-oluk değerlerini ara sıra logla
+                    // (düşük-HP sahte-ölüm eşiklerini gerçek arka planlarda ayarlamak için — bkz HpTrough*).
+                    if (sw.ElapsedMilliseconds - lastBarDiag >= 1000)
+                    {
+                        lastBarDiag = sw.ElapsedMilliseconds;
+                        var bs = WtmVision.LastBarScan;
+                        Program.Log($"[Farm] HP tespit: kırmızı={bs.red} oluk=%{(int)(bs.darkFrac * 100)} " +
+                                    $"dolu=%{(int)(bs.fillFrac * 100)} ({bs.dark}/{bs.total}) → {(targetAlive ? "canlı" : "ölü")}");
+                    }
                 }
 
                 // ── YOLO sticky tracking (HEDEF KİLİDİ) — yalnız archer yürüme yönü + overlay için ──
@@ -182,19 +197,33 @@ public sealed partial class FarmEngine
                         ? snap.Dets
                         : (IReadOnlyList<Detection>)Array.Empty<Detection>();
 
-                    const float stickyRadius = 120f;
-                    var sticky = dets
-                        .Where(d => d.ClassId == currentTarget.ClassId &&
-                                    d.DistanceTo(currentTarget.Center) <= stickyRadius)
-                        .OrderBy(d => d.DistanceTo(currentTarget.Center)) // pozisyon kilidi: aynı mob'u izle
-                        .FirstOrDefault();
+                    // Önce kalıcı TrackId ile eşle (en sağlam — aynı türden komşu moba KAYMAZ; #4).
+                    Detection? sticky = currentTarget.TrackId >= 0
+                        ? dets.FirstOrDefault(d => d.TrackId == currentTarget.TrackId)
+                        : null;
+                    bool stuckByTrackId = sticky is not null; // kesin-aynı-iz mi yoksa pozisyon-fallback mi?
+                    // Track kaybolduysa eski pozisyon-kilidi (aynı tür + 120px en yakın) fallback.
+                    if (sticky is null)
+                    {
+                        const float stickyRadius = 120f;
+                        sticky = dets
+                            .Where(d => d.ClassId == currentTarget.ClassId &&
+                                        d.DistanceTo(currentTarget.Center) <= stickyRadius)
+                            .OrderBy(d => d.DistanceTo(currentTarget.Center)) // pozisyon kilidi: aynı mob'u izle
+                            .FirstOrDefault();
+                    }
 
                     if (sticky is not null)
                     {
                         currentTarget      = sticky;
-                        _lastEngagedCenter = sticky.Center; // kill sonrası ceset kara listesi için taze konum
+                        _lastEngagedCenter = sticky.Center;    // kill sonrası ceset kara listesi için taze konum
+                        // _lastEngagedTrackId YALNIZ kesin-aynı-iz (TrackId) eşleşmesinde güncellenir (#2):
+                        // pozisyon-fallback yakındaki BAŞKA bir CANLI mobu yakalayabilir → onu MarkDead etme.
+                        // Fallback'te eski iz kimliği korunur; mob iz değiştirdiyse yeni iz DeadInheritRadiusPx
+                        // köprüsüyle yine ölü damgalanır, canlı komşu yanlışlıkla elenmez.
+                        if (stuckByTrackId) _lastEngagedTrackId = sticky.TrackId;
                     }
-                    // sticky yoksa: currentTarget (+ _lastEngagedCenter) son değerinde KALIR (zıplama yok).
+                    // sticky yoksa: currentTarget (+ _lastEngaged*) son değerinde KALIR (zıplama yok).
 
                     // Overlay vurgusu: kilitli/saldırılan hedef (kutuları DetectionLoop çizer).
                     _currentTargetForOverlay = currentTarget;

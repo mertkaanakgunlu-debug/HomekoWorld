@@ -17,6 +17,17 @@
     <!-- Single-file publish: native WPF DLLs must be extracted alongside the exe,
          not bundled inside. Without this, SetWindowLongPtr etc. crash on startup. -->
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+
+    <!-- Dual-build GPU variant'ı. Varsayılan: DirectML (her DX12 GPU'da — NVIDIA/AMD/Intel —
+         SIFIR indirmeyle GPU hızlandırma). NVIDIA performans build'i için:
+             dotnet publish ... -p:GpuVariant=Cuda
+         CUDA ve DirectML aynı native onnxruntime.dll'i sağladığından ASLA birlikte referans verilmez. -->
+    <GpuVariant Condition="'$(GpuVariant)' == ''">DirectML</GpuVariant>
+  </PropertyGroup>
+
+  <!-- Yalnız CUDA variant'ı HOMEKO_CUDA sabitini tanımlar → OrtEpFactory/App CUDA penceresi + CUDA EP
+       yolunu seçer; aksi halde DirectML EP yolu derlenir. -->
+  <PropertyGroup Condition="'$(GpuVariant)' == 'Cuda'">
     <DefineConstants>$(DefineConstants);HOMEKO_CUDA</DefineConstants>
   </PropertyGroup>
 
@@ -25,8 +36,18 @@
     <PackageReference Include="HidSharp" Version="2.1.0" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="8.0.1" />
     <PackageReference Include="System.Drawing.Common" Version="8.0.14" />
-    <PackageReference Include="Microsoft.ML.OnnxRuntime.Gpu" Version="1.20.1" />
     <PackageReference Include="Vortice.Direct3D11" Version="3.8.3" />
+  </ItemGroup>
+
+  <!-- ONNX Runtime EP paketi — variant'a göre TEK biri. İkisi de aynı native onnxruntime.dll'i
+       getirir; birlikte referans verilirse çakışır. -->
+  <ItemGroup Condition="'$(GpuVariant)' == 'Cuda'">
+    <!-- NVIDIA: CUDA/TensorRT native. cuBLAS/cuDNN ağır bağımlılıkları app içinde indirilir. -->
+    <PackageReference Include="Microsoft.ML.OnnxRuntime.Gpu" Version="1.20.1" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(GpuVariant)' != 'Cuda'">
+    <!-- Evrensel: DirectML native (DX12 — NVIDIA/AMD/Intel). Sıfır ek indirme. -->
+    <PackageReference Include="Microsoft.ML.OnnxRuntime.DirectML" Version="1.20.1" />
   </ItemGroup>
 
   <!-- Faz 9: RP2040 firmware'i app-içi güncelleme için exe yanına kopyala -->
@@ -47,6 +68,13 @@
     <Content Include="Assets\Mobs\*">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+  </ItemGroup>
+
+  <!-- Gömülü varsayılan state: geliştiricinin tam kalibrasyonu → taze/müşteri kurulumu hazır gelir
+       (DefaultData.BuildInitialState okur). Exe içine gömülür; implicit None'dan çıkarılır. -->
+  <ItemGroup>
+    <None Remove="Assets\default-state.json" />
+    <EmbeddedResource Include="Assets\default-state.json" />
   </ItemGroup>
 
   <!-- Font TTF files loaded at runtime if present in Resources\Fonts\.

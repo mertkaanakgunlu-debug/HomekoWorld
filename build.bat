@@ -1,15 +1,9 @@
 @echo off
-echo Derleme basliyor...
-dotnet publish src\HomekoWorld\HomekoWorld.csproj -c Release -r win-x64 --self-contained true -o Build
-
+REM HomekoWorld build dispatcher. Iki GPU variant'i vardir:
+REM   build-directml.bat  -> evrensel (her DX12 GPU; NVIDIA/AMD/Intel; sifir indirme)  [VARSAYILAN]
+REM   build-cuda.bat      -> NVIDIA performans (CUDA EP; cuBLAS/cuDNN app-ici indirilir)
+REM Bu script geriye-donuk uyumluluk icin VARSAYILAN (DirectML) build'i calistirir.
+echo build.bat -^> varsayilan DirectML build calistiriliyor.
+echo NVIDIA performans build'i icin: build-cuda.bat
 echo.
-echo Gerekli DLL ve model dosyalari kopyalaniyor...
-copy /Y *.dll Build\ >nul 2>&1
-copy /Y *.pt Build\ >nul 2>&1
-copy /Y *.onnx Build\ >nul 2>&1
-copy /Y mobs.json Build\ >nul 2>&1
-
-echo.
-echo Derleme tamamlandi! 
-echo Test etmek icin su klasore gidebilirsiniz: Build\
-pause
+call "%~dp0build-directml.bat"

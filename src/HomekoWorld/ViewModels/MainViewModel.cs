@@ -427,8 +427,16 @@ public partial class MainViewModel : ObservableObject
         LoadClasses();
         ApplyFilter();
 
-        // FujiMacro: AutoPot bağımsız — kalıcı durum açıksa servisi şimdi başlat
-        if (_state.AutoPot.Enabled) _autoPotService.Start();
+        // Taze/müşteri kurulumu: model yolu boş veya dosya yoksa kurulum dizininde best.onnx'i
+        // otomatik bul + yükle. (Eskiden yalnız UI butonu yapardı → state.json'suz ilk açılışta model
+        // HİÇ yüklenmiyordu, müşteri "model seç" ile uğraşıyordu.) Geçerli yol varsa dokunulmaz.
+        if (string.IsNullOrWhiteSpace(_state.Farm.ModelPath) || !System.IO.File.Exists(_state.Farm.ModelPath))
+            AutoDiscoverFarmFiles();
+
+        // FujiMacro: AutoPot artık ANA mod (Active) açıkken çalışır — başlangıçta ASLA otomatik başlamaz.
+        // (Eskiden launch'ta Enabled ise hemen başlıyordu → oyun odakta değilken masaüstü ROI'sinden
+        //  düşük-ama->0 okuyup pot tuşlarına spam basıyordu.) Servis OnActiveChanged/OnAutoPotEnabledChanged
+        // tarafından YALNIZ "Active && AutoPot.Enabled" iken başlatılır. Enabled = armed, Active = master gate.
 
         _engine.ComboFired += (_, e) =>
         {

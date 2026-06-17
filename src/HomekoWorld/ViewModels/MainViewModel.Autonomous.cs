@@ -1266,6 +1266,7 @@ public partial class MainViewModel
     [ObservableProperty] private string _portalClickOffsetX     = "0";
     [ObservableProperty] private string _portalClickOffsetY     = "-60";
     [ObservableProperty] private string _portalInteractDelayMs  = "800";
+    [ObservableProperty] private string _portalMenuSlotStatus   = "kalibre edilmedi";
     [ObservableProperty] private bool   _townRunActive;
 
     partial void OnTownTpKeyChanged(string v)             { _state.Autonomous.TownTpKey            = v;                             _store.Save(_state); }
@@ -1331,6 +1332,9 @@ public partial class MainViewModel
         TownTpButtonStatus = a.IsTownTpButtonCalibrated
             ? $"✓ ({a.TownTpButtonX}, {a.TownTpButtonY})"
             : "kalibre edilmedi";
+        PortalMenuSlotStatus = a.IsPortalMenuSlotCalibrated
+            ? $"✓ ({a.PortalMenuSlotX}, {a.PortalMenuSlotY})"
+            : "kalibre edilmedi";
     }
 
     [RelayCommand]
@@ -1338,6 +1342,43 @@ public partial class MainViewModel
         "Town ışınlanma (UI) butonuna TEK TIKLA",
         (x, y) => { _state.Autonomous.TownTpButtonX = x; _state.Autonomous.TownTpButtonY = y; },
         RefreshTownStatus);
+
+    [RelayCommand]
+    private Task CalibratePortalMenuSlotAsync() => CalibratePointAsync(
+        "Portala tıklayınca açılan menüdeki 'manuel slot' yazısına TEK TIKLA",
+        (x, y) => { _state.Autonomous.PortalMenuSlotX = x; _state.Autonomous.PortalMenuSlotY = y; },
+        RefreshTownStatus);
+
+    /// <summary>Otonom modu BAŞLATMADAN yalnız portal etkileşimini test eder (portala tıkla → menü → 'manuel slot').</summary>
+    [RelayCommand]
+    private async Task TestUsePortalAsync()
+    {
+        var a = _state.Autonomous;
+        if (!a.IsPortalMenuSlotCalibrated)
+        { NavStatus = "⚠ Önce 'manuel slot' menü öğesini kalibre et"; return; }
+
+        _townTestCts?.Cancel();
+        _townTestCts?.Dispose();
+        _townTestCts = new CancellationTokenSource();
+        var ct = _townTestCts.Token;
+
+        NavStatus = "Portal testi — oyun öne geliyor…";
+        var mainWindow = Application.Current.MainWindow;
+        mainWindow.WindowState = WindowState.Minimized;
+        try
+        {
+            await Task.Delay(400, ct);   // oyun öne gelsin; yoksa tık app'e gider
+            await _autonomousEngine.TestUsePortalAsync(ct);
+            NavStatus = "✓ Portal etkileşimi tetiklendi — ışınlanmayı bekle";
+        }
+        catch (OperationCanceledException) { NavStatus = "İptal edildi"; }
+        catch (Exception ex) { NavStatus = $"Hata: {ex.Message}"; }
+        finally
+        {
+            mainWindow.WindowState = WindowState.Normal;
+            mainWindow.Activate();
+        }
+    }
 
     // ── Faz 37: Dayanıklılık + Hotkey + Özet ────────────────────────────────────
 

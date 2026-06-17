@@ -1,3 +1,7 @@
+using System;
+using System.IO;
+using System.Linq;
+using System.Text.Json;
 using HomekoWorld.Models;
 
 namespace HomekoWorld.Services;
@@ -10,7 +14,44 @@ public static class DefaultData
     // v4 → v5: Rogue→Assassin migration; AutoPot global; "all" class removed; SelectedComboId
     public const int CurrentVersion = 5;
 
-    public static AppState BuildInitialState() => new()
+    public static AppState BuildInitialState()
+    {
+        // Gömülü TAM kalibrasyon (geliştiricinin çalışan state'i, master 2560×1600). Bulunursa müşteri
+        // tüm kalibrasyonu hazır alır → ResolutionMapper kendi çözünürlüğüne anchor-aware ölçekler, müşteri
+        // hiç kalibre etmez. Farm/YOLO zaten vision-tabanlı (her çözünürlük/ölçekte kalibrasyonsuz).
+        // Embedded state'te ModelPath/MobsJsonPath boş + Active kapalı (kurulum dizininde auto-discovery).
+        // Çözülemezse (resource yok/bozuk) asgari varsayılana düşülür.
+        return TryLoadBakedState() ?? BuildFallbackState();
+    }
+
+    private static readonly JsonSerializerOptions _bakeOpts = new() { PropertyNameCaseInsensitive = true };
+
+    /// <summary>Exe'ye gömülü <c>default-state.json</c>'u okur (geliştirici kalibrasyonu). Yoksa/bozuksa null.</summary>
+    private static AppState? TryLoadBakedState()
+    {
+        try
+        {
+            var asm = typeof(DefaultData).Assembly;
+            var res = asm.GetManifestResourceNames()
+                         .FirstOrDefault(n => n.EndsWith("default-state.json", StringComparison.OrdinalIgnoreCase));
+            if (res is null) return null;
+            using var stream = asm.GetManifestResourceStream(res);
+            if (stream is null) return null;
+            using var reader = new StreamReader(stream);
+            var state = JsonSerializer.Deserialize<AppState>(reader.ReadToEnd(), _bakeOpts);
+            if (state?.Farm is null) return null;
+            // Müşteri için güvenli override'lar (kaynak zaten temiz; garanti):
+            state.Version           = CurrentVersion;
+            state.Active            = false;   // ana mod kapalı başlasın (master gate)
+            state.Farm.ModelPath    = "";      // mutlak dev yolu yok → kurulum dizininde auto-discovery
+            state.Farm.MobsJsonPath = "";
+            return state;
+        }
+        catch { return null; }
+    }
+
+    /// <summary>Gömülü state yoksa kullanılan asgari varsayılan (kalibrasyonsuz).</summary>
+    private static AppState BuildFallbackState() => new()
     {
         Version   = CurrentVersion,
         Active    = false,

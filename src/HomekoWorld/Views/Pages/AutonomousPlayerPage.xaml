@@ -771,7 +771,17 @@
               <TextBlock Text="PORTAL ETKİLEŞİMİ" FontSize="9" FontWeight="SemiBold"
                          Foreground="{StaticResource TextMuted}" Margin="0,6,0,4"/>
               <TextBlock TextWrapping="Wrap" FontSize="9" Foreground="{StaticResource TextDim}" Margin="0,0,0,6"
-                         Text="Portal waypoint'i (Faz 34 → ⚔ Portal) koordinatlarına WorldNavigator ile gidilir. Ulaşınca ekran merkezi + offset'e sol-tık → onay tuşu → yükleme beklenir."/>
+                         Text="Portal waypoint'ine (Faz 34 → ⚔ Portal) WorldNavigator ile gidilir. Ulaşınca portala NPC gibi tıklanır (sol-seç → sağ-menü); açılan menüde kalibre edilen 'manuel slot' öğesine tıklanır → anında ışınlanır. '🌀 Portal Test' otonom modu başlatmadan yalnız bu etkileşimi dener."/>
+
+              <!-- 'Manuel slot' menü öğesi (kalibre) -->
+              <TextBlock Text="{Binding PortalMenuSlotStatus}" FontSize="10" Foreground="{StaticResource Gold}"
+                         Margin="0,0,0,4" TextWrapping="Wrap"/>
+              <Button Command="{Binding CalibratePortalMenuSlotCommand}" HorizontalAlignment="Left"
+                      Style="{StaticResource BtnMuted}" Padding="5,3" FontSize="10" Margin="0,0,0,6"
+                      ToolTip="Portala tıkla, menü açılsın; sonra 'manuel slot' yazısına tek tıkla">🖊 'Manuel Slot' Kalibre</Button>
+
+              <TextBlock Text="PORTAL TIKLAMA KONUMU (ekran merkezinden offset)" FontSize="9" FontWeight="SemiBold"
+                         Foreground="{StaticResource TextMuted}" Margin="0,0,0,4"/>
               <Grid Margin="0,0,0,4">
                 <Grid.ColumnDefinitions>
                   <ColumnDefinition Width="*"/><ColumnDefinition Width="8"/>
@@ -790,6 +800,24 @@
                            Text="{Binding PortalClickOffsetY, UpdateSourceTrigger=PropertyChanged}"/>
                 </StackPanel>
               </Grid>
+
+              <!-- Portal testi (otonom modu başlatmadan) -->
+              <Grid Margin="0,2,0,6">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="Auto"/><ColumnDefinition Width="6"/>
+                  <ColumnDefinition Width="Auto"/><ColumnDefinition Width="8"/>
+                  <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <Button Grid.Column="0" Command="{Binding TestUsePortalCommand}" Style="{StaticResource BtnMuted}"
+                        Padding="7,3" FontSize="10"
+                        ToolTip="Otonom modu BAŞLATMADAN yalnız portal etkileşimini test eder (portala tıkla → menü → 'manuel slot')">🌀 Portal Test</Button>
+                <Button Grid.Column="2" Command="{Binding StopTownTestCommand}" Style="{StaticResource BtnMuted}"
+                        Padding="7,3" FontSize="10">⏹ Dur</Button>
+                <TextBlock Grid.Column="4" Text="{Binding NavStatus}" FontSize="10"
+                           FontFamily="{StaticResource FontMono}" Foreground="{StaticResource TextMuted}"
+                           VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+              </Grid>
+
               <Grid Margin="0,0,0,4">
                 <Grid.ColumnDefinitions>
                   <ColumnDefinition Width="*"/><ColumnDefinition Width="8"/>
@@ -797,13 +825,13 @@
                   <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
                 <StackPanel Grid.Column="0">
-                  <TextBlock Text="Onay tuşu (boş=Enter)" FontSize="9"
+                  <TextBlock Text="Onay tuşu (fallback, boş=Enter)" FontSize="9"
                              Foreground="{StaticResource TextDim}" Margin="0,0,0,2"/>
                   <TextBox Style="{StaticResource InputMono}" FontSize="10"
                            Text="{Binding PortalConfirmKey, UpdateSourceTrigger=PropertyChanged}"/>
                 </StackPanel>
                 <StackPanel Grid.Column="2">
-                  <TextBlock Text="Diyalog bekleme (ms)" FontSize="9"
+                  <TextBlock Text="Menü bekleme (ms)" FontSize="9"
                              Foreground="{StaticResource TextDim}" Margin="0,0,0,2"/>
                   <TextBox Style="{StaticResource InputMono}" FontSize="10"
                            Text="{Binding PortalInteractDelayMs, UpdateSourceTrigger=PropertyChanged}"/>

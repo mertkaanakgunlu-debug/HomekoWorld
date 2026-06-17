@@ -475,6 +475,12 @@ public sealed class LocalInputTransport : IKeyDeviceTransport
                 }
             }
         };
-        SendInput(1, _inputBuf, Marshal.SizeOf<INPUT>());
+        // SendInput başarısızlığını logla (fare yolunda zaten var; tuş yolunda yoktu). Combo "2 düşmesi"
+        // tanısı için: bu satır çıkarsa tuş OS'a gönderilemedi (odak/yük); çıkmazsa tuş gönderildi ama
+        // oyun yutmuş olabilir (down+up aynı frame'e düşmesi → hold çok kısa) demektir.
+        uint sent = SendInput(1, _inputBuf, Marshal.SizeOf<INPUT>());
+        if (sent == 0)
+            Program.Log($"[Local] Tuş SendInput BAŞARISIZ: '{keyName}' {(isDown ? "down" : "up")} " +
+                        $"err={Marshal.GetLastWin32Error()}");
     }
 }

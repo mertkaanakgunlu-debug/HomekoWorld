@@ -22,3 +22,14 @@ android/**/local.properties
 src/**/publish/
 *.exe
 Build/
+Build-Cuda/
+Build-DirectML/
+Output/
+redist/
+models/
+state-live.json
+cuda_core/
+cudnn_core/
+*.zip
+*.onnx
+*.pt

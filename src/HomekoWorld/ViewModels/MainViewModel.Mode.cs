@@ -96,5 +96,7 @@ public partial class MainViewModel
             case OperationMode.Otonom:  _autonomousEngine.Stop(); break;
             case OperationMode.Kombo:   _dispatcher.SetActive(false); break;
         }
+        // Kill-switch: Oto Pot'u da anında durdur (UI donsa/BeginInvoke gecikse bile pot basmaya devam etmesin).
+        _autoPotService.Stop();
     }
 }

@@ -110,6 +110,25 @@ public class WtmSettings
     public float HpHsvMinVal { get; set; } = 0.30f;  // < bu = koyu/gölge → sayma
     public int   HpHsvMinPx  { get; set; } = 5;      // ≥ bu kırmızı piksel → bar görünür (canlı)
 
+    // ── Düşük-HP sahte-ölüm fix: boş-bar koyu-oluk tespiti ───────────────────
+    // Çok düşük HP'de (örn. 14/14089) kırmızı dilim ~görünmez olur; barın koyu/siyah OLUĞU hâlâ durur.
+    // "Kırmızı yok = öldü" yanlış. Mob ÖLÜNCE KO hedef-penceresi ANINDA tamamen kaybolur → ROI çimen/gök/
+    // taşa düşer (parlak/renkli/değişken → koyu-oluk oranı çöker). Çözüm: ROI'de geniş bir koyu-oluk bandı
+    // varsa, kırmızı 0 olsa bile CANLI say; ne kırmızı ne oluk varsa ÖLÜ. Bir piksel "oluk" sayılır:
+    // val ≤ HpTroughMaxVal (koyu) VE sat ≤ HpTroughMaxSat (doygunsuz/gri).
+    public float HpTroughMaxVal  { get; set; } = 0.28f; // ≤ bu parlaklık → koyu (boş bar zemini/çerçeve)
+    public float HpTroughMaxSat  { get; set; } = 0.40f; // ≤ bu doygunluk → doygunsuz/gri (oluk)
+    // Bar var kararı koyu-oluk oranı YERİNE "dolu oranı" = (kırmızı + koyu-oluk)/toplam ile verilir:
+    // gerçek HP barı (her HP'de) ROI'yi neredeyse tümüyle kırmızı VEYA koyu-oluk doldurur (~%80); karanlık
+    // çalı/zemin koyu-oluğu yüksek olsa bile dolu oranı düşük kalır (kırmızı+oluk ≠ tüm bar) → sahte "bar var"
+    // biter, düşük-HP (kırmızı~0 ama oluk dolu) yine canlı kalır. Canlı test verisi: gerçek bar dolu≈%79-88,
+    // karanlık-çalı sahte-pozitif dolu≈%41, ölü/panel-gitti dolu≈%0 → eşik ~0.60 ikisini güvenle ayırır.
+    public float HpBarFillMinFrac { get; set; } = 0.60f; // (kırmızı+oluk)/toplam ≥ bu → bar var (canlı)
+    // #5 Karanlık-zemin guard: darkFrac (koyu-oluk/toplam) ≥ bu VE kırmızı yoksa → ROI tek-renk karanlık
+    // zemin (bar yok/ölü), "canlı" sayma. Gerçek boş bar ~%79-88 dolu kalır (kenarlar koyu değil) → 0.95
+    // güvenli; karanlık mağara/yükleme ~%100 koyu olur. Karanlık haritada ölüm-tespitini düzeltir.
+    public float HpTroughAllDarkMaxFrac { get; set; } = 0.95f;
+
     // ── Duyuru kayması (alan 1 / alan 2) ─────────────────────────────────────
     /// <summary>
     /// Üstten duyuru/announcement geçerken mob HP barı + ismi belirli miktar AŞAĞI kayar.

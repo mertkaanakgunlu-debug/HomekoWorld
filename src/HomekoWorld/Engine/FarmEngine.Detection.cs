@@ -99,6 +99,8 @@ public sealed partial class FarmEngine
                     // P3: ROI-yerel tespitleri ekran-uzayına çevir
                     int roiX = screen.CaptureX, roiY = screen.CaptureY;
                     var dets = OffsetDets(rawDets, roiX, roiY);
+                    // Object tracker: her kutuya kalıcı TrackId + (öldürülmüşse) Dead iliştir (#2/#3/#4).
+                    dets = _tracker.Update(dets, NowMs());
                     int snapW = screen.FullScreenW, snapH = screen.FullScreenH;
 
                     // P3: ROI aktifken frame HP bar koordinatlarıyla uyumsuz → null bırak, combat fallback kullanır.
@@ -197,8 +199,15 @@ public sealed partial class FarmEngine
         Detection? tgt = _currentTargetForOverlay;
         if (tgt is not null)
         {
-            var match = shown
-                .Where(d => d.ClassId == tgt.ClassId)
+            // #4: vurguyu kalıcı TrackId ile eşle → "en yakın aynı-tür kutu" kayması biter (ölü iz değilse).
+            Detection? match = tgt.TrackId >= 0
+                ? shown.FirstOrDefault(d => d.TrackId == tgt.TrackId && !d.Dead)
+                : null;
+            // Track kaybolduysa YALNIZ yakın (≤100px) + ölü-olmayan aynı-tür kutuya düş → vurgu rastgele
+            // UZAK/yanlış moba ZIPLAMAZ (eski geniş "en yakın aynı-tür" fallback'i yeşil kutuyu kaydırıyordu).
+            // Yakında uygun kutu yoksa: tgt son bilinen değerinde kalır (yanlış mob göstermez).
+            match ??= shown
+                .Where(d => d.ClassId == tgt.ClassId && !d.Dead && d.DistanceTo(tgt.Center) <= 100f)
                 .OrderBy(d => d.DistanceTo(tgt.Center))
                 .FirstOrDefault();
             if (match is not null) tgt = match;
@@ -344,6 +353,8 @@ public sealed partial class FarmEngine
 
                     // P3: ROI-yerel tespitleri ekran-uzayına çevir; snapshot için gerçek ekran boyutunu kullan.
                     var dets = OffsetDets(rawDets, item.RoiX, item.RoiY);
+                    // Object tracker: her kutuya kalıcı TrackId + (öldürülmüşse) Dead iliştir (#2/#3/#4).
+                    dets = _tracker.Update(dets, NowMs());
                     int snapW = item.FullW > 0 ? item.FullW : item.W;
                     int snapH = item.FullH > 0 ? item.FullH : item.H;
 

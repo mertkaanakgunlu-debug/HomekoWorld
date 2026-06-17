@@ -120,24 +120,53 @@ public static class WtmVision
         return false;
     }
 
-    /// <summary>Alan 1'de (verilen dikdörtgen) kırmızı eşiği geçer mi; geçmezse ve duyuru
+    /// <summary>Son HP-bar taramasının tanılama değerleri (eşik tune'u için): kırmızı/koyu-oluk/toplam piksel,
+    /// koyu-oluk oranı ve "bar var (canlı)" kararı. Combat/UI bunu okuyup farklı arka planlarda eşik ayarlar.
+    /// NOT: best-effort tanılama alanı — birden çok thread yazarsa yırtık okuma olabilir; yalnız log/UI'da
+    /// kullanıldığı için zararsız (karar mantığı bu alanı OKUMAZ, dönüş değerini kullanır).</summary>
+    public static (int red, int dark, int total, float darkFrac, float fillFrac, bool alive) LastBarScan;
+
+    /// <summary>Bar görünür (mob canlı) mü: kırmızı eşiği geçer VEYA "dolu oranı" eşiği geçer.
+    /// Dolu oranı = (kırmızı + koyu-oluk)/toplam. Gerçek HP barı (her HP'de) ROI'yi neredeyse tümüyle
+    /// kırmızı VEYA koyu-oluk doldurur (~%80); karanlık çalı/zemin koyu olsa da dolu oranı düşük kalır
+    /// (kırmızı+oluk tüm barı kaplamaz) → düşük-HP'de canlı kalır, karanlık zeminde sahte "bar var" biter.</summary>
+    private static bool BarPresent(int red, int dark, int total, int redThreshold, WtmSettings s)
+    {
+        float darkFrac = total > 0 ? (float)dark / total : 0f;
+        float fillFrac = total > 0 ? (float)(red + dark) / total : 0f;
+
+        // Karanlık-zemin guard (#5): ROI neredeyse TAMAMEN koyu (darkFrac ≥ eşik) VE kırmızı yoksa, bu bir HP
+        // barı değil tek-renk karanlık zemindir (mağara/yükleme/gece). Mob ölüp pencere kaybolunca böyle bir
+        // zeminde fillFrac≈1 kalıp sürekli "canlı" okunur → kill HİÇ algılanmaz (bot cesedi döver). Gerçek (boş)
+        // HP barı ROI'yi yalnız ~%79-88 doldurur (kenar/çerçeve koyu sayılmaz) → 0.95 eşiğinin altında kalır,
+        // düşük-HP canlı tespiti bozulmaz. Eşik HpTroughAllDarkMaxFrac ile config'den ayarlanır.
+        bool allDark = red < redThreshold && darkFrac >= s.HpTroughAllDarkMaxFrac;
+
+        bool alive = !allDark && (red >= redThreshold || fillFrac >= s.HpBarFillMinFrac);
+        LastBarScan = (red, dark, total, darkFrac, fillFrac, alive);
+        return alive;
+    }
+
+    /// <summary>Alan 1'de (verilen dikdörtgen) bar görünür mü (kırmızı VEYA koyu-oluk); değilse ve duyuru
     /// kayması ayarlıysa alan 2'de (+Δy) dener. Ekrandan yakalar.</summary>
     private static bool RedAtAreas(int x, int y, int w, int h, int threshold, WtmSettings s)
     {
-        if (CountRedHsv(x, y, w, h, s) >= threshold) return true;
+        if (BarPresent(CountRedHsv(x, y, w, h, s, out int d1, out int t1), d1, t1, threshold, s)) return true;
         if (s.AnnounceShiftY > 0)
         {
             int dy = ResolutionMapper.ScaleLen(s.AnnounceShiftY);
-            if (CountRedHsv(x, y + dy, w, h, s) >= threshold) return true;
+            if (BarPresent(CountRedHsv(x, y + dy, w, h, s, out int d2, out int t2), d2, t2, threshold, s)) return true;
         }
         return false;
     }
 
-    /// <summary>(rx,ry,rw,rh) bölgesini alır, kırmızı-hue (V/S eşikli) piksel sayısını döndürür.</summary>
-    private static int CountRedHsv(int rx, int ry, int rw, int rh, WtmSettings s)
+    /// <summary>(rx,ry,rw,rh) bölgesini alır; kırmızı-hue piksel sayısını döndürür, koyu-oluk (boş bar) ve
+    /// toplam piksel sayısını out ile verir. Koyu-oluk: val≤HpTroughMaxVal ve sat≤HpTroughMaxSat (tek geçişte).</summary>
+    private static int CountRedHsv(int rx, int ry, int rw, int rh, WtmSettings s, out int dark, out int total)
     {
         rx = Math.Max(0, rx); ry = Math.Max(0, ry);
         rw = Math.Max(1, rw); rh = Math.Max(1, rh);
+        dark = 0; total = rw * rh;
 
         using var bmp  = CaptureRegion(rx, ry, rw, rh);
         var       rect = new Rectangle(0, 0, rw, rh);
@@ -160,7 +189,8 @@ public static class WtmVision
                     int pos = row + x * 4;
                     byte b = buf[pos], g = buf[pos + 1], r = buf[pos + 2];
                     RgbToHsv(r, g, b, out float hue, out float sat, out float val);
-                    if (val < s.HpHsvMinVal) continue; // koyu/gölge/boş bar arka planı
+                    if (val <= s.HpTroughMaxVal && sat <= s.HpTroughMaxSat) { dark++; continue; } // boş-bar koyu oluğu
+                    if (val < s.HpHsvMinVal) continue; // koyu/gölge (oluk eşiği üstü ama kırmızı değil)
                     if (sat < s.HpHsvMinSat) continue; // soluk/gri
                     if (hue <= s.HpHueLo || hue >= s.HpHueHi)
                         red++;
@@ -192,30 +222,34 @@ public static class WtmVision
         return false;
     }
 
-    /// <summary>RedAtAreas'ın sağlanan tam kareden (yeni yakalama yok) çalışan eşi.</summary>
+    /// <summary>RedAtAreas'ın sağlanan tam kareden (yeni yakalama yok) çalışan eşi (kırmızı VEYA koyu-oluk).</summary>
     private static bool RedAtAreasFromFrame(Bitmap frame, int x, int y, int w, int h, int threshold, WtmSettings s)
     {
-        if (CountRedHsvFromFrame(frame, x, y, w, h, s) >= threshold) return true;
+        if (BarPresent(CountRedHsvFromFrame(frame, x, y, w, h, s, out int d1, out int t1), d1, t1, threshold, s)) return true;
         if (s.AnnounceShiftY > 0)
         {
             int dy = ResolutionMapper.ScaleLen(s.AnnounceShiftY);
-            if (CountRedHsvFromFrame(frame, x, y + dy, w, h, s) >= threshold) return true;
+            if (BarPresent(CountRedHsvFromFrame(frame, x, y + dy, w, h, s, out int d2, out int t2), d2, t2, threshold, s)) return true;
         }
         return false;
     }
 
-    /// <summary>(rx,ry,rw,rh) bölgesini SAĞLANAN tam kareden (yeni yakalama YOK) tarar; kırmızı-hue piksel sayar.</summary>
-    private static int CountRedHsvFromFrame(Bitmap frame, int rx, int ry, int rw, int rh, WtmSettings s)
+    /// <summary>(rx,ry,rw,rh) bölgesini SAĞLANAN tam kareden (yeni yakalama YOK) tarar; kırmızı-hue piksel sayar,
+    /// koyu-oluk (boş bar) + toplam piksel sayısını out ile verir.</summary>
+    private static int CountRedHsvFromFrame(Bitmap frame, int rx, int ry, int rw, int rh, WtmSettings s, out int dark, out int total)
     {
         rx = Math.Max(0, rx); ry = Math.Max(0, ry);
         rw = Math.Max(1, rw); rh = Math.Max(1, rh);
         if (rx + rw > frame.Width)  rw = frame.Width  - rx;
         if (ry + rh > frame.Height) rh = frame.Height - ry;
+        dark = 0; total = 0;
         if (rw <= 0 || rh <= 0) return 0;
+        total = rw * rh;
 
         var rect = new Rectangle(rx, ry, rw, rh);
         var data = frame.LockBits(rect, ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
         int red  = 0;
+        int darkLocal = 0;
         try
         {
             int stride = data.Stride;
@@ -229,7 +263,8 @@ public static class WtmVision
                     {
                         byte* px = rowp + x * 4; // BGRA byte sırası
                         RgbToHsv(px[2], px[1], px[0], out float hue, out float sat, out float val);
-                        if (val < s.HpHsvMinVal) continue; // koyu/gölge/boş bar arka planı
+                        if (val <= s.HpTroughMaxVal && sat <= s.HpTroughMaxSat) { darkLocal++; continue; } // boş-bar oluğu
+                        if (val < s.HpHsvMinVal) continue; // koyu/gölge (oluk eşiği üstü ama kırmızı değil)
                         if (sat < s.HpHsvMinSat) continue; // soluk/gri
                         if (hue <= s.HpHueLo || hue >= s.HpHueHi) red++;
                     }
@@ -237,6 +272,7 @@ public static class WtmVision
             }
         }
         finally { frame.UnlockBits(data); }
+        dark = darkLocal;
         return red;
     }
 

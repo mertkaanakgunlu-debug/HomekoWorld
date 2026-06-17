@@ -31,6 +31,20 @@ public class FarmSettings
     public int    ModelInputSize { get; set; } = 640;
     public TargetPriorityMode Priority { get; set; } = TargetPriorityMode.Nearest;
 
+    // ── #2 Perspektif-bilinçli hedef puanı (tek tür mob) ─────────────────────
+    // Nearest modunda düz ekran-merkezi mesafesi yerine derinlik puanı: derinlik = bbox YÜKSEKLİĞİ
+    // (büyük=yakın). Puan = (DepthW + CenterW × yatay_ofset_normalize) / yükseklik; küçük = seçilir.
+    /// <summary>Derinlik ağırlığı (baz): yükseklik tabanlı yakınlık. Yüksek = derinlik baskın.</summary>
+    public float TargetDepthWeight  { get; set; } = 1.0f;
+    /// <summary>Merkez ağırlığı: ekran-merkezine yatay yakınlık tercihi (0 = yalnız derinlik).</summary>
+    public float TargetCenterWeight { get; set; } = 0.3f;
+
+    // ── #2/#3/#4 Object tracker (ByteTrack-lite) eşikleri ────────────────────
+    /// <summary>Tracker IoU eşik: kare-kare aynı moba kalıcı kimlik. Düşük = daha gevşek eşleme.</summary>
+    public float TrackIouThreshold  { get; set; } = 0.3f;
+    /// <summary>Tracker: bir iz kaç kare eşleşmezse düşürülür (ceset/kayıp izlerin kare ömrü).</summary>
+    public int   TrackMaxAgeFrames  { get; set; } = 15;
+
     // ── Seçili mob & kombo ────────────────────────────────────────────────────
     /// <summary>
     /// Seçili mob isimleri (çoklu seçim). Boş = tüm tespit sınıflarını avla.

@@ -132,33 +132,13 @@ public sealed partial class AutonomousPlayerEngine
     // ── Portal etkileşimi ─────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Portal konumunda: ekran merkezi + offset'e tıkla → PortalInteractDelayMs bekle
-    /// → onay tuşu (Enter / PortalConfirmKey) bas → yükleme bekle → NavToFarmSpot.
+    /// Portal etkileşimini yapar → yükleme bekle → NavToFarmSpot.
     /// </summary>
     private async Task UsingPortalAsync(CancellationToken ct)
     {
         var s = _state.Autonomous;
 
-        // WorldNavigator portal koordinatına geldi; portal kapısı ekranın önünde,
-        // yaklaşık merkez + Y-offset (kapı tepesi biraz yukarıda).
-        int screenW = GetSystemMetrics(0);
-        int screenH = GetSystemMetrics(1);
-        int cx = screenW / 2 + s.PortalClickOffsetX;
-        int cy = screenH / 2 + s.PortalClickOffsetY;
-
-        Log($"Portal tıklanıyor ({cx},{cy})", "event");
-        await _transport.MoveAbsAsync(cx, cy, ct);
-        await Task.Delay(120, ct);
-        await _transport.ClickAsync(MouseButton.Left, ct);
-
-        await Task.Delay(s.PortalInteractDelayMs, ct); // onay diyaloğu belirmesi için bekle
-
-        string confirmKey = string.IsNullOrWhiteSpace(s.PortalConfirmKey)
-            ? "Return" : s.PortalConfirmKey;
-        Log($"Portal onaylandı: '{confirmKey}'", "event");
-        await _transport.KeyDownAsync(confirmKey, ct);
-        await Task.Delay(80, ct);
-        await _transport.KeyUpAsync(confirmKey, CancellationToken.None);
+        await DoPortalInteractAsync(s, ct);
 
         StatusChanged?.Invoke(this, $"Portal yükleniyor ({s.PortalWaitMs / 1000} sn)…");
         await Task.Delay(s.PortalWaitMs, ct);
@@ -166,4 +146,51 @@ public sealed partial class AutonomousPlayerEngine
         Log("Farm alanına gelindi — farm noktasına yürünüyor", "event");
         SetState(AutoPlayerState.NavToFarmSpot, "Farm noktasına yürünüyor…");
     }
+
+    /// <summary>
+    /// Portal oyun mekaniği (merchant NPC ile aynı tık modeli): portal ekran-konumuna
+    /// sol-tık (seç) → sağ-tık (menü) → açılan menüde kalibre edilmiş "manuel slot"
+    /// öğesine sol-tık → anında ışınlanır (onay penceresi yok).
+    /// "manuel slot" kalibre değilse eski onay-tuşu (Enter / <see cref="AutonomousSettings.PortalConfirmKey"/>)
+    /// davranışına düşülür. Otonom akış + bağımsız test bunu paylaşır.
+    /// </summary>
+    private async Task DoPortalInteractAsync(AutonomousSettings s, CancellationToken ct)
+    {
+        // WorldNavigator portal koordinatına geldi; portal kapısı ekranın önünde,
+        // yaklaşık merkez + Y-offset (kapı tepesi biraz yukarıda).
+        int screenW = GetSystemMetrics(0);
+        int screenH = GetSystemMetrics(1);
+        int cx = screenW / 2 + s.PortalClickOffsetX;
+        int cy = screenH / 2 + s.PortalClickOffsetY;
+
+        // 1-2. Portala NPC gibi tıkla: sol-tık (seç) → sağ-tık (menü aç)
+        Log($"Portala tıklanıyor ({cx},{cy})", "event");
+        await _transport.MoveAbsAsync(cx, cy, ct);
+        await Task.Delay(120, ct);
+        await _transport.ClickAsync(MouseButton.Left, ct);
+        await Task.Delay(150, ct);
+        await _transport.ClickAsync(MouseButton.Right, ct);
+        await Task.Delay(s.PortalInteractDelayMs, ct); // menü belirmesi için bekle
+
+        // 3. Açılan menüde "manuel slot" öğesi → anında ışınlanır
+        if (s.IsPortalMenuSlotCalibrated)
+        {
+            var p = ResolutionMapper.Map(s.PortalMenuSlotX, s.PortalMenuSlotY, 1, 1);
+            Log($"'Manuel slot' seçiliyor ({p.X},{p.Y})", "event");
+            await _transport.MoveAbsAsync(p.X, p.Y, ct);
+            await Task.Delay(120, ct);
+            await _transport.ClickAsync(MouseButton.Left, ct);
+        }
+        else
+        {
+            string confirmKey = string.IsNullOrWhiteSpace(s.PortalConfirmKey) ? "Return" : s.PortalConfirmKey;
+            Log($"⚠ 'Manuel slot' kalibre değil — onay tuşu '{confirmKey}' (eski davranış)", "event");
+            await _transport.KeyDownAsync(confirmKey, ct);
+            await Task.Delay(80, ct);
+            await _transport.KeyUpAsync(confirmKey, CancellationToken.None);
+        }
+    }
+
+    /// <summary>Test: Otonom akış/loop BAŞLATMADAN yalnız portal etkileşimini yapar (kalibrasyon doğrulama).</summary>
+    public Task TestUsePortalAsync(CancellationToken ct) => DoPortalInteractAsync(_state.Autonomous, ct);
 }

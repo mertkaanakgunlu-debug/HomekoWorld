@@ -24,8 +24,10 @@ public sealed partial class FarmEngine
         _guardianBlacklist.RemoveAll(e => e.expireAt < now);
         _deadBlacklist.RemoveAll(e => e.expireAt < now);
 
-        // Kara listede (koruma mobu veya ölü/seçilemeyen ceset) olan adayları filtrele
+        // Adayları filtrele: (a) tracker'ın "ölü" damgaladığı izler (#3 — ceset tekrar denenmez),
+        // (b) koruma mobu kara listesi, (c) pozisyon-tabanlı ölü/seçilemez ceset kara listesi (yedek).
         var filteredCandidates = candidates.Where(d =>
+            !d.Dead &&
             !NearAny(d.Center, _guardianBlacklist, GuardianBlacklistRadiusPx) &&
             !NearAny(d.Center, _deadBlacklist,     DeadBlacklistRadiusPx)).ToList();
 
@@ -44,16 +46,21 @@ public sealed partial class FarmEngine
 
         // #1: karakter daima fiziksel ekran merkezi (kalibrasyon kaldırıldı).
         var charCenter = ScreenCenter();
+        float halfW = Math.Max(1f, charCenter.X); // ekran yarı genişliği (merkez X = w/2)
 
         var target = s.Priority switch
         {
             TargetPriorityMode.HighestPriority =>
                 filteredCandidates.OrderBy(d => _mobLibrary.FindById(d.ClassId)?.Priority ?? 99).First(),
+            // #2: perspektif-bilinçli yakınlık (tek tür mob) — düz merkez-mesafesi yerine derinlik puanı.
             _ =>
-                filteredCandidates.OrderBy(d => d.DistanceTo(charCenter)).First(),
+                filteredCandidates.OrderBy(d => TargetScore(d, charCenter.X, halfW, s)).First(),
         };
 
         _lastTarget = target;
+        // Tanılama: seçilen hedefin iz kimliği + bu karede kaç aday "ölü" elendi (ceset filtresi çalışıyor mu?).
+        Program.Log($"[Farm] Hedef: {target.ClassName} trk={target.TrackId} " +
+                    $"(aday={candidates.Count}, ölü-eleme={candidates.Count(d => d.Dead)}, canlı={filteredCandidates.Count})");
         var mobInfo = _mobLibrary.FindById(target.ClassId);
         Telemetry.CurrentMob = target.ClassName;
 
@@ -83,6 +90,17 @@ public sealed partial class FarmEngine
             SetState(FarmState.Roaming, "Spot boş — yürünüyor…");
         else
             StatusChanged?.Invoke(this, $"Taranıyor… ({visibleCount} görünür, canlı hedef yok)");
+    }
+
+    // Perspektif-bilinçli hedef puanı (TEK TÜR mob): küçük = daha yakın/tercih edilir.
+    // Yere paralel kamerada ekran-merkezi mesafesi 3D mesafeyle örtüşmez (kenarda görünen mob 3D'de daha
+    // yakın olabilir). Derinlik vekili bbox YÜKSEKLİĞİ (büyük=yakın; genişlikten kararlı). 1/yükseklik hem
+    // derinliği hem (yatay ofset × derinlik) cezasını ölçekler → büyük-kutu kenar mob düşük puan alır (seçilir).
+    private static float TargetScore(Detection d, float screenCx, float halfW, FarmSettings s)
+    {
+        float height  = Math.Max(1f, d.BBox.Height);
+        float lateral = Math.Min(1f, Math.Abs(d.Center.X - screenCx) / halfW);
+        return (s.TargetDepthWeight + s.TargetCenterWeight * lateral) / height;
     }
 
     // ── Targeting — moba tıkla, HP bar bekle ─────────────────────────────────
@@ -188,7 +206,11 @@ public sealed partial class FarmEngine
                 // ki uzun süre ekranda kalan ceset (log'da 10sn+) tekrar tekrar probe edilmesin.
                 long corpseExpire = NowMs() + s.DeadBlacklistMs * 2;
                 _deadBlacklist.Add((target.Center, corpseExpire));
-                StatusChanged?.Invoke(this, "Hedef seçilemedi (ölü/ceset?) — kısa süre atlanıyor");
+                // Düşen ceset kutusunu da kapsa + izi "ölü" damgala (#3): bu track ve yakın doğan ceset
+                // track'leri (MobTracker.DeadInheritRadiusPx mirası) bir daha aday olmaz.
+                _deadBlacklist.Add((new PointF(target.Center.X, target.Center.Y + CorpseFallOffsetPx), corpseExpire));
+                _tracker.MarkDead(target.TrackId);
+                StatusChanged?.Invoke(this, "Hedef seçilemedi (ölü/ceset?) — atlanıyor");
             }
             else
                 StatusChanged?.Invoke(this, "⚠ HP bar kalibrasyonu yok — hedef doğrulanamadı");

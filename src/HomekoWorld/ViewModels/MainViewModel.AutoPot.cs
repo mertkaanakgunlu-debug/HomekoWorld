@@ -32,9 +32,19 @@ public partial class MainViewModel
     {
         _state.AutoPot.Enabled = value;
         _store.Save(_state);
-        // Bağımsız overlay: aç/kapa doğrudan servisi başlat/durdur (ana mod'dan bağımsız)
-        if (value) _autoPotService.Start();
-        else       _autoPotService.Stop();
+        // Oto Pot "armed" bayrağı; gerçekten YALNIZ ana mod (Active) açıkken pot basar (master gate).
+        SyncAutoPotService();
+    }
+
+    /// <summary>Ana mod (Active) açılıp kapandıkça Oto Pot'u eşitle — Active master gate'tir.
+    /// Active kapalıyken (başlangıç dahil) Oto Pot asla çalışmaz → masaüstünde/odak dışında pot spam'i olmaz.</summary>
+    partial void OnActiveChanged(bool value) => SyncAutoPotService();
+
+    /// <summary>Oto Pot servisini master gate'e göre başlat/durdur: yalnız <c>Active &amp;&amp; AutoPot.Enabled</c> iken çalışır.</summary>
+    private void SyncAutoPotService()
+    {
+        if (Active && _state.AutoPot.Enabled) _autoPotService.Start();
+        else                                  _autoPotService.Stop();
     }
     partial void OnAutoPotHpEnabledChanged(bool value)  { _state.AutoPot.HpPotEnabled = value; _store.Save(_state); }
     partial void OnAutoPotHpPercentChanged(int value)   { _state.AutoPot.HpPotPercent = value; _store.Save(_state); }

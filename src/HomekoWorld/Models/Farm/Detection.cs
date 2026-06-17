@@ -15,6 +15,14 @@ public sealed record Detection(
     float      Confidence,
     PointF?    KeyPoint = null) // pose modelinden gelen tıklama noktası
 {
+    /// <summary>Object tracker'ın atadığı kalıcı iz kimliği (-1 = henüz izlenmedi).
+    /// MobTracker.Update bunu `with` ile doldurur; ham YOLO çıktısında -1'dir.</summary>
+    public int TrackId { get; init; } = -1;
+
+    /// <summary>Tracker bu izi "ölü" işaretledi mi (öldürülen mob / ceset). true → aday listesinden elenir
+    /// (cesetlere tekrar tıklama döngüsünü bitirir; ceset despawn olunca iz düşer).</summary>
+    public bool Dead { get; init; }
+
     /// <summary>Bbox'ın geometrik merkezi.</summary>
     public PointF Center => new(BBox.X + BBox.Width / 2f, BBox.Y + BBox.Height / 2f);
 

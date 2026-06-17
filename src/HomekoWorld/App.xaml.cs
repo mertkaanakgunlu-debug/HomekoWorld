@@ -52,8 +52,9 @@ public partial class App : Application
             try
             {
 #if HOMEKO_CUDA
-                // Yalnız NVIDIA performans build'i (HOMEKO_CUDA) CUDA DLL'lerini gerektirir → eksikse indir.
-                // Evrensel DirectML/CPU build'i CUDA istemediğinden bu kontrol derlemeye hiç girmez. (A2)
+                // Yalnız NVIDIA performans build'i (GpuVariant=Cuda → HOMEKO_CUDA) CUDA DLL'lerini gerektirir →
+                // eksikse indir. Evrensel DirectML build'i (varsayılan GpuVariant) CUDA istemez → bu kontrol
+                // derlemeye hiç girmez. (A2)
                 bool isNvidia  = HomekoWorld.Services.Yolo.CudaInstallerService.IsNvidiaGpu();
                 bool isMissing = HomekoWorld.Services.Yolo.CudaInstallerService.IsMissingLibraries();
 

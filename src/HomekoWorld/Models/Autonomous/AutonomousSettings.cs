@@ -306,10 +306,17 @@ public class AutonomousSettings
     /// <summary>Portal tıklama Y offseti (ekran merkezinden; piksel). Portal yukarıda olduğu için varsayılan negatif.</summary>
     public int    PortalClickOffsetY   { get; set; } = -60;
 
-    /// <summary>Tıklama → onay mesajı belirme bekleme (ms).</summary>
+    /// <summary>Portala NPC gibi tıklama → menü belirme bekleme (ms).</summary>
     public int    PortalInteractDelayMs { get; set; } = 800;
 
-    /// <summary>Portal girişini onaylayan tuş. Boş → Enter. KO'da genellikle Enter yeterlidir.</summary>
+    /// <summary>Portala NPC gibi tıklayınca açılan menüdeki "manuel slot" öğesinin konumu (master uzay; 0 = kalibre edilmedi).
+    /// Bu öğeye sol-tık → anında ışınlanır (onay yok). Kalibre değilse <see cref="PortalConfirmKey"/> fallback'ine düşülür.</summary>
+    public int    PortalMenuSlotX { get; set; }
+    public int    PortalMenuSlotY { get; set; }
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool   IsPortalMenuSlotCalibrated => PortalMenuSlotX > 0 || PortalMenuSlotY > 0;
+
+    /// <summary>Fallback portal onay tuşu — yalnız "manuel slot" menü öğesi kalibre EDİLMEMİŞSE kullanılır. Boş → Enter.</summary>
     public string PortalConfirmKey     { get; set; } = "";
 
     /// <summary>Portal geçişi sonrası harita yükleme bekleme süresi (ms).</summary>

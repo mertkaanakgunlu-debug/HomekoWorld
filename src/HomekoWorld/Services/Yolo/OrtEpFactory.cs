@@ -7,11 +7,13 @@ namespace HomekoWorld.Services.Yolo;
 /// <summary>
 /// ONNX Runtime execution provider (EP) seçimini tek noktadan yapar (T4).
 ///
-/// • Evrensel build (varsayılan): <b>DirectML → CPU</b>. DirectML her DX12 GPU'da (NVIDIA/AMD/Intel)
-///   sıfır ek bağımlılıkla çalışır → çok-cihaz dağıtımı için doğru taban.
-/// • NVIDIA performans build'i (<c>HOMEKO_CUDA</c> derleme sabiti, ayrı csproj configuration):
-///   <b>CUDA → CPU</b>. Ağır native bağımlılık (CUDA/cuDNN) gerektirir. (TensorRT şu an proje DIŞI —
-///   ileride ayrı sidecar engine-builder + fallback olarak gelecek; planlanan Faz E.)
+/// İki gerçek build variant'ı vardır (csproj <c>GpuVariant</c> MSBuild property'si ile seçilir;
+/// CUDA ve DirectML aynı native onnxruntime.dll'i sağladığından ASLA birlikte paketlenemez):
+/// • Evrensel build (varsayılan, <c>-p:GpuVariant=DirectML</c>): <b>DirectML → CPU</b>. DirectML her DX12
+///   GPU'da (NVIDIA/AMD/Intel) sıfır ek bağımlılıkla çalışır → çok-cihaz dağıtımı için doğru taban.
+/// • NVIDIA performans build'i (<c>-p:GpuVariant=Cuda</c> → <c>HOMEKO_CUDA</c> sabiti): <b>CUDA → CPU</b>.
+///   Ağır native bağımlılık (CUDA/cuDNN) gerektirir; cuBLAS/cuDNN app içinde indirilir. (TensorRT proje DIŞI —
+///   ileride ayrı sidecar engine-builder olarak gelecek; planlanan Faz E.)
 ///
 /// <see cref="InferenceBackend.Auto"/>: birincil donanım GPU'su var mı diye DXGI ile bakar
 /// (T2'de eklenen Vortice yeniden kullanılır) → varsa GPU EP, yoksa CPU.
