@@ -12,7 +12,10 @@ public partial class CudaDownloadWindow : Window
 {
     private readonly string[] DownloadUrls = new[]
     {
-        "https://github.com/mertkaanakgunlu-debug/HomekoWorld/releases/download/cuda-libs/cuda_core.zip",
+        // NOT: GitHub indirme URL'leri release'in *tag*'ini kullanır, görünen *adını* değil.
+        // Bu release'in tag'i "libs", görünen adı "cuda-libs" → her iki asset de /download/libs/ altında.
+        // Eskiden ilk URL yanlışlıkla "cuda-libs" (ad) kullanıyordu → 404 (Not Found).
+        "https://github.com/mertkaanakgunlu-debug/HomekoWorld/releases/download/libs/cuda_core.zip",
         "https://github.com/mertkaanakgunlu-debug/HomekoWorld/releases/download/libs/cudnn_core.zip"
     };
 
@@ -153,20 +156,24 @@ public partial class CudaDownloadWindow : Window
         return true;
     }
 
-    /// <summary>Zip'i <paramref name="destRoot"/> altına güvenli çıkarır: alt-dizinleri oluşturur
-    /// (eski kod oluşturmuyordu → klasörlü zip'te DirectoryNotFoundException) ve Zip-Slip (../) girişlerini
-    /// reddeder (kök dışına yazmayı engeller).</summary>
+    /// <summary>Zip'i <paramref name="destRoot"/> köküne DÜZ (flatten) çıkarır: zip içindeki alt-dizin
+    /// yapısını YOK SAYAR, her dosyayı yalnız adıyla doğrudan köke yazar. Zip-Slip (../) girişlerini reddeder.
+    /// NEDEN düz: cuda_core.zip içinde "cuda_core/" öneki vardı → eskiden alt klasöre açılıyordu; ONNX CUDA
+    /// provider bağımlılıklarını (cublas/cudart/cufft) exe-YANINDA aradığından bulamıyor, sessizce CPU'ya
+    /// düşüyordu + CudaInstallerService.IsMissingLibraries (LoadLibrary, yalnız exe-yanı/PATH) onları
+    /// göremeyip HER AÇILIŞTA yeniden indiriyordu. Tüm DLL'ler exe'nin yanına inmeli.</summary>
     private static void ExtractZipSafe(string zipPath, string destRoot)
     {
         string fullRoot = Path.GetFullPath(destRoot).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+        Directory.CreateDirectory(destRoot);
         using var archive = ZipFile.OpenRead(zipPath);
         foreach (var entry in archive.Entries)
         {
             if (string.IsNullOrEmpty(entry.Name)) continue; // dizin girişi → atla
-            string destPath = Path.GetFullPath(Path.Combine(destRoot, entry.FullName));
+            // entry.Name = yalnız dosya adı (alt-dizin öneki olmadan) → düz çıkar.
+            string destPath = Path.GetFullPath(Path.Combine(destRoot, entry.Name));
             if (!destPath.StartsWith(fullRoot, StringComparison.OrdinalIgnoreCase))
                 throw new IOException($"Güvenli olmayan arşiv girişi (kök dışı): {entry.FullName}");
-            Directory.CreateDirectory(Path.GetDirectoryName(destPath)!);
             entry.ExtractToFile(destPath, overwrite: true);
         }
     }

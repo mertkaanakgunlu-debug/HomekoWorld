@@ -34,6 +34,35 @@
             Background="{StaticResource BgApp}">
       <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
       <StackPanel>
+        <!-- ── Sınıf & Kombo: bu mod İÇİNDEN seçilebilir (her mod kendi başına kullanılabilir) ── -->
+        <Border Margin="0,0,0,12" Padding="10,8" CornerRadius="4"
+                Background="{StaticResource BgPanel2}"
+                BorderBrush="{StaticResource Border1}" BorderThickness="1">
+          <Grid>
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="*"/>
+              <ColumnDefinition Width="10"/>
+              <ColumnDefinition Width="2*"/>
+            </Grid.ColumnDefinitions>
+            <StackPanel Grid.Column="0">
+              <TextBlock Text="Sınıf" FontSize="9" Foreground="{StaticResource TextDim}" Margin="0,0,0,2"/>
+              <ComboBox Style="{StaticResource ComboBase}" FontSize="11"
+                        ItemsSource="{Binding Classes}"
+                        SelectedValue="{Binding CurrentClass, Mode=TwoWay}"
+                        DisplayMemberPath="Name" SelectedValuePath="Id"/>
+            </StackPanel>
+            <StackPanel Grid.Column="2">
+              <TextBlock FontSize="9" Foreground="{StaticResource TextDim}" Margin="0,0,0,2">
+                <Run Text="Kombo ("/><Run Text="{Binding CurrentClass}"/><Run Text=")"/>
+              </TextBlock>
+              <ComboBox Style="{StaticResource ComboBase}" FontSize="11"
+                        ItemsSource="{Binding FarmAvailableCombos}"
+                        SelectedValue="{Binding FarmSelectedComboId}"
+                        DisplayMemberPath="Name" SelectedValuePath="Id"/>
+            </StackPanel>
+          </Grid>
+        </Border>
+
         <!-- Başlat / Durdur -->
         <Button Command="{Binding ToggleAutonomousCommand}"
                 Padding="12,9" FontSize="14" HorizontalAlignment="Left" MinWidth="220">

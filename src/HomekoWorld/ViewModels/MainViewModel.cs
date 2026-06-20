@@ -287,6 +287,13 @@ public partial class MainViewModel : ObservableObject
 
         _state         = state;
 
+        // KÖK NEDEN (2026-06-20): master çözünürlüğü STARTUP'ta ResolutionMapper'a bildir. Eskiden SetMaster
+        // YALNIZ kalibrasyon komutlarında çağrılıyordu → kalibrasyon yapılmayan oturumda MasterW=0 → ResolutionMapper
+        // identity (ölçeklemiyor) → master'dan FARKLI çözünürlükteki müşteride tüm baked koordinatlar (HP bar ROI,
+        // waypoint, ızgara) kayardı. Ref=0 ise (hiç kalibre yok) identity korunur — kendi makinesi etkilenmez.
+        if (_state.CalibrationRefWidth > 0 && _state.CalibrationRefHeight > 0)
+            Services.Capture.ResolutionMapper.SetMaster(_state.CalibrationRefWidth, _state.CalibrationRefHeight);
+
         // Faz 17: Farm — load persisted settings
         _farmEnabled         = _state.Farm.Enabled;
         _farmMobsJsonPath    = _state.Farm.MobsJsonPath;

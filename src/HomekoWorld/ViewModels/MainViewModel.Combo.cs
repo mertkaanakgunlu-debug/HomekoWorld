@@ -209,9 +209,17 @@ public partial class MainViewModel
 
     private void RefreshFarmAvailableCombos()
     {
+        // WPF TUZAĞI (2026-06-20 KÖK NEDEN): ItemsSource.Clear() seçili Id geçici listede yokken ComboBox
+        // SelectedValue'yu null'lar → binding FarmSelectedComboId'i "" yapıp KAYDEDER → farm combo seçimi
+        // KALICI silinir ("combo atmıyor"). Sınıf değişimi/combo düzenleme/arama her refresh'te tetikliyordu.
+        // Seçimi Clear ÖNCESİ yakala; yeniden doldurduktan SONRA (hâlâ aynı sınıfta mevcutsa) geri yükle.
+        var keep = _state.Farm.SelectedComboId;
         FarmAvailableCombos.Clear();
         foreach (var vm in Combos.Where(c => c.ClassId == CurrentClass))
             FarmAvailableCombos.Add(vm);
+        if (!string.IsNullOrEmpty(keep) && FarmAvailableCombos.Any(c => c.Id == keep) &&
+            FarmSelectedComboId != keep)
+            FarmSelectedComboId = keep;
     }
 
     private void CommitEdit()

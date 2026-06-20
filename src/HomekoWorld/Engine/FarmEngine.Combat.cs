@@ -26,7 +26,16 @@ public sealed partial class FarmEngine
             ? null
             : _appState.Combos.FirstOrDefault(c => c.Id == comboId);
 
-        Program.Log($"[Farm] Sabit kombo: {comboId}");
+        if (combo is null)
+        {
+            // KÖK NEDEN olabilir: SelectedComboId boş/geçersiz → beceri kombosu HİÇ atılmaz (yalnız yaklaşma +
+            // archer R-yönelme görülür). Net uyarı bas ki "combo atmıyor" sebebi log/HUD'da açık olsun.
+            Program.Log($"[Farm] ⚠ KOMBO SEÇİLİ DEĞİL (SelectedComboId='{comboId}') → beceri kombosu ATILMAZ. " +
+                        $"Farm sekmesinden kombo seçin.");
+            StatusChanged?.Invoke(this, "⚠ Kombo seçili değil — beceri kombosu atılmıyor");
+        }
+        else
+            Program.Log($"[Farm] Sabit kombo: {combo.Name} ({comboId})");
 
         bool died;
         try
@@ -105,7 +114,14 @@ public sealed partial class FarmEngine
         // yavaşlatmaz. A6: ayardan (FarmSettings.HpDeathConfirmMs, varsayılan ~60ms ≈ 2 teyit; titrek
         // HSV'de 100-150 daha güvenli). Min 20ms tabanına kıstırılır.
         int hpDeathConfirmMs = Math.Max(20, s.HpDeathConfirmMs);
-        long firstHpMissMs = -1;     // HP'nin ilk "yok" okunduğu an (-1 = canlı)
+        // Kullanıcı modeli (2026-06-20): KIRMIZI birincil canlı sinyali (hızlı, eski davranış). Kırmızı KAYBOLUNCA
+        // hemen "öldü" DEME — "siyah boş bar" hâlâ varsa mob ÇOK DÜŞÜK HP'de = CANLI (düşük-HP sahte-ölümü önlenir).
+        // Gerçek ölümde KO hedef-penceresi ANINDA kaybolur → ne kırmızı ne siyah-bar kalır = ölü. Normal+duyuru geçerli.
+        const double EmptyBarMinDarkFrac = 0.45; // kırmızı yokken koyu-oran ≥ bu → "boş/düşük-HP bar yapısı VAR" (canlı)
+        const int    RedGoneGraceMs      = 3000; // anti-freeze tavanı: kırmızı bu kadar dönmeyip yalnız koyu sürerse →
+                                                 // gerçek düşük-HP mob bu sürede ölürdü → koyu-arka-plan say, bitir
+        long firstHpMissMs = -1;     // "bar TAMAMEN yok" ilk anı (-1 = bar var)
+        long lastRedSeenMs = -1;     // kırmızının en son görüldüğü an (-1 = hiç görülmedi)
         long lastHpCheck   = -1000;  // HSV/HP ekran yakalamasını ≤~33ms'de bire sınırla (GDI yükü)
         long lastBarDiag   = -10000; // koyu-oluk/kırmızı tanılama log'u throttle (eşik tune'u için)
         // Alive-gate (#1): bu angajmanda HP barını en az bir kez "canlı" gördük mü?
@@ -152,26 +168,40 @@ public sealed partial class FarmEngine
                     lastHpCheck = sw.ElapsedMilliseconds;
                     // T2 sinerji: taze snapshot HSV hedef-canlı değeri varsa onu kullan (ek GDI yakalama YOK);
                     // yoksa (ML/ColorScan modu veya snapshot bayat) eski yola düş.
-                    var hpSnap = _latestDetections;
-                    bool targetAlive = (hpSnap?.TargetAliveHsv is bool av && NowMs() - hpSnap.PublishedAtMs < 200)
-                        ? av
-                        : WtmVision.IsTargetAliveSmoothed(_appState.Wtm);
+                    // LastBarScan: son DXGI ROI taramasının kırmızı + koyu-oranı (DetectionLoop her ~30ms tazeler;
+                    // TargetAliveHsv ile AYNI taramadan gelir). Kullanıcı modeli: önce KIRMIZI, kırmızı yokken SİYAH-bar.
+                    var bar = WtmVision.LastBarScan;
+                    bool redPresent   = bar.red >= _appState.Wtm.HpHsvMinPx;            // canlı/seçili → KIRMIZI var
+                    bool emptyBarHere = !redPresent
+                        && bar.darkFrac >= EmptyBarMinDarkFrac                          // kırmızı yok ama SİYAH boş bar var
+                        && bar.darkFrac <  _appState.Wtm.HpTroughAllDarkMaxFrac;        // tüm-koyu ekran (mağara/gece) hariç
+                    bool targetAlive  = redPresent || emptyBarHere;                     // log/teşhis için
 
-                    if (!targetAlive)
+                    if (redPresent)
                     {
-                        // Alive-gate: bu angajmanda HP'yi hiç görmedik → henüz bar yüklenmemiş olabilir,
-                        // ölüm bildirme (angajman başında yanlış-kill üretimini önler).
-                        if (hadHpOnce)
+                        hadHpOnce     = true;                       // bu angajmanda en az bir kez canlı (kırmızı) gördük
+                        firstHpMissMs = -1;
+                        lastRedSeenMs = sw.ElapsedMilliseconds;
+                    }
+                    else if (hadHpOnce)
+                    {
+                        // KIRMIZI KAYBOLDU → "mob öldü?" anı. Gerçekten öldü mü: SİYAH boş bar hâlâ var mı?
+                        if (!emptyBarHere)
                         {
+                            // Ne kırmızı ne siyah-bar → KO hedef penceresi YOK (arka plana düştü) → öldü/seçim düştü.
                             if (firstHpMissMs < 0) firstHpMissMs = sw.ElapsedMilliseconds;
                             else if (sw.ElapsedMilliseconds - firstHpMissMs >= hpDeathConfirmMs)
-                                return true; // HP barı ~60ms kesintisiz yok → mob öldü / seçim düştü
+                                return true;
                         }
-                    }
-                    else
-                    {
-                        hadHpOnce     = true;  // bu angajmanda en az bir kez canlı gördük
-                        firstHpMissMs = -1;    // canlı okuma → debounce sıfırla
+                        else
+                        {
+                            // SİYAH boş bar VAR → mob ÇOK DÜŞÜK HP'de, HÂLÂ CANLI → vurmaya devam (sahte-ölüm YOK).
+                            firstHpMissMs = -1;
+                            // Anti-freeze tavanı: gerçek düşük-HP mob vurmaya devam edince RedGoneGraceMs içinde ölür
+                            // (bar kaybolur). Kırmızı bu kadar süredir hiç dönmediyse bar değil koyu-ARKA-PLANdır → bitir.
+                            if (lastRedSeenMs >= 0 && sw.ElapsedMilliseconds - lastRedSeenMs >= RedGoneGraceMs)
+                                return true;
+                        }
                     }
 
                     // Tune yardımı: son HP-bar taramasının kırmızı/koyu-oluk değerlerini ara sıra logla

@@ -126,23 +126,17 @@ public static class WtmVision
     /// kullanıldığı için zararsız (karar mantığı bu alanı OKUMAZ, dönüş değerini kullanır).</summary>
     public static (int red, int dark, int total, float darkFrac, float fillFrac, bool alive) LastBarScan;
 
-    /// <summary>Bar görünür (mob canlı) mü: kırmızı eşiği geçer VEYA "dolu oranı" eşiği geçer.
-    /// Dolu oranı = (kırmızı + koyu-oluk)/toplam. Gerçek HP barı (her HP'de) ROI'yi neredeyse tümüyle
-    /// kırmızı VEYA koyu-oluk doldurur (~%80); karanlık çalı/zemin koyu olsa da dolu oranı düşük kalır
-    /// (kırmızı+oluk tüm barı kaplamaz) → düşük-HP'de canlı kalır, karanlık zeminde sahte "bar var" biter.</summary>
+    /// <summary>Bar görünür (mob canlı) mü — SAF KIRMIZI (2026-06-20, kullanıcı isteği). Canlı sinyali YALNIZ
+    /// kırmızı eşiği: <c>alive = red ≥ redThreshold</c>. Eski "kırmızı VEYA dolu-oran(≥0.6)" mantığı koyu
+    /// arka-planı (çalı/UI ~%62-66) sahte-CANLI sayıp engage'i dakikalarca takıyordu (kill hiç algılanmıyordu).
+    /// Saf-kırmızı hızlı + güvenilir; tek zayıflığı çok düşük-HP'de kırmızı yok olunca erken "öldü" demesi —
+    /// bunu ENGAGE döngüsü çözer: kırmızı gidince <see cref="LastBarScan"/>.darkFrac ile "siyah boş bar var mı"
+    /// teyidi yapar (bkz FarmEngine.Combat: emptyBarHere). Bu yüzden dark/darkFrac BURADA da hesaplanır.</summary>
     private static bool BarPresent(int red, int dark, int total, int redThreshold, WtmSettings s)
     {
         float darkFrac = total > 0 ? (float)dark / total : 0f;
-        float fillFrac = total > 0 ? (float)(red + dark) / total : 0f;
-
-        // Karanlık-zemin guard (#5): ROI neredeyse TAMAMEN koyu (darkFrac ≥ eşik) VE kırmızı yoksa, bu bir HP
-        // barı değil tek-renk karanlık zemindir (mağara/yükleme/gece). Mob ölüp pencere kaybolunca böyle bir
-        // zeminde fillFrac≈1 kalıp sürekli "canlı" okunur → kill HİÇ algılanmaz (bot cesedi döver). Gerçek (boş)
-        // HP barı ROI'yi yalnız ~%79-88 doldurur (kenar/çerçeve koyu sayılmaz) → 0.95 eşiğinin altında kalır,
-        // düşük-HP canlı tespiti bozulmaz. Eşik HpTroughAllDarkMaxFrac ile config'den ayarlanır.
-        bool allDark = red < redThreshold && darkFrac >= s.HpTroughAllDarkMaxFrac;
-
-        bool alive = !allDark && (red >= redThreshold || fillFrac >= s.HpBarFillMinFrac);
+        float fillFrac = total > 0 ? (float)(red + dark) / total : 0f; // teşhis/geçmiş uyumluluğu için tutulur
+        bool  alive    = red >= redThreshold;                          // SAF KIRMIZI
         LastBarScan = (red, dark, total, darkFrac, fillFrac, alive);
         return alive;
     }
