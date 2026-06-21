@@ -308,22 +308,8 @@ public sealed partial class FarmEngine
             if (IsTargetAliveNow()) return true;
             await Task.Delay(30, ct);
         }
-
-        // TANILAMA (geçici): acquisition tutmadı → GDI ne gördü (kırmızı/oluk) + DXGI snapshot ne dedi (alive/yaş).
-        // Throttle: ~800ms'de bir (her başarısız hedef ~0.5s; spam'i azalt).
-        long now = NowMs();
-        if (now - _lastAcqDiagMs >= 800)
-        {
-            _lastAcqDiagMs = now;
-            var bs = WtmVision.LastBarScan;   // son GDI IsTargetAliveSmoothed taraması
-            var sn = _latestDetections;
-            Program.Log($"[Farm] acq HP-poll TUTMADI — GDI(kırmızı={bs.red} oluk=%{(int)(bs.darkFrac * 100)} " +
-                        $"dolu=%{(int)(bs.fillFrac * 100)}) DXGI(alive={(sn?.TargetAliveHsv?.ToString() ?? "null")} " +
-                        $"yaş={(sn is null ? -1 : now - sn.PublishedAtMs)}ms)");
-        }
         return false;
     }
-    private long _lastAcqDiagMs = -100000;
 
     /// <summary>Hedef seçili/canlı mı — GDI canlı (gecikmesiz) VEYA DXGI snapshot (güvenilir/gecikmeli); biri yeterli.</summary>
     private bool IsTargetAliveNow()

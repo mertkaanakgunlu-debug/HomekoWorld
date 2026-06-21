@@ -141,15 +141,20 @@ public static class WtmVision
         return alive;
     }
 
-    /// <summary>Alan 1'de (verilen dikdörtgen) bar görünür mü (kırmızı VEYA koyu-oluk); değilse ve duyuru
-    /// kayması ayarlıysa alan 2'de (+Δy) dener. Ekrandan yakalar.</summary>
+    /// <summary>Bar'ın EN SON bulunduğu dikey offset (ekran px): 0 = kalibre konum (duyuru yok),
+    /// +Δy = duyuru kayması (duyuru var). Nameplate/guardian kontrolü ismi DOĞRU konumda araması için kullanır.</summary>
+    public static int LastBarOffsetY;
+
+    /// <summary>Bar görünür mü (kırmızı). Kalibre konum (duyuru YOK, offset 0) → bulamazsa +Δy (duyuru VAR).
+    /// Bar bulunduğunda <see cref="LastBarOffsetY"/> set edilir. NOT: yalnız bu iki konum geçerli — isim de barla
+    /// aynı kadar kayar; eski −Δy denemesi duyuru/isim alanına bakıp guardian'ı şaşırtıyordu (kaldırıldı). Ekrandan yakalar.</summary>
     private static bool RedAtAreas(int x, int y, int w, int h, int threshold, WtmSettings s)
     {
-        if (BarPresent(CountRedHsv(x, y, w, h, s, out int d1, out int t1), d1, t1, threshold, s)) return true;
+        if (BarPresent(CountRedHsv(x, y, w, h, s, out int d1, out int t1), d1, t1, threshold, s)) { LastBarOffsetY = 0; return true; }
         if (s.AnnounceShiftY > 0)
         {
             int dy = ResolutionMapper.ScaleLen(s.AnnounceShiftY);
-            if (BarPresent(CountRedHsv(x, y + dy, w, h, s, out int d2, out int t2), d2, t2, threshold, s)) return true;
+            if (BarPresent(CountRedHsv(x, y + dy, w, h, s, out int d2, out int t2), d2, t2, threshold, s)) { LastBarOffsetY = dy; return true; }
         }
         return false;
     }
@@ -216,14 +221,15 @@ public static class WtmVision
         return false;
     }
 
-    /// <summary>RedAtAreas'ın sağlanan tam kareden (yeni yakalama yok) çalışan eşi (kırmızı VEYA koyu-oluk).</summary>
+    /// <summary>RedAtAreas'ın sağlanan tam kareden (yeni yakalama yok) çalışan eşi — kalibre konum (offset 0) +
+    /// duyuru +Δy. Bar bulununca <see cref="LastBarOffsetY"/> set eder.</summary>
     private static bool RedAtAreasFromFrame(Bitmap frame, int x, int y, int w, int h, int threshold, WtmSettings s)
     {
-        if (BarPresent(CountRedHsvFromFrame(frame, x, y, w, h, s, out int d1, out int t1), d1, t1, threshold, s)) return true;
+        if (BarPresent(CountRedHsvFromFrame(frame, x, y, w, h, s, out int d1, out int t1), d1, t1, threshold, s)) { LastBarOffsetY = 0; return true; }
         if (s.AnnounceShiftY > 0)
         {
             int dy = ResolutionMapper.ScaleLen(s.AnnounceShiftY);
-            if (BarPresent(CountRedHsvFromFrame(frame, x, y + dy, w, h, s, out int d2, out int t2), d2, t2, threshold, s)) return true;
+            if (BarPresent(CountRedHsvFromFrame(frame, x, y + dy, w, h, s, out int d2, out int t2), d2, t2, threshold, s)) { LastBarOffsetY = dy; return true; }
         }
         return false;
     }
@@ -406,16 +412,12 @@ public static class WtmVision
 
         // Master → geçerli ekran (anchor-aware). İsim bandı top-center çapasına oturur.
         var r = ResolutionMapper.Map(rx, ry, rw, rh);
-        var c1 = ClassifyNameRect(r.X, r.Y, r.Width, r.Height, s);
-        if (s.AnnounceShiftY <= 0) return c1;
-
-        // Duyuru kayması: HP barıyla birlikte isim de kaydığı için alan 2'yi de sınıflandır.
-        // En güvenli sınıfı seç (Guardian > Normal > Unknown) — korumayı asla yanlışlıkla atlamamak için.
-        int dy = ResolutionMapper.ScaleLen(s.AnnounceShiftY);
-        var c2 = ClassifyNameRect(r.X, r.Y + dy, r.Width, r.Height, s);
-        if (c1 == NameplateClass.Guardian || c2 == NameplateClass.Guardian) return NameplateClass.Guardian;
-        if (c1 == NameplateClass.Normal   || c2 == NameplateClass.Normal)   return NameplateClass.Normal;
-        return NameplateClass.Unknown;
+        // KÖK NEDEN (2026-06-22): isim, HP barıyla AYNI miktar kayar. Eskiden NameBand VE NameBand+Δy ikisi de
+        // sınıflandırılıp OR'lanıyordu → duyuru KAPALIYKEN +Δy bandı tam KIRMIZI HP barına denk gelip ("kırmızı
+        // isim=guardian") HER mobu koruma sanıyor, engage HİÇ olmuyordu. DÜZELTME: ismi, barın GERÇEKTE bulunduğu
+        // offset'te (LastBarOffsetY: 0=duyuru yok, +Δy=duyuru var) TEK konumda sınıflandır → HP barıyla çakışma biter,
+        // guardian hem duyuru açık hem kapalıyken doğru çalışır.
+        return ClassifyNameRect(r.X, r.Y + LastBarOffsetY, r.Width, r.Height, s);
     }
 
     /// <summary>Verilen ekran dikdörtgenini yakalar ve HSV ile nameplate sınıfı döndürür.</summary>
