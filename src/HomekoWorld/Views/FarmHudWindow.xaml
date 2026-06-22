@@ -39,7 +39,7 @@
             <Style TargetType="Ellipse">
               <Setter Property="Fill" Value="#FFCC4444"/>
               <Style.Triggers>
-                <DataTrigger Binding="{Binding FarmRunning}" Value="True">
+                <DataTrigger Binding="{Binding Active}" Value="True">
                   <Setter Property="Fill" Value="#FF7ACC50"/>
                 </DataTrigger>
                 <DataTrigger Binding="{Binding FarmPaused}" Value="True">
@@ -52,7 +52,7 @@
 
         <!-- Başlık + durum -->
         <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-          <TextBlock Text="Oto Farm" FontSize="11" FontWeight="SemiBold"
+          <TextBlock Text="{Binding ActiveModeLabel, FallbackValue=Oto Farm}" FontSize="11" FontWeight="SemiBold"
                      Foreground="#FFD4A44A" Margin="0,0,8,0" VerticalAlignment="Center"/>
           <TextBlock FontSize="10" VerticalAlignment="Center" MaxWidth="150"
                      TextTrimming="CharacterEllipsis"
@@ -289,7 +289,7 @@
               </Setter.Value>
             </Setter>
             <Style.Triggers>
-              <DataTrigger Binding="{Binding FarmRunning}" Value="True">
+              <DataTrigger Binding="{Binding Active}" Value="True">
                 <Setter Property="Background"  Value="#22CC4444"/>
                 <Setter Property="Foreground"  Value="#FFE05555"/>
                 <Setter Property="BorderBrush" Value="#44E05555"/>

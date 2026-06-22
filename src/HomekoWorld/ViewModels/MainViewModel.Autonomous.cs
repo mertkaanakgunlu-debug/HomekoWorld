@@ -40,6 +40,13 @@ public partial class MainViewModel
             {
                 AutonomousStateText = s.ToString();
                 AutonomousRunning   = _autonomousEngine.IsRunning;
+                // Motor kendi kendine durduysa (art-arda hata / tur-tekrar tükendi) → master gate'i ve
+                // HUD oturum sayacını senkronla (yoksa HUD noktası yeşil/sayaç akmaya devam eder).
+                if (!AutonomousRunning && Active && SelectedMode == HomekoWorld.Models.OperationMode.Otonom)
+                {
+                    Active = false;
+                    StopSessionTimer();
+                }
             });
 
         _autonomousEngine.StatusChanged += (_, msg) =>
@@ -116,6 +123,11 @@ public partial class MainViewModel
         _autonomousHotKey = a36.HotKey;
         _maxConsecutiveFailures = a36.MaxConsecutiveFailures.ToString();
 
+        // Faz 41: NPC/Portal tespit modeli ayarları
+        _npcPortalModelPath     = a36.NpcPortalModelPath;
+        _npcPortalConfThreshold = a36.NpcPortalConfThreshold.ToString("F2", System.Globalization.CultureInfo.InvariantCulture);
+        RefreshNpcPortalStatus();
+
         // StateChanged tetiklenince telemetriyi de güncelle
         _autonomousEngine.StateChanged += (_, _) =>
             Application.Current.Dispatcher.BeginInvoke(() =>
@@ -154,6 +166,9 @@ public partial class MainViewModel
             return;
         }
         AutonomousActivityLog.Clear();
+        // HUD oturum sayacı + kill/saat otonomda da ilersin (FarmEngine singleton → FarmKills paylaşılıyor).
+        FarmKills = 0;
+        StartSessionTimer();
         _autonomousEngine.Start();
         AutonomousRunning = true;
     }
@@ -161,6 +176,7 @@ public partial class MainViewModel
     private void StopAutonomous()
     {
         _autonomousEngine.Stop();
+        StopSessionTimer();
         AutonomousRunning = false;
         AutonomousStatus  = "Durduruldu";
     }
@@ -1379,6 +1395,123 @@ public partial class MainViewModel
             mainWindow.Activate();
         }
     }
+
+    // ── Faz 41: NPC + Portal YOLO tespiti ──────────────────────────────────────────
+    // Mob YOLO'sundan AYRI, 2 sınıflı (npc, portal) küçük model. Navigasyon merchant/portal'a
+    // varınca ekranı tarayıp kutu-merkezine tıklar (kör tık yerine) — kamera açısı ıskalatmaz.
+
+    [ObservableProperty] private string _npcPortalModelPath     = "";
+    [ObservableProperty] private string _npcPortalConfThreshold = "0.45";
+    [ObservableProperty] private string _npcPortalStatus        = "Model seçilmedi";
+    [ObservableProperty] private string _npcPortalTestStatus    = "";
+
+    partial void OnNpcPortalModelPathChanged(string v)
+    {
+        _state.Autonomous.NpcPortalModelPath = v;
+        _store.Save(_state);
+        RefreshNpcPortalStatus();
+    }
+
+    partial void OnNpcPortalConfThresholdChanged(string v)
+    {
+        if (double.TryParse(v, System.Globalization.NumberStyles.Float,
+                            System.Globalization.CultureInfo.InvariantCulture, out double d)
+            && d > 0 && d <= 1)
+        { _state.Autonomous.NpcPortalConfThreshold = d; _store.Save(_state); }
+    }
+
+    private void RefreshNpcPortalStatus()
+    {
+        var a = _state.Autonomous;
+        if (!a.IsNpcPortalModelSet)
+        { NpcPortalStatus = "Model seçilmedi (görsel tespit kapalı — eski kör-tık fallback)"; return; }
+        NpcPortalStatus = _townDetector.IsReady
+            ? $"✓ Model hazır: {System.IO.Path.GetFileName(a.NpcPortalModelPath)} (2 sınıf: npc, portal)"
+            : $"⚠ Model yüklenemedi: {_townDetector.LoadError}";
+    }
+
+    [RelayCommand]
+    private void BrowseNpcPortalModel()
+    {
+        var dlg = new Microsoft.Win32.OpenFileDialog
+        {
+            Filter = "ONNX Model|*.onnx|Tüm dosyalar|*.*",
+            Title  = "NPC/Portal YOLO modeli seç (2 sınıf: npc, portal)",
+        };
+        if (dlg.ShowDialog() != true) return;
+        NpcPortalModelPath = dlg.FileName;   // OnNpcPortalModelPathChanged → kaydet + durum tazele
+    }
+
+    [RelayCommand]
+    private void AutoDiscoverNpcPortalModel()
+    {
+        var roots = new List<string>();
+        var cur   = new System.IO.DirectoryInfo(AppContext.BaseDirectory);
+        for (int i = 0; i < 7 && cur is not null; i++) { roots.Add(cur.FullName); cur = cur.Parent; }
+
+        var dirs = new List<string>();
+        foreach (var r in roots)
+        {
+            dirs.Add(r);
+            dirs.Add(System.IO.Path.Combine(r, "tools", "yolo_trainer", "out"));
+            dirs.Add(System.IO.Path.Combine(r, "tools", "yolo_trainer", "out", "onnx"));
+        }
+
+        string? found = null;
+        foreach (var d in dirs.Where(System.IO.Directory.Exists))
+        {
+            found = System.IO.Directory.EnumerateFiles(d, "*.onnx", System.IO.SearchOption.TopDirectoryOnly)
+                .Where(f =>
+                {
+                    var n = System.IO.Path.GetFileNameWithoutExtension(f).ToLowerInvariant();
+                    return n.Contains("npc") || n.Contains("portal") || n.Contains("town");
+                })
+                .OrderByDescending(System.IO.File.GetLastWriteTimeUtc)
+                .FirstOrDefault();
+            if (found is not null) break;
+        }
+
+        if (found is not null) NpcPortalModelPath = found;
+        NpcPortalStatus = found is not null
+            ? $"✓ Bulundu: {System.IO.Path.GetFileName(found)}"
+            : "Model bulunamadı — manuel seç (npc/portal/town adlı .onnx)";
+    }
+
+    private CancellationTokenSource? _npcPortalTestCts;
+
+    /// <summary>Test: oyunda canlı NPC + portal tespiti — bulunan kutu/güven skorunu raporlar (modele güvenmeden önce).</summary>
+    [RelayCommand]
+    private async Task TestNpcPortalDetectAsync()
+    {
+        if (!_state.Autonomous.IsNpcPortalModelSet) { NpcPortalTestStatus = "⚠ Önce model seç"; return; }
+
+        _npcPortalTestCts?.Cancel();
+        _npcPortalTestCts?.Dispose();
+        _npcPortalTestCts = new CancellationTokenSource();
+        var ct = _npcPortalTestCts.Token;
+
+        NpcPortalTestStatus = "Tespit testi — oyun öne geliyor…";
+        var mainWindow = Application.Current.MainWindow;
+        mainWindow.WindowState = WindowState.Minimized;
+        try
+        {
+            await Task.Delay(500, ct);   // oyun öne gelsin
+            // Infer (GPU) UI thread'ini tıkamasın diye arka planda çalıştır.
+            NpcPortalTestStatus = await Task.Run(
+                () => _townDetector.TestDetectAsync(_state.Autonomous.TownDetectTimeoutMs, ct), ct);
+        }
+        catch (OperationCanceledException) { NpcPortalTestStatus = "İptal edildi"; }
+        catch (Exception ex) { NpcPortalTestStatus = $"Hata: {ex.Message}"; }
+        finally
+        {
+            mainWindow.WindowState = WindowState.Normal;
+            mainWindow.Activate();
+            RefreshNpcPortalStatus();
+        }
+    }
+
+    [RelayCommand]
+    private void StopNpcPortalTest() { _npcPortalTestCts?.Cancel(); NpcPortalTestStatus = "Durduruldu"; }
 
     // ── Faz 37: Dayanıklılık + Hotkey + Özet ────────────────────────────────────
 

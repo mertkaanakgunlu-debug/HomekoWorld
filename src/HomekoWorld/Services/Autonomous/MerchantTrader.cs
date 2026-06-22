@@ -33,25 +33,47 @@ public sealed class MerchantTrader
 
     public event EventHandler<string>? StatusChanged;
 
+    /// <summary>NPC etkileşimi başarısız (sağ-tık menüsü açılmadı = tık ıskaladı). Çağıran turu tekrarlar.
+    /// ≥0 dönüş = etkileşim OK (satılan/onarılan yuva sayısı; 0 = açıldı ama satılacak/onarılacak yok).</summary>
+    public const int InteractionFailed = -2;
+
+    // Menü-açıldı doğrulaması (Faz 41): imleç çevresindeki bölge bu kadar DEĞİŞTİYSE menü açıldı say.
+    private const double MenuMinChangedFrac = 0.05; // ≥%5 piksel değişti → opak menü kutusu belirdi
+    private const int    MenuPixelDelta     = 28;   // kanal-başı bu eşiği aşan fark "değişti" sayılır
+
     /// <summary>
     /// NPC ile etkileşime girer ve ikon-eşleşen envanter yuvalarını satar.
-    /// Satılan (çantaya taşınan) yuva sayısını döndürür.
+    /// Satılan (çantaya taşınan) yuva sayısını döndürür; menü açılmadıysa <see cref="InteractionFailed"/>.
     /// </summary>
-    public async Task<int> TradeAsync(CancellationToken ct, bool saveDebug = false)
+    /// <param name="npcScreenPoint">YOLO ile tespit edilen NPC ekran-noktası. Verilirse buraya (+ ince-ayar
+    /// offset) tıklanır ve menü-açıldı doğrulaması yapılır; null ise eski kör merkez+offset tık (doğrulama yok).</param>
+    public async Task<int> TradeAsync(CancellationToken ct, System.Drawing.Point? npcScreenPoint = null, bool saveDebug = false)
     {
         var s = _state.Autonomous;
 
         // 1-2. NPC: sol-tık (seç) → sağ-tık (trade/repair menüsü)
         Status("NPC seçiliyor…");
-        int sw = GetSystemMetrics(0), sh = GetSystemMetrics(1);
-        int cx = sw / 2 + s.MerchantClickOffsetX;
-        int cy = sh / 2 + s.MerchantClickOffsetY;
+        var (cx, cy) = ResolveNpcClick(s, npcScreenPoint);
+
+        // Menü doğrulama için tık ÖNCESİ imleç-çevresi (yalnız tespit-tabanlı tıkta; kör fallback'te atlanır).
+        var (px, py, pw, ph) = MenuProbeRect(cx, cy);
+        System.Drawing.Bitmap? beforeMenu = npcScreenPoint is not null
+            ? WtmVision.CaptureRegion(px, py, pw, ph) : null;
+
         await _transport.MoveAbsAsync(cx, cy, ct);
         await Task.Delay(80, ct);
         await _transport.ClickAsync(MouseButton.Left, ct);
         await Task.Delay(150, ct);
         await _transport.ClickAsync(MouseButton.Right, ct);
         await Task.Delay(s.MerchantInteractDelayMs, ct);
+
+        // Doğrula: sağ-tık menüsü açıldı mı? Açılmadıysa erken çık — kör satış adımlarına DEVAM ETME.
+        if (beforeMenu is not null && !MenuOpened(px, py, pw, ph, beforeMenu))
+        {
+            Status("⚠ NPC menüsü açılmadı (tık ıskaladı?) — etkileşim iptal");
+            await TapCloseAsync(s, ct);   // olası yarım menü/seçimi temizle (sonraki deneme temiz başlasın)
+            return InteractionFailed;
+        }
 
         // 3. "I would like to trade." diyalog butonu
         if (s.IsTradeDialogCalibrated)
@@ -92,11 +114,7 @@ public sealed class MerchantTrader
 
         // 9. Pencereyi kapat
         Status("Merchant penceresi kapatılıyor…");
-        string closeKey = string.IsNullOrWhiteSpace(s.MerchantCloseKey) ? "Escape" : s.MerchantCloseKey;
-        await _transport.KeyDownAsync(closeKey, ct);
-        await Task.Delay(60, ct);
-        await _transport.KeyUpAsync(closeKey, CancellationToken.None);
-        await Task.Delay(s.MerchantCloseDelayMs, ct);
+        await TapCloseAsync(s, ct);
 
         Status(sold > 0 ? $"✓ {sold} eşya satıldı" : "Satılacak (eşleşen) eşya bulunamadı");
         return sold;
@@ -108,7 +126,7 @@ public sealed class MerchantTrader
     /// (çekiç imleç) açılır → kullanıcının seçtiği giyili-ekipman slotlarına SIRAYLA birer sol tık
     /// (anında onarır, onay penceresi yok) → kapat. Onarılan slot sayısını döndürür.
     /// </summary>
-    public async Task<int> RepairAsync(CancellationToken ct)
+    public async Task<int> RepairAsync(CancellationToken ct, System.Drawing.Point? npcScreenPoint = null)
     {
         var s = _state.Autonomous;
 
@@ -119,17 +137,25 @@ public sealed class MerchantTrader
         if (slots is null || slots.Length == 0)
         { Status("⚠ Tamir edilecek slot seçilmedi — tamir atlandı"); return 0; }
 
-        // 1-2. NPC: sol-tık (seç) → sağ-tık (menü) — satışla aynı offset
+        // 1-2. NPC: sol-tık (seç) → sağ-tık (menü) — satışla aynı tık modeli
         Status("Tamir için NPC seçiliyor…");
-        int sw = GetSystemMetrics(0), sh = GetSystemMetrics(1);
-        int cx = sw / 2 + s.MerchantClickOffsetX;
-        int cy = sh / 2 + s.MerchantClickOffsetY;
+        var (cx, cy) = ResolveNpcClick(s, npcScreenPoint);
+        var (mpx, mpy, mpw, mph) = MenuProbeRect(cx, cy);
+        System.Drawing.Bitmap? beforeMenu = npcScreenPoint is not null
+            ? WtmVision.CaptureRegion(mpx, mpy, mpw, mph) : null;
         await _transport.MoveAbsAsync(cx, cy, ct);
         await Task.Delay(80, ct);
         await _transport.ClickAsync(MouseButton.Left, ct);
         await Task.Delay(150, ct);
         await _transport.ClickAsync(MouseButton.Right, ct);
         await Task.Delay(s.MerchantInteractDelayMs, ct);
+
+        if (beforeMenu is not null && !MenuOpened(mpx, mpy, mpw, mph, beforeMenu))
+        {
+            Status("⚠ Tamir NPC menüsü açılmadı (tık ıskaladı?) — etkileşim iptal");
+            await TapCloseAsync(s, ct);
+            return InteractionFailed;
+        }
 
         // 3. "I want to make repairs." → envanter açılır, imleç çekiç olur
         Status("Tamir seçiliyor…");
@@ -161,11 +187,7 @@ public sealed class MerchantTrader
 
         // 5. Pencereyi kapat
         Status("Tamir penceresi kapatılıyor…");
-        string closeKey = string.IsNullOrWhiteSpace(s.MerchantCloseKey) ? "Escape" : s.MerchantCloseKey;
-        await _transport.KeyDownAsync(closeKey, ct);
-        await Task.Delay(60, ct);
-        await _transport.KeyUpAsync(closeKey, CancellationToken.None);
-        await Task.Delay(s.MerchantCloseDelayMs, ct);
+        await TapCloseAsync(s, ct);
 
         Status(repaired > 0 ? $"✓ {repaired} ekipman onarıldı" : "Hiç ekipman onarılmadı");
         return repaired;
@@ -368,6 +390,77 @@ public sealed class MerchantTrader
         string thr = s.SellMatchThreshold.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture);
         return $"ROI {roi.Width}×{roi.Height} {cols}×{rows} | dolu {filledCount}, eşleşen {matchCount} " +
                $"(eşik {thr}, ikon {iconInfo}) → merchant_sell_debug.png + {tmpl} template";
+    }
+
+    // ── NPC tık + menü doğrulama yardımcıları (Faz 41) ───────────────────────────
+
+    /// <summary>Tıklanacak ekran noktasını çözer: tespit varsa kutu-merkezi + ince-ayar offset; yoksa kör merkez+offset.</summary>
+    private static (int x, int y) ResolveNpcClick(Models.Autonomous.AutonomousSettings s, System.Drawing.Point? npc)
+    {
+        if (npc is { } p) return (p.X + s.MerchantClickOffsetX, p.Y + s.MerchantClickOffsetY);
+        int sw = GetSystemMetrics(0), sh = GetSystemMetrics(1);
+        return (sw / 2 + s.MerchantClickOffsetX, sh / 2 + s.MerchantClickOffsetY);
+    }
+
+    /// <summary>İmleç (tık) çevresinde menü-açıldı kontrolü için ekran-içine kıstırılmış dikdörtgen.</summary>
+    private static (int x, int y, int w, int h) MenuProbeRect(int cx, int cy)
+    {
+        int sw = GetSystemMetrics(0), sh = GetSystemMetrics(1);
+        int w = Math.Min(260, sw), h = Math.Min(240, sh);
+        int x = Math.Clamp(cx - 60, 0, Math.Max(0, sw - w));
+        int y = Math.Clamp(cy - 30, 0, Math.Max(0, sh - h));
+        return (x, y, w, h);
+    }
+
+    /// <summary>Sağ-tık menüsü açıldı mı: tık-öncesi <paramref name="before"/> ile tık-sonrası bölgeyi karşılaştırır
+    /// (opak menü kutusu belirince piksellerin ≥MenuMinChangedFrac'i değişir). before'ı dispose eder.</summary>
+    private static bool MenuOpened(int x, int y, int w, int h, System.Drawing.Bitmap before)
+    {
+        try
+        {
+            using var after = WtmVision.CaptureRegion(x, y, w, h);
+            return ChangedFraction(before, after) >= MenuMinChangedFrac;
+        }
+        finally { before.Dispose(); }
+    }
+
+    /// <summary>İki eş-boyut kareyi karşılaştırır; kanal-başı farkı MenuPixelDelta'yı aşan piksel oranını döner.</summary>
+    private static unsafe double ChangedFraction(System.Drawing.Bitmap a, System.Drawing.Bitmap b)
+    {
+        int w = Math.Min(a.Width, b.Width), h = Math.Min(a.Height, b.Height);
+        if (w <= 0 || h <= 0) return 0;
+        var ra = a.LockBits(new Rectangle(0, 0, w, h), ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
+        var rb = b.LockBits(new Rectangle(0, 0, w, h), ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
+        long changed = 0, total = (long)w * h;
+        try
+        {
+            byte* baseA = (byte*)ra.Scan0, baseB = (byte*)rb.Scan0;
+            for (int yy = 0; yy < h; yy++)
+            {
+                byte* pa = baseA + (long)yy * ra.Stride;
+                byte* pb = baseB + (long)yy * rb.Stride;
+                for (int xx = 0; xx < w; xx++)
+                {
+                    int i = xx * 4; // BGRA
+                    if (Math.Abs(pa[i]     - pb[i])     > MenuPixelDelta ||
+                        Math.Abs(pa[i + 1] - pb[i + 1]) > MenuPixelDelta ||
+                        Math.Abs(pa[i + 2] - pb[i + 2]) > MenuPixelDelta)
+                        changed++;
+                }
+            }
+        }
+        finally { a.UnlockBits(ra); b.UnlockBits(rb); }
+        return (double)changed / total;
+    }
+
+    /// <summary>Merchant/tamir penceresini kapatma tuşu (Escape varsayılan) — tek atımlık.</summary>
+    private async Task TapCloseAsync(Models.Autonomous.AutonomousSettings s, CancellationToken ct)
+    {
+        string closeKey = string.IsNullOrWhiteSpace(s.MerchantCloseKey) ? "Escape" : s.MerchantCloseKey;
+        await _transport.KeyDownAsync(closeKey, ct);
+        await Task.Delay(60, ct);
+        await _transport.KeyUpAsync(closeKey, CancellationToken.None);
+        await Task.Delay(s.MerchantCloseDelayMs, ct);
     }
 
     private void Status(string msg) => StatusChanged?.Invoke(this, msg);

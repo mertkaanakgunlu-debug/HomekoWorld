@@ -322,6 +322,33 @@ public class AutonomousSettings
     /// <summary>Portal geçişi sonrası harita yükleme bekleme süresi (ms).</summary>
     public int    PortalWaitMs         { get; set; } = 10_000;
 
+    // ── Faz 41: NPC + Portal YOLO tespiti ────────────────────────────────────────
+    // Mob YOLO'sundan AYRI, 2 sınıflı (npc, portal) küçük model. Navigasyon merchant/portal
+    // koordinatına varınca ekranı tarayıp NPC/portal kutusunu bulur → kör tık yerine kutunun
+    // MERKEZİNE tıklanır (kamera açısı NPC/portal'ı merkezden kaydırınca ıskalamaz). Doğrulama:
+    // NPC menüsü açıldı mı (ekran-değişimi) + portal ışınlanması (koordinat değişimi).
+
+    /// <summary>NPC/Portal tespit modeli (.onnx) yolu. Boş → görsel tespit kapalı (eski kör-tık fallback).
+    /// Model 2 sınıfla eğitilmeli: 0=npc, 1=portal (bkz. TownObjectDetector.ClassNames).</summary>
+    public string NpcPortalModelPath      { get; set; } = "";
+
+    /// <summary>NPC/Portal modelinin export giriş boyutu (mob modeliyle aynı; ör. 640).</summary>
+    public int    NpcPortalInputSize      { get; set; } = 640;
+
+    /// <summary>NPC/Portal tespit güven eşiği (0-1). Altındaki kutular elenir.</summary>
+    public double NpcPortalConfThreshold  { get; set; } = 0.45;
+
+    /// <summary>Hedefe varınca NPC/portal'ı aramak için ekran tarama süresi (ms). İlk çağrı model
+    /// yüklemesi+ısınmayı da kapsadığından cömert tutulur.</summary>
+    public int    TownDetectTimeoutMs     { get; set; } = 3000;
+
+    /// <summary>NPC menüsü / portal ışınlanması doğrulanamazsa tüm town turu kaç kez baştan denensin.
+    /// Tükeninince otonom mod güvenle durur (kör ilerleme yok).</summary>
+    public int    TownTourMaxAttempts     { get; set; } = 3;
+
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool   IsNpcPortalModelSet => !string.IsNullOrWhiteSpace(NpcPortalModelPath);
+
     // ── Faz 40: Merchant tamir (repair) ──────────────────────────────────────────
     // Satıştan sonra AYNI merchant NPC'de: NPC sol-seç→sağ-menü (satışla aynı offset)
     // → "I want to make repairs." → envanter açılır (çekiç imleç) → seçili giyili ekipman

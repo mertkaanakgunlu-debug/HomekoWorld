@@ -56,6 +56,7 @@ public sealed partial class AutonomousPlayerEngine
         {
             Log($"Envanter dolu (%{pct} ≥ %{(int)(s.InventoryFullThreshold * 100)}) — town'a gidiliyor", "event");
             if (_farm.IsRunning) _farm.Stop();
+            _townTourAttempt = 0;   // yeni tur (doğrulama-tabanlı tekrar sayacını sıfırla)
             SetState(AutoPlayerState.GoingToTown, $"Envanter dolu (%{pct})");
         }
         else

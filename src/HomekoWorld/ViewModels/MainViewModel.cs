@@ -230,10 +230,11 @@ public partial class MainViewModel : ObservableObject
 
     /// <summary>Başlat/Durdur butonu her zaman aktif (mod sistemi başlatmayı doğrular).</summary>
     public bool   FarmToggleEnabled => true;
-    /// <summary>Button label showing current action + configurable hotkey.</summary>
-    public string FarmStartLabel    => FarmRunning
-        ? $"Farm Durdur  ({GlobalStartKey})"
-        : $"Farm Başlat  ({GlobalStartKey})";
+    /// <summary>Button label showing current action + configurable hotkey. Aktif moda göre (Oto Farm / Otonom / …)
+    /// ve çalışma durumuna göre (Active = herhangi bir mod çalışıyor) etiketlenir.</summary>
+    public string FarmStartLabel    => Active
+        ? $"{ActiveModeLabel} Durdur  ({GlobalStartKey})"
+        : $"{ActiveModeLabel} Başlat  ({GlobalStartKey})";
     private readonly FarmEngine      _farmEngine;
     private readonly MobLibrary      _mobLibrary;
     private readonly AutoPotService  _autoPotService;
@@ -243,6 +244,7 @@ public partial class MainViewModel : ObservableObject
     private readonly HomekoWorld.Services.Autonomous.InventoryReader  _inventoryReader;
     private readonly HomekoWorld.Services.Autonomous.MerchantTrader   _merchantTrader;
     private readonly HomekoWorld.Services.Autonomous.IconMatcher      _iconMatcher;
+    private readonly HomekoWorld.Services.Autonomous.TownObjectDetector _townDetector;
 
     private CancellationTokenSource? _reconnectCts;
 
@@ -264,7 +266,8 @@ public partial class MainViewModel : ObservableObject
         HomekoWorld.Services.Autonomous.WorldNavigator   worldNavigator,
         HomekoWorld.Services.Autonomous.InventoryReader  inventoryReader,
         HomekoWorld.Services.Autonomous.MerchantTrader   merchantTrader,
-        HomekoWorld.Services.Autonomous.IconMatcher      iconMatcher)
+        HomekoWorld.Services.Autonomous.IconMatcher      iconMatcher,
+        HomekoWorld.Services.Autonomous.TownObjectDetector townDetector)
     {
         _router        = router;
         _transport     = router;
@@ -283,6 +286,7 @@ public partial class MainViewModel : ObservableObject
         _inventoryReader  = inventoryReader;
         _merchantTrader   = merchantTrader;
         _iconMatcher      = iconMatcher;
+        _townDetector     = townDetector;
         Editor          = editor;
 
         _state         = state;

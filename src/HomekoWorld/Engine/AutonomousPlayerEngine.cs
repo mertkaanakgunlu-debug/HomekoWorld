@@ -21,6 +21,8 @@ public sealed partial class AutonomousPlayerEngine
     private readonly IKeyDeviceTransport _transport;
     private readonly InventoryReader     _inventoryReader;
     private readonly MerchantTrader      _merchantTrader;
+    private readonly CoordinateReader    _coordReader;     // Faz 41: TP/portal ışınlanma doğrulaması
+    private readonly TownObjectDetector  _townDetector;    // Faz 41: NPC/portal görsel tespiti
 
     private AutoPlayerState _fsm = AutoPlayerState.Idle;
     private CancellationTokenSource? _cts;
@@ -29,13 +31,18 @@ public sealed partial class AutonomousPlayerEngine
     private int            _consecutiveFailures;
     private AutoPlayerState _lastFailedState = AutoPlayerState.Idle;
 
+    // Faz 41: doğrulama-tabanlı town turu tekrar sayacı (NPC menüsü/portal ışınlanması doğrulanamazsa).
+    private int _townTourAttempt;
+
     public AutonomousPlayerEngine(
         FarmEngine          farm,
         AppState            state,
         WorldNavigator      navigator,
         IKeyDeviceTransport transport,
         InventoryReader     inventoryReader,
-        MerchantTrader      merchantTrader)
+        MerchantTrader      merchantTrader,
+        CoordinateReader    coordReader,
+        TownObjectDetector  townDetector)
     {
         _farm            = farm;
         _state           = state;
@@ -43,8 +50,12 @@ public sealed partial class AutonomousPlayerEngine
         _transport       = transport;
         _inventoryReader = inventoryReader;
         _merchantTrader  = merchantTrader;
+        _coordReader     = coordReader;
+        _townDetector    = townDetector;
 
         _farm.TelemetryUpdated += OnFarmTelemetryUpdated;
+        // NPC/portal tespit durumu → canlı HUD durum metni (düşük frekans; VM dispatcher'a marshal eder).
+        _townDetector.StatusChanged += (_, m) => StatusChanged?.Invoke(this, m);
     }
 
     // ── Durum ─────────────────────────────────────────────────────────────────
@@ -68,6 +79,7 @@ public sealed partial class AutonomousPlayerEngine
         Telemetry.Reset();
         _killsAtLastCheck    = 0;
         _consecutiveFailures = 0;
+        _townTourAttempt     = 0;
         _lastFailedState     = AutoPlayerState.Idle;
         SetState(AutoPlayerState.Farming, "Otonom mod başladı — farm");
         _ = Task.Run(() => LoopAsync(_cts.Token));
@@ -103,6 +115,14 @@ public sealed partial class AutonomousPlayerEngine
 
         while (!ct.IsCancellationRequested)
         {
+            // Terminal duruma geçildiyse (tur-tekrar tükendi / kritik hata → Idle/Stopped) döngüden temiz çık.
+            // Bir iç-çağrı (ör. TownTourFailedAsync) SetState(Idle) yaparsa LoopAsync'i buradan sonlandırır.
+            if (_fsm is AutoPlayerState.Idle or AutoPlayerState.Stopped)
+            {
+                _cts = null;
+                return;
+            }
+
             // Farm dışarıdan durduysa (F12 kill-switch) otonom modu sonlandır.
             // Town/merchant/portal durumlarında farm kasıtlı durdurulur — sadece Farming'de kontrol et.
             if (_fsm == AutoPlayerState.Farming && !_farm.IsRunning)
@@ -199,6 +219,7 @@ public sealed partial class AutonomousPlayerEngine
     {
         if (!IsRunning) return;
         if (_farm.IsRunning) _farm.Stop();
+        _townTourAttempt = 0;
         SetState(AutoPlayerState.GoingToTown, "Town yolculuğu başlatıldı");
     }
 

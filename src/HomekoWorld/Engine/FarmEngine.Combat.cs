@@ -118,8 +118,10 @@ public sealed partial class FarmEngine
         // hemen "öldü" DEME — "siyah boş bar" hâlâ varsa mob ÇOK DÜŞÜK HP'de = CANLI (düşük-HP sahte-ölümü önlenir).
         // Gerçek ölümde KO hedef-penceresi ANINDA kaybolur → ne kırmızı ne siyah-bar kalır = ölü. Normal+duyuru geçerli.
         const double EmptyBarMinDarkFrac = 0.45; // kırmızı yokken koyu-oran ≥ bu → "boş/düşük-HP bar yapısı VAR" (canlı)
-        const int    RedGoneGraceMs      = 3000; // anti-freeze tavanı: kırmızı bu kadar dönmeyip yalnız koyu sürerse →
-                                                 // gerçek düşük-HP mob bu sürede ölürdü → koyu-arka-plan say, bitir
+        // Anti-freeze tavanı: kırmızı bu kadar dönmeyip yalnız koyu sürerse → gerçek düşük-HP mob bu sürede ölürdü
+        // → koyu-arka-plan say, bitir. Ayardan (FarmSettings.HpEmptyBarGraceMs, varsayılan 600); eski hardcoded
+        // 3000ms koyu sahnelerde her kill'de ~3sn "taranıyor" gecikmesi üretiyordu. Min 150ms tabanına kıstırılır.
+        int          RedGoneGraceMs      = Math.Max(150, s.HpEmptyBarGraceMs);
         long firstHpMissMs = -1;     // "bar TAMAMEN yok" ilk anı (-1 = bar var)
         long lastRedSeenMs = -1;     // kırmızının en son görüldüğü an (-1 = hiç görülmedi)
         long lastHpCheck   = -1000;  // HSV/HP ekran yakalamasını ≤~33ms'de bire sınırla (GDI yükü)

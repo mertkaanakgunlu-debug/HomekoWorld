@@ -180,6 +180,9 @@ public partial class App : Application
         // Faz 36 — MerchantTrader (NPC etkileşimi ve satış)
         services.AddSingleton<Services.Autonomous.MerchantTrader>();
 
+        // Faz 41 — TownObjectDetector (NPC + portal görsel YOLO tespiti; mob modelinden ayrı)
+        services.AddSingleton<Services.Autonomous.TownObjectDetector>();
+
         // Faz 31 — Otonom Oyuncu orkestratörü (FarmEngine üstünde FSM; WorldNavigator bağımlı)
         services.AddSingleton<AutonomousPlayerEngine>();
 

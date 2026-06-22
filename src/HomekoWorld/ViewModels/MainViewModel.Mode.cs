@@ -13,7 +13,19 @@ namespace HomekoWorld.ViewModels;
 /// </summary>
 public partial class MainViewModel
 {
-    [ObservableProperty] private OperationMode _selectedMode = OperationMode.Kombo;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ActiveModeLabel))]
+    [NotifyPropertyChangedFor(nameof(FarmStartLabel))]
+    private OperationMode _selectedMode = OperationMode.Kombo;
+
+    /// <summary>HUD'da gösterilen aktif mod adı (sabit "Oto Farm" yerine). SelectedMode'a bağlı.</summary>
+    public string ActiveModeLabel => SelectedMode switch
+    {
+        OperationMode.OtoFarm => "Oto Farm",
+        OperationMode.Otonom  => "Otonom",
+        OperationMode.YariOto => "Yarı-Oto",
+        _                     => "Kombo",
+    };
 
     /// <summary>CurrentPage (sidebar seçimi) → çalıştırılacak mod.</summary>
     private static OperationMode PageToMode(string? page) => page switch

@@ -876,6 +876,59 @@
           </Border>
         </Expander>
 
+        <!-- ── NPC + Portal görsel tespiti (Faz 41) ─────────────── -->
+        <Expander Header="🎯 NPC + Portal Tespiti (Faz 41)" Foreground="{StaticResource TextMuted}"
+                  FontSize="11" Margin="0,8,0,0">
+          <Border Padding="10,8" Margin="0,6,0,0" CornerRadius="5"
+                  Background="{StaticResource BgPanel2}"
+                  BorderBrush="{StaticResource Border1}" BorderThickness="1">
+            <StackPanel>
+              <TextBlock TextWrapping="Wrap" FontSize="9" Foreground="{StaticResource TextDim}" Margin="0,0,0,8"
+                         Text="Mob YOLO'sundan AYRI, 2 sınıflı (npc, portal) küçük model. Navigasyon merchant/portal'a varınca ekranı tarayıp kutu-MERKEZİNE tıklar — kör tık yerine. Kamera açısı NPC/portal'ı merkezden kaydırsa bile ıskalamaz; menü açılışı + portal ışınlanması doğrulanır, olmazsa town turu tekrar denenir. Model YOKSA eski kör-tık fallback'i çalışır. Eğitim: tools/yolo_trainer (sınıf 0=npc, 1=portal)."/>
+
+              <TextBlock Text="MODEL (.onnx — 2 sınıf: npc, portal)" FontSize="9" FontWeight="SemiBold"
+                         Foreground="{StaticResource TextMuted}" Margin="0,0,0,4"/>
+              <TextBox Style="{StaticResource InputMono}" FontSize="10" Margin="0,0,0,4"
+                       Text="{Binding NpcPortalModelPath, UpdateSourceTrigger=PropertyChanged}"/>
+              <Grid Margin="0,0,0,4">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="Auto"/><ColumnDefinition Width="6"/>
+                  <ColumnDefinition Width="Auto"/><ColumnDefinition Width="8"/>
+                  <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <Button Grid.Column="0" Command="{Binding BrowseNpcPortalModelCommand}" Style="{StaticResource BtnMuted}"
+                        Padding="7,3" FontSize="10">📂 Seç</Button>
+                <Button Grid.Column="2" Command="{Binding AutoDiscoverNpcPortalModelCommand}" Style="{StaticResource BtnMuted}"
+                        Padding="7,3" FontSize="10">🔍 Otomatik Bul</Button>
+                <StackPanel Grid.Column="4">
+                  <TextBlock Text="Güven eşiği (0-1)" FontSize="9" Foreground="{StaticResource TextDim}" Margin="0,0,0,2"/>
+                  <TextBox Style="{StaticResource InputMono}" FontSize="10"
+                           Text="{Binding NpcPortalConfThreshold, UpdateSourceTrigger=PropertyChanged}"/>
+                </StackPanel>
+              </Grid>
+              <TextBlock Text="{Binding NpcPortalStatus}" FontSize="10" Foreground="{StaticResource Gold}"
+                         Margin="0,0,0,8" TextWrapping="Wrap"/>
+
+              <!-- Canlı tespit testi (otonom modu başlatmadan) -->
+              <Grid Margin="0,2,0,0">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="Auto"/><ColumnDefinition Width="6"/>
+                  <ColumnDefinition Width="Auto"/><ColumnDefinition Width="8"/>
+                  <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <Button Grid.Column="0" Command="{Binding TestNpcPortalDetectCommand}" Style="{StaticResource BtnMuted}"
+                        Padding="7,3" FontSize="10"
+                        ToolTip="Oyunda canlı NPC + portal tespiti — bulunan kutu/güven skorunu raporlar (modele güvenmeden önce)">🎯 Tespit Test</Button>
+                <Button Grid.Column="2" Command="{Binding StopNpcPortalTestCommand}" Style="{StaticResource BtnMuted}"
+                        Padding="7,3" FontSize="10">⏹ Dur</Button>
+                <TextBlock Grid.Column="4" Text="{Binding NpcPortalTestStatus}" FontSize="10"
+                           FontFamily="{StaticResource FontMono}" Foreground="{StaticResource TextMuted}"
+                           VerticalAlignment="Center" TextWrapping="Wrap"/>
+              </Grid>
+            </StackPanel>
+          </Border>
+        </Expander>
+
         <!-- ── Dayanıklılık + Genel (Faz 37) ───────────────────── -->
         <Expander Header="⚙ Dayanıklılık + Genel (Faz 37)" Foreground="{StaticResource TextMuted}"
                   FontSize="11" Margin="0,8,0,0">

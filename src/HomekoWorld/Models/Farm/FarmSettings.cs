@@ -85,6 +85,14 @@ public class FarmSettings
     /// </summary>
     public int    HpDeathConfirmMs         { get; set; } = 60;
     /// <summary>
+    /// "Boş/siyah bar" anti-freeze tavanı (ms, varsayılan 600). Kırmızı kaybolup yerinde koyu-oluk
+    /// kaldığında mob "çok düşük HP, hâlâ canlı" sayılır; ama kırmızı bu kadar süredir HİÇ dönmediyse
+    /// bu bir HP barı değil, ölüm-sonrası koyu ARKA PLAN'dır → "öldü" denir. Eski hardcoded 3000ms,
+    /// koyu sahnelerde her kill'de ~3 sn "taranıyor" gecikmesi üretiyordu. Düşük (400-600) = hızlı geçiş;
+    /// gerçek düşük-HP mob kombo sürerken bu süreden önce ölür. Min 150ms tabanına kıstırılır.
+    /// </summary>
+    public int    HpEmptyBarGraceMs        { get; set; } = 600;
+    /// <summary>
     /// YOLO tespit thread'i için minimum kare aralığı (ms) = FPS sınırı. Faz 26: DXGI yakalama
     /// ~1-2ms olduğundan eski GDI-dönemi cap'i (40ms ≈ 25 FPS) gevşetildi → 12ms ≈ 80 FPS (agresif:
     /// kutu güncelleme + takip ~3× akıcı). Pratikte loop GPU inference süresiyle sınırlanır.
