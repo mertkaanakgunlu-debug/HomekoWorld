@@ -58,7 +58,10 @@ public sealed partial class FarmEngine
             // Tam tur tamamlandı — uzun bekleme + sıfırla
             _scanAttempts = 0;
             StatusChanged?.Invoke(this, "Scan tamamlandı — bekleniyor…");
-            await Task.Delay(s.ScanIdleMs * 3, ct);
+            // BLOKLAMAYAN bekleme: 6s tek Task.Delay yerine küçük adımlarla uyu; spawn olan CANLI aday
+            // belirir belirmez hemen çık → ScanningTick ~30ms'de angaje olur. (Eski tek Task.Delay, mob bu
+            // beklemenin ortasında doğunca ort. ~3s "spawn'ı geç yakalıyor" gecikmesi üretiyordu.)
+            await InterruptibleIdleWaitAsync(s.ScanIdleMs * 3, s, ct);
             return;
         }
 
@@ -70,7 +73,9 @@ public sealed partial class FarmEngine
 
         _scanAttempts++;
         // ScanWaitMsBetween: 180° flip sonrası kamera oturması + mob'un görünmesi için bekleme.
-        await Task.Delay(s.ScanWaitMsBetween, ct);
+        // Kısa taban (kamera oturması) + BLOKLAMAYAN kalan: yeni görünen mob varsa tam süreyi beklemeden çık.
+        await Task.Delay(Math.Min(200, s.ScanWaitMsBetween), ct);
+        await InterruptibleIdleWaitAsync(Math.Max(0, s.ScanWaitMsBetween - 200), s, ct);
         // #6: idle sayacını SIFIRLA → bir sonraki dönüş ancak YENİ bir tam ScanIdleMs boşluk sonrası olur.
         // Böylece arka-arkaya iki hızlı 180° biter; tespit, yeni görünen mob'u kilitlemeye zaman bulur
         // (candidates>0 olunca ScanningTickAsync hemen angajmana geçer).
@@ -78,6 +83,42 @@ public sealed partial class FarmEngine
     }
 
     // ── Yardımcı ──────────────────────────────────────────────────────────────
+
+    /// <summary>Verilen süreyi BLOKLAMADAN bekler: küçük adımlarla uyur, her adımda seçilebilir (canlı, blacklist
+    /// dışı, seçili tür) aday belirirse hemen döner. Scan/bekleme sırasında spawn olan mob'a ~120ms'de tepki
+    /// verilir (uzun tek Task.Delay yerine); aday görününce ScanningTick bir sonraki tick'te angaje olur.</summary>
+    private async Task InterruptibleIdleWaitAsync(int totalMs, FarmSettings s, CancellationToken ct)
+    {
+        const int stepMs = 120;
+        int waited = 0;
+        while (waited < totalMs && !ct.IsCancellationRequested)
+        {
+            if (HasSelectableCandidate(s)) return;   // spawn yakalandı → beklemeyi kes
+            int nap = Math.Min(stepMs, totalMs - waited);
+            if (nap <= 0) break;
+            await Task.Delay(nap, ct);
+            waited += nap;
+        }
+    }
+
+    /// <summary>Şu an EN TAZE tespitte seçilebilir (canlı, süresi geçmemiş blacklist dışı, seçili tür) bir aday
+    /// var mı? Bekleme/scan'i erken kesmek için — spawn'a hızlı tepki. ScanningTickAsync'in aday filtresini yansıtır.</summary>
+    private bool HasSelectableCandidate(FarmSettings s)
+    {
+        var snap = _latestDetections;
+        if (snap is null) return false;
+        var selectedIds = _mobLibrary.GetSelectedIds(s.SelectedMobNames);
+        long now = NowMs();
+        foreach (var d in snap.Dets)
+        {
+            if (d.Dead) continue;
+            if (selectedIds.Count > 0 && !selectedIds.Contains(d.ClassId)) continue;
+            if (NearAnyActive(d.Center, _guardianBlacklist, GuardianBlacklistRadiusPx, now)) continue;
+            if (NearAnyActive(d.Center, _deadBlacklist,     DeadBlacklistRadiusPx,     now)) continue;
+            return true;
+        }
+        return false;
+    }
 
     private async Task TapKeyAsync(string key, int ms, CancellationToken ct)
     {

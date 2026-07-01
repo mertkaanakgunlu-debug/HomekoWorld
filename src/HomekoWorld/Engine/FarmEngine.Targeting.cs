@@ -31,6 +31,22 @@ public sealed partial class FarmEngine
             !NearAny(d.Center, _guardianBlacklist, GuardianBlacklistRadiusPx) &&
             !NearAny(d.Center, _deadBlacklist,     DeadBlacklistRadiusPx)).ToList();
 
+        // ── Teşhis (throttle ~1s): adaylar NEDEN elendi? ölü-track / spatial-bl / guardian ayrımı ──
+        // B-belirtisi imzası: aday>0 ama canlı=0 iken spatial-bl>0 (90px konum) veya ölü-track>0 (miras) →
+        // canlı mob konumla/mirasla eleniyor. A-belirtisi imzası: canlı>0 ama seçilen ceset (tracker log'uyla oku).
+        if (candidates.Count > 0 && now - _lastScanDiagMs >= 1000)
+        {
+            _lastScanDiagMs = now;
+            int deadTrackN = candidates.Count(d => d.Dead);
+            int guardianN  = candidates.Count(d => !d.Dead &&
+                                NearAny(d.Center, _guardianBlacklist, GuardianBlacklistRadiusPx));
+            int spatialN   = candidates.Count(d => !d.Dead &&
+                                !NearAny(d.Center, _guardianBlacklist, GuardianBlacklistRadiusPx) &&
+                                NearAny(d.Center, _deadBlacklist, DeadBlacklistRadiusPx));
+            Program.Log($"[Farm] tarama teshis: aday={candidates.Count} olu-track={deadTrackN} " +
+                        $"spatial-bl={spatialN} guardian={guardianN} canli={filteredCandidates.Count}");
+        }
+
         // Görünürde CANLI (blacklist dışı) hedef YOK — ya hiç aday yok ya da hepsi ceset/koruma.
         // F4: her iki durum da idle saatini büyütür → ScanIdleMs sonra kamera-scan, yoksa roam tetiklenir.
         // (Eskiden candidates>0 ama hepsi blacklist iken _idleWatch resetlenip bot boş dönüyordu = stall.)

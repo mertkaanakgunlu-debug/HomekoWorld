@@ -51,6 +51,10 @@ public sealed class MobTracker
     /// yine "ölü" tutar (tekrar tıklama bitsin). Çok büyük tutma: yakın respawn'ı yanlışlıkla elemesin.</summary>
     public int   DeadInheritRadiusPx { get; set; } = 110;
 
+    /// <summary>İsteğe bağlı teşhis günlüğü (null = kapalı). FarmEngine bunu Program.Log'a bağlar; YALNIZ seyrek
+    /// olaylar yazılır (miras-DEAD tetiklendi; ölü iz DeadLingerMs dolup ceset görünürken düşürüldü) → spam yok.</summary>
+    public Action<string>? Log { get; set; }
+
     private const float VelEma = 0.5f;
 
     /// <summary>Verilen ize "ölü" damgası vurur (combat thread'inden kill onayında).</summary>
@@ -131,6 +135,7 @@ public sealed class MobTracker
                     // Ölü-miras: düşme/pose değişimi IoU'yu koparınca ceset YENİ iz alır → yakın bir
                     // SON-ÖLDÜRÜLEN (aynı tür) izin "ölü" damgasını devral ki bir daha tıklanmasın.
                     bool inheritDead = false; long inheritAt = 0;
+                    int  inheritFrom = -1; float inheritD2 = 0f;   // teşhis: hangi ölü izden, ne kadar uzaktan
                     float ncx = d.BBox.X + d.BBox.Width / 2f, ncy = d.BBox.Y + d.BBox.Height / 2f;
                     float r2  = (float)DeadInheritRadiusPx * DeadInheritRadiusPx;
                     for (int j = 0; j < _tracks.Count; j++)
@@ -139,7 +144,8 @@ public sealed class MobTracker
                         if (!dt.Dead || dt.ClassId != d.ClassId) continue;
                         float dcx = dt.Box.X + dt.Box.Width / 2f, dcy = dt.Box.Y + dt.Box.Height / 2f;
                         float ddx = ncx - dcx, ddy = ncy - dcy;
-                        if (ddx * ddx + ddy * ddy <= r2) { inheritDead = true; inheritAt = dt.DeadAtMs; break; }
+                        float dd2 = ddx * ddx + ddy * ddy;
+                        if (dd2 <= r2) { inheritDead = true; inheritAt = dt.DeadAtMs; inheritFrom = dt.Id; inheritD2 = dd2; break; }
                     }
                     tr = new Track
                     {
@@ -148,6 +154,11 @@ public sealed class MobTracker
                         Dead = inheritDead, DeadAtMs = inheritAt, LastSeenMs = nowMs,
                     };
                     _tracks.Add(tr);
+                    // Teşhis (seyrek): cesedin DeadInheritRadiusPx'i içinde doğan kutu "ölü" devraldı. Ceset düşüşünde
+                    // NORMALdir; ama devralan kutu aslında CANLI mob ise bu tam B-belirtisidir (canlıya tıklanmaz).
+                    if (inheritDead)
+                        Log?.Invoke($"[Track] miras-DEAD: yeni#{tr.Id} <- olu#{inheritFrom} d={(int)MathF.Sqrt(inheritD2)}px " +
+                                    $"cls={d.ClassId} (yaricap={DeadInheritRadiusPx}px — CANLI mob ise B-belirtisi)");
                 }
                 outArr[i] = d with { TrackId = tr.Id, Dead = tr.Dead };
             }
@@ -156,7 +167,15 @@ public sealed class MobTracker
             for (int k = _tracks.Count - 1; k >= 0; k--)
             {
                 var t = _tracks[k];
-                if (t.Dead && nowMs - t.DeadAtMs > DeadLingerMs) { _tracks.RemoveAt(k); continue; }
+                if (t.Dead && nowMs - t.DeadAtMs > DeadLingerMs)
+                {
+                    // Teşhis (seyrek): ölü iz TTL doldu. Bu karede EŞLEŞTİYSE ceset HÂLÂ görünür demektir →
+                    // düşer düşmez taze iz alıp yeniden aday olur = A-belirtisi (ceset ömrü > DeadLingerMs).
+                    if (k < trackMatched.Length && trackMatched[k])
+                        Log?.Invoke($"[Track] olu#{t.Id} DeadLinger {DeadLingerMs}ms doldu → DUSURULDU ama ceset " +
+                                    $"HALA gorunur → tekrar aday olacak (A-belirtisi: ceset omru > TTL)");
+                    _tracks.RemoveAt(k); continue;
+                }
                 if (k < trackMatched.Length && !trackMatched[k])
                 {
                     t.Missed++;

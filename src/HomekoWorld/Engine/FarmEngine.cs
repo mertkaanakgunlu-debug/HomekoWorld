@@ -38,6 +38,7 @@ public sealed partial class FarmEngine
     private int        _cameraRotateDir = 1; // +1 = D, -1 = A; her başarısız targeting'de değişir
     private readonly System.Diagnostics.Stopwatch _idleWatch = new();
     private int        _scanAttempts; // kamera tarama adım sayacı
+    private long       _lastScanDiagMs; // tarama teşhis log'u throttle damgası (ceset-eleme ayrımı)
 
     // Koruma mobu kara listesi: (merkez koordinatı, süre sonu ms)
     private readonly List<(PointF pos, long expireAt)> _guardianBlacklist = new();
@@ -112,6 +113,19 @@ public sealed partial class FarmEngine
     {
         for (int i = 0; i < list.Count; i++)
         {
+            float dx = p.X - list[i].pos.X, dy = p.Y - list[i].pos.Y;
+            if (dx * dx + dy * dy <= radius * radius) return true;
+        }
+        return false;
+    }
+
+    // NearAny + süresi DOLMAMIŞ (expireAt >= now) girdi şartı. Bekleme/scan sırasında ScanningTick henüz
+    // listeyi temizlememişken bayat bir blacklist girdisi canlı adayı gizlemesin (mutasyon yerine zaman kontrolü).
+    private static bool NearAnyActive(PointF p, List<(PointF pos, long expireAt)> list, int radius, long now)
+    {
+        for (int i = 0; i < list.Count; i++)
+        {
+            if (list[i].expireAt < now) continue;
             float dx = p.X - list[i].pos.X, dy = p.Y - list[i].pos.Y;
             if (dx * dx + dy * dy <= radius * radius) return true;
         }
@@ -205,6 +219,7 @@ public sealed partial class FarmEngine
         _tracker.Reset();
         _tracker.IouThreshold = _appState.Farm.TrackIouThreshold;
         _tracker.MaxAgeFrames = _appState.Farm.TrackMaxAgeFrames;
+        _tracker.Log          = Program.Log;   // teşhis: seyrek tracker olayları (miras-DEAD / ölü-iz TTL düşüşü)
 
         // Faz B: replay recorder (yalnız açıksa) — DetectionLoop başlamadan ÖNCE kurulmalı.
         _replay = null;
