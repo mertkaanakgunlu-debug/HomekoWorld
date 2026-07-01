@@ -90,7 +90,9 @@ public sealed partial class AutonomousPlayerEngine
         var cts = _cts;
         _cts = null;
         cts?.Cancel();
-        cts?.Dispose();
+        // NOT: cts.Dispose() BİLİNÇLİ çağrılmıyor — Cancel'dan hemen sonra dispose, çalışan LoopAsync/nav'ın hâlâ
+        // kullandığı token'da ObjectDisposedException → generic catch → sahte failure + geçici Recovering yaratıyordu
+        // (FarmEngine bu yarıştan cancel→join→dispose ile kaçınır). CTS ucuz nesne; GC toplar, sızıntı önemsiz.
         // Otonom mod farm'ı yönetiyor → kapanınca farm'ı da durdur.
         try { if (_farm.IsRunning) _farm.Stop(); } catch { /* yoksay */ }
         SetState(AutoPlayerState.Idle, "Otonom mod durduruldu");
@@ -147,6 +149,7 @@ public sealed partial class AutonomousPlayerEngine
                 _lastFailedState = _fsm;
                 int maxFail = _state.Autonomous.MaxConsecutiveFailures;
                 Log($"Hata ({_consecutiveFailures}/{maxFail}) [{_fsm}]: {ex.Message}", "event");
+                Program.Log($"[Auto] HATA [{_fsm}] tam-iz: {ex}");   // diske tam stack (yalnız ex.Message değil)
 
                 if (_consecutiveFailures >= maxFail)
                 {
@@ -233,7 +236,12 @@ public sealed partial class AutonomousPlayerEngine
         Log(status, "event");
     }
 
-    private void Log(string text, string kind) =>
+    private void Log(string text, string kind)
+    {
         ActivityLogged?.Invoke(this, new ActivityEntry(
             DateTime.Now.ToString("HH:mm:ss"), text, kind));
+        // Otonom olaylar in-memory (200-cap, restart'ta uçar) → gözetimsiz çok-saatlik testte çökme/takılma
+        // sonrası kök-neden analizi için diske de yaz (FarmEngine'in [Farm] log'larıyla aynı dosya).
+        Program.Log($"[Auto/{kind}] {text}");
+    }
 }

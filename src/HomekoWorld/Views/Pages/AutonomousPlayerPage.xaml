@@ -101,6 +101,30 @@
           </StackPanel>
         </Button>
 
+        <!-- ── Ön-Uçuş Hazırlık: tüm zorunlu/önerilen kalibrasyon ve modeller ✓/✗ ──────────
+             ZORUNLU eksikse Başlat engellenir (kenarlık kırmızı); yeşil = otonom başlatılabilir.
+             Kullanıcı bir kalemi kalibre edince panel canlı güncellenir. -->
+        <Border Margin="0,10,0,0" Padding="10,8" CornerRadius="4"
+                Background="{StaticResource BgPanel2}" BorderThickness="1">
+          <Border.Style>
+            <Style TargetType="Border">
+              <Setter Property="BorderBrush" Value="{StaticResource Green}"/>
+              <Style.Triggers>
+                <DataTrigger Binding="{Binding AutonomousReady}" Value="False">
+                  <Setter Property="BorderBrush" Value="{StaticResource Red}"/>
+                </DataTrigger>
+              </Style.Triggers>
+            </Style>
+          </Border.Style>
+          <StackPanel>
+            <TextBlock Text="🚦 Ön-Uçuş Hazırlık" FontSize="11" FontWeight="SemiBold"
+                       Foreground="{StaticResource TextSoft}" Margin="0,0,0,4"/>
+            <TextBlock Text="{Binding AutonomousReadiness}" FontSize="11" LineHeight="16"
+                       FontFamily="{StaticResource FontMono}" Foreground="{StaticResource TextMuted}"
+                       TextWrapping="Wrap"/>
+          </StackPanel>
+        </Border>
+
         <!-- Durum + FSM state -->
         <Grid Margin="0,10,0,0">
           <Grid.ColumnDefinitions>
@@ -158,13 +182,13 @@
                        FontFamily="{StaticResource FontMono}" Foreground="{StaticResource Gold}"
                        TextTrimming="CharacterEllipsis"/>
           </Border>
-          <!-- Kalibrasyon özeti -->
+          <!-- Ön-uçuş hazırlık (tek-satır özet; ayrıntı aşağıdaki panelde) -->
           <Border Grid.Column="2" Padding="8,5" CornerRadius="4"
                   Background="{StaticResource BgPanel2}"
                   BorderBrush="{StaticResource Border1}" BorderThickness="1">
-            <TextBlock Text="{Binding CalibrationSummary}" FontSize="9"
+            <TextBlock Text="{Binding AutonomousReadinessHeader}" FontSize="10"
                        FontFamily="{StaticResource FontMono}" Foreground="{StaticResource TextMuted}"
-                       TextWrapping="Wrap"/>
+                       TextTrimming="CharacterEllipsis"/>
           </Border>
         </Grid>
 

@@ -7,6 +7,8 @@ backup/
 src/**/bin/
 src/**/obj/
 src/**/%TEMP%/
+*_wpftmp.csproj
+.vs/
 .publish/
 publish-single/
 
@@ -18,12 +20,14 @@ android/**/local.properties
 
 # Diğer Geçici/Gereksiz Dosyalar
 .claude/
+_audit_findings.txt
 
 src/**/publish/
 *.exe
 Build/
 Build-Cuda/
 Build-DirectML/
+Build*/
 Output/
 redist/
 models/

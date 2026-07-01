@@ -34,6 +34,7 @@ public sealed class DxgiScreenSource : IScreenSource
     private readonly int _capX, _capY, _w, _h;
     private readonly bool _useRoi;
     private bool _needReinit;
+    private int  _reinitFails;   // ardışık AcquireNextFrame başarısızlığı (device-removed/TDR); tavanda GDI'ye düş
 
     public string BackendName => _useRoi ? "DXGI-ROI" : "DXGI";
     public int CaptureX    => _capX;
@@ -151,7 +152,22 @@ public sealed class DxgiScreenSource : IScreenSource
             _needReinit = true;                   // mod değişimi/UAC → bir sonraki çağrıda yeniden kur
             return _buffer;
         }
-        r.CheckError();
+        if (r.Failure)
+        {
+            // DEVICE_REMOVED/RESET (TDR, sürücü güncellemesi) veya beklenmeyen sonuç. Eskiden CheckError burada
+            // KOŞULSUZ fırlatıp DXGI'yi KALICI GDI'ye (~15-30ms vs ~1-2ms) düşürüyordu — geçici bir TDR sonrası bile
+            // oturum boyunca yavaş yakalama. Artık sınırlı reinit dene; üst üste başarısızsa fırlat → FarmEngine
+            // GDI'ye düşer (mevcut güvenli son çare). Cihaz gerçekten gittiyse Reinit→DuplicateOutput zaten fırlatır.
+            if (++_reinitFails > 3)
+            {
+                Program.Log($"[DXGI] {_reinitFails} ardışık başarısız kare (0x{r.Code:X8}) — GDI'ye düşülüyor");
+                r.CheckError();                   // throw → FarmEngine GDI fallback
+            }
+            Program.Log($"[DXGI] AcquireNextFrame 0x{r.Code:X8} — reinit deneniyor ({_reinitFails}/3, TDR/device-removed?)");
+            _needReinit = true;
+            return _buffer;
+        }
+        _reinitFails = 0;                         // başarılı kare → sayaç sıfırla
 
         if (desktop is null) { SafeReleaseFrame(); return _buffer; }
 

@@ -26,9 +26,11 @@ public static class DelayCalculator
 
         double d = baseDelayMs;
 
-        // FPS scale first: higher FPS → shorter delays (fewer ms per frame)
+        // FPS scale first: higher FPS → shorter delays (fewer ms per frame).
+        // Oran [0.5, 3.0] aralığına kıstırılır: bozuk/uç telemetri (ör. CurrentFps saçma büyük) gecikmeyi ~0'a
+        // indirip yetenek paketini ping-altı hıza düşürüp sunucuya reddettirmesin (research doc §2.1). Ping yine eklenir.
         if (s.AdaptFpsEnabled && s.CalibrationFps > 0 && s.CurrentFps > 0)
-            d = d * s.CalibrationFps / s.CurrentFps;
+            d *= Math.Clamp(s.CalibrationFps / s.CurrentFps, 0.5, 3.0);
 
         // Ping offset: ensures the gap between consecutive keystrokes exceeds ping
         if (s.AdaptPingEnabled && s.CurrentPingMs >= 0)
@@ -74,7 +76,7 @@ public static class DelayCalculator
 
         if (s.AdaptFpsEnabled && s.CalibrationFps > 0 && s.CurrentFps > 0)
         {
-            var ratio = s.CalibrationFps / s.CurrentFps;
+            var ratio = Math.Clamp(s.CalibrationFps / s.CurrentFps, 0.5, 3.0);
             d *= ratio;
             parts.Add($"×{ratio:F2} FPS");
         }

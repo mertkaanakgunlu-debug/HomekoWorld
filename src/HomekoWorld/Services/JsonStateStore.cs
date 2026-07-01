@@ -30,7 +30,36 @@ public sealed class JsonStateStore
 
         try
         {
-            var json  = File.ReadAllText(_path);
+            return LoadAndMigrate(File.ReadAllText(_path));
+        }
+        catch (Exception ex)
+        {
+            // Bozuk/yarım state.json: sessizce default'a düşüp tüm kalibrasyonu kaybetmek yerine
+            // önce .bak yedeğinden kurtar; o da olmazsa bozuğu arşivle + görünür log bırak.
+            Program.Log($"[State] ⚠ state.json okunamadı/bozuk ({ex.Message}) — yedek/default deneniyor");
+            var bak = _path + ".bak";
+            if (File.Exists(bak))
+            {
+                try
+                {
+                    var recovered = LoadAndMigrate(File.ReadAllText(bak));
+                    Program.Log("[State] ✓ state.json.bak yedeğinden kurtarıldı");
+                    return recovered;
+                }
+                catch { /* yedek de bozuk → aşağı düş */ }
+            }
+            try { File.Move(_path, _path + $".corrupt-{DateTime.Now:yyyyMMdd-HHmmss}.json"); }
+            catch { /* arşivleme best-effort */ }
+            Program.Log("[State] ⚠ Kurtarılamadı — varsayılan kalibrasyona düşüldü (bozuk dosya arşivlendi)");
+            return DefaultData.BuildInitialState();
+        }
+    }
+
+    /// <summary>Ham JSON'u deserialize eder + tüm sürüm/alan migration'larını uygular. Hata fırlatabilir;
+    /// çağıran <see cref="Load"/> yedek (.bak) / kurtarma ile ele alır.</summary>
+    private AppState LoadAndMigrate(string json)
+    {
+        {
             var state = JsonSerializer.Deserialize<AppState>(json, _opts)
                         ?? DefaultData.BuildInitialState();
 
@@ -172,10 +201,6 @@ public sealed class JsonStateStore
 
             return state;
         }
-        catch
-        {
-            return DefaultData.BuildInitialState();
-        }
     }
 
     public void Save(AppState state)
@@ -183,7 +208,19 @@ public sealed class JsonStateStore
         try
         {
             var json = JsonSerializer.Serialize(state, _opts);
-            File.WriteAllText(_path, json);
+            // Atomik yazım: önce .tmp'ye yaz → mevcut dosyayı .bak'a yedekle → yerine koy. Yarım yazımda
+            // (güç/disk/AV) state.json hiç bozulmaz (kesinti yalnız .tmp'yi etkiler); Load() .bak'tan kurtarır.
+            var tmp = _path + ".tmp";
+            File.WriteAllText(tmp, json);
+            if (File.Exists(_path))
+            {
+                try { File.Copy(_path, _path + ".bak", overwrite: true); } catch { /* yedek best-effort */ }
+                File.Replace(tmp, _path, null);
+            }
+            else
+            {
+                File.Move(tmp, _path);
+            }
         }
         catch { /* non-critical */ }
     }

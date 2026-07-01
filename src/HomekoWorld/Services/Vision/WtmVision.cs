@@ -135,8 +135,18 @@ public static class WtmVision
     private static bool BarPresent(int red, int dark, int total, int redThreshold, WtmSettings s)
     {
         float darkFrac = total > 0 ? (float)dark / total : 0f;
-        float fillFrac = total > 0 ? (float)(red + dark) / total : 0f; // teşhis/geçmiş uyumluluğu için tutulur
-        bool  alive    = red >= redThreshold;                          // SAF KIRMIZI
+        float fillFrac = total > 0 ? (float)(red + dark) / total : 0f;
+        // SAF-KIRMIZI TABANI (red≥thr) + DOLU-ORANI (fill≥HpBarFillMinFrac), AND ile → İKİ farklı arka-plan
+        // sahte-pozitifini birlikte eler:
+        //   (a) KIRMIZI arka plan (kırmızı obje/doku ROI'de): red YÜKSEK ama bar ROI'yi doldurmadığından fill
+        //       DÜŞÜK (canlı log: red=2078, dolu=%29) → fill-guard eler.
+        //   (b) KOYU arka plan (mağara/çalı): red~0 → saf-kırmızı taban eler.
+        // Gerçek HP barı HER HP'de ROI'yi kırmızı+koyu-oluk ile ~%74+ doldurur (düşük-HP dahil: log red=2722
+        // dolu=%74) → ikisini de geçer. NOT: eski "red≥thr VEYA fill≥0.6" (OR) koyu-çalıyı (fill dark'tan yüksek)
+        // sahte-canlı yapıp geri alınmıştı; AND o regresyonu önler (koyu-çalıda red<thr → elenir).
+        // KÖK NEDEN (2026-07-01): saf-kırmızı TEK BAŞINA, ROI'deki kırmızı arka planı "canlı" sanıp hem sahte-hedef
+        // hem yanlış duyuru-offset'i (RedAtAreas offset-0'ı tetikleyip guardian ismini yanlış yerde aratma) üretiyordu.
+        bool  alive    = red >= redThreshold && fillFrac >= s.HpBarFillMinFrac;
         LastBarScan = (red, dark, total, darkFrac, fillFrac, alive);
         return alive;
     }
@@ -205,19 +215,32 @@ public static class WtmVision
     // thread'inin yakaladığı kareyi kullanır → "GDI yükü" kalkar. Kare DetectionLoop thread'inde,
     // yakalamadan hemen sonra (snapshot yayınlanmadan) taranır → kare thread'ler arası paylaşılmaz (race yok).
     public static bool IsTargetAliveByHsvFromFrame(Bitmap frame, WtmSettings s)
+        => IsTargetAliveByHsvFromFrame(frame, s, out _);
+
+    /// <summary>Yukarıdakiyle aynı; ek olarak bu ÇAĞRIYLA eşleşen <see cref="LastBarOffsetY"/> değerini
+    /// <paramref name="offsetY"/>'ye kopyalar (aynı thread, aynı satırlar — araya başka thread giremez).
+    /// Üretici (DetectionLoop) bunu DetectionSnapshot/PipeItem'a taşıyarak guardian kontrolünün, kendi
+    /// taramasından SAATLER/tick'ler sonra racy global static'i okumak yerine, TAM BU taramanın offset'ini
+    /// kullanmasını sağlar (bkz FarmEngine.Targeting.IsTargetAliveNow).</summary>
+    public static bool IsTargetAliveByHsvFromFrame(Bitmap frame, WtmSettings s, out int offsetY)
     {
         if (s.IsHpBarRoiCalibrated)
         {
             var r = ResolutionMapper.Map(s.HpBarRoiX, s.HpBarRoiY, s.HpBarRoiW, s.HpBarRoiH);
-            return RedAtAreasFromFrame(frame, r.X, r.Y, r.Width, r.Height, s.HpHsvMinPx, s);
+            bool alive = RedAtAreasFromFrame(frame, r.X, r.Y, r.Width, r.Height, s.HpHsvMinPx, s);
+            offsetY = LastBarOffsetY;
+            return alive;
         }
         if (s.IsTargetHpColorCalibrated)
         {
             var r = ResolutionMapper.Map(
                 Math.Max(0, s.HpColorScanX - s.HpColorScanHalfW), s.HpColorScanY,
                 s.HpColorScanHalfW * 2, 1);
-            return RedAtAreasFromFrame(frame, r.X, r.Y, r.Width, r.Height, Math.Min(s.HpHsvMinPx, 4), s);
+            bool alive = RedAtAreasFromFrame(frame, r.X, r.Y, r.Width, r.Height, Math.Min(s.HpHsvMinPx, 4), s);
+            offsetY = LastBarOffsetY;
+            return alive;
         }
+        offsetY = 0;
         return false;
     }
 
@@ -389,7 +412,15 @@ public static class WtmVision
     /// </summary>
     public enum NameplateClass { Unknown, Normal, Guardian }
 
-    public static NameplateClass ReadNameplateClass(WtmSettings s)
+    public static NameplateClass ReadNameplateClass(WtmSettings s) => ReadNameplateClass(s, LastBarOffsetY);
+
+    /// <summary>Yukarıdakiyle aynı; isim bandını <paramref name="barOffsetY"/>'de arar (global
+    /// <see cref="LastBarOffsetY"/> yerine ÇAĞIRANIN sağladığı, kendi HP-bar taramasıyla EŞLEŞEN offset).
+    /// KÖK NEDEN (2026-07-01): global static, sürekli çalışan DetectionLoop thread'i tarafından yazılıyor;
+    /// no-arg overload'ı DXGI-cache yolundan (IsTargetAliveNow) çağırınca "canlı" onayının kullandığı taramadan
+    /// FARKLI (daha yeni/daha eski) bir tick'in offset'ini okuyabiliyordu — duyuru açılır/kapanır anında isim
+    /// YANLIŞ konumda aranıp koruma mobu "normal" sanılıyordu (atlanmıyor, vuruluyordu).</summary>
+    public static NameplateClass ReadNameplateClass(WtmSettings s, int barOffsetY)
     {
         // Tarama dikdörtgenini seç (master px): önce çizilen bant, yoksa ofset fallback.
         int rx, ry, rw, rh;
@@ -415,9 +446,9 @@ public static class WtmVision
         // KÖK NEDEN (2026-06-22): isim, HP barıyla AYNI miktar kayar. Eskiden NameBand VE NameBand+Δy ikisi de
         // sınıflandırılıp OR'lanıyordu → duyuru KAPALIYKEN +Δy bandı tam KIRMIZI HP barına denk gelip ("kırmızı
         // isim=guardian") HER mobu koruma sanıyor, engage HİÇ olmuyordu. DÜZELTME: ismi, barın GERÇEKTE bulunduğu
-        // offset'te (LastBarOffsetY: 0=duyuru yok, +Δy=duyuru var) TEK konumda sınıflandır → HP barıyla çakışma biter,
+        // offset'te (barOffsetY: 0=duyuru yok, +Δy=duyuru var) TEK konumda sınıflandır → HP barıyla çakışma biter,
         // guardian hem duyuru açık hem kapalıyken doğru çalışır.
-        return ClassifyNameRect(r.X, r.Y + LastBarOffsetY, r.Width, r.Height, s);
+        return ClassifyNameRect(r.X, r.Y + barOffsetY, r.Width, r.Height, s);
     }
 
     /// <summary>Verilen ekran dikdörtgenini yakalar ve HSV ile nameplate sınıfı döndürür.</summary>

@@ -105,12 +105,13 @@ public sealed partial class FarmEngine
 
                     // P3: ROI aktifken frame HP bar koordinatlarıyla uyumsuz → null bırak, combat fallback kullanır.
                     bool? targetAliveHsv = null;
+                    int   barOffsetY = 0;
                     var wtm = _appState.Wtm;
                     if (roiX == 0 && roiY == 0 && wtm.HpBarMode == HpBarDetectionMode.Hsv && wtm.IsHpBarLocated)
-                        targetAliveHsv = WtmVision.IsTargetAliveByHsvFromFrame(frame, wtm);
+                        targetAliveHsv = WtmVision.IsTargetAliveByHsvFromFrame(frame, wtm, out barOffsetY);
 
                     _latestDetections = new DetectionSnapshot(
-                        frameId, dets, snapW, snapH, capStart, NowMs(), targetAliveHsv);
+                        frameId, dets, snapW, snapH, capStart, NowMs(), targetAliveHsv, barOffsetY);
 
                     PublishOverlay(dets, s, snapW, snapH);
 
@@ -261,9 +262,10 @@ public sealed partial class FarmEngine
 
                     // P3: ROI aktifken frame koordinatları uyumsuz → null bırak.
                     bool? targetAliveHsv = null;
+                    int   barOffsetY = 0;
                     var wtm = _appState.Wtm;
                     if (roiX == 0 && roiY == 0 && wtm.HpBarMode == HpBarDetectionMode.Hsv && wtm.IsHpBarLocated)
-                        targetAliveHsv = WtmVision.IsTargetAliveByHsvFromFrame(frame, wtm);
+                        targetAliveHsv = WtmVision.IsTargetAliveByHsvFromFrame(frame, wtm, out barOffsetY);
 
                     // Replay (throttle): capture buffer tüketiciye geçemez → ÜRETİCİ klonlar, tüketici dets ile yazar.
                     Bitmap? replayClone = null;
@@ -276,7 +278,7 @@ public sealed partial class FarmEngine
 
                     var item = new PipeItem(slot, frameId, capStart, padX, padY, scale,
                         frame.Width, frame.Height, targetAliveHsv, capEnd - capStart, prepMs, replayClone,
-                        roiX, roiY, fullW, fullH);
+                        roiX, roiY, fullW, fullH, barOffsetY);
 
                     // latest-wins mailbox: eski pending'i DÜŞÜR (slot'unu iade, klonu dispose) → tüketici hep en taze.
                     lock (_pipeLock)
@@ -359,7 +361,7 @@ public sealed partial class FarmEngine
                     int snapH = item.FullH > 0 ? item.FullH : item.H;
 
                     _latestDetections = new DetectionSnapshot(
-                        item.FrameId, dets, snapW, snapH, item.CapturedAtMs, NowMs(), item.TargetAliveHsv);
+                        item.FrameId, dets, snapW, snapH, item.CapturedAtMs, NowMs(), item.TargetAliveHsv, item.BarOffsetY);
                     PublishOverlay(dets, _appState.Farm, snapW, snapH);
 
                     if (item.ReplayClone is { } clone)

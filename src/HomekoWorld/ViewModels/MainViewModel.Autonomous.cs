@@ -53,12 +53,18 @@ public partial class MainViewModel
             Application.Current.Dispatcher.BeginInvoke(() => AutonomousStatus = msg);
 
         _autonomousEngine.ActivityLogged += (_, e) =>
+        {
+            // Oyun-üstü LogHud yalnız FarmActivityLog'a bağlı → otonom olayları da aynı birleşik akışa besle
+            // (EnqueueActivity thread-safe kuyruk; DispatcherTimer toplu uygular). Böylece fullscreen oyunda
+            // FSM/nav/town/merchant ilerlemesi görünür (yoksa yalnız uygulama-içi otonom sayfasında kalır).
+            EnqueueActivity(e.Text, e.Kind);
             Application.Current.Dispatcher.BeginInvoke(() =>
             {
                 AutonomousActivityLog.Add(e);
                 while (AutonomousActivityLog.Count > AutonomousLogCap)
                     AutonomousActivityLog.RemoveAt(0);
             });
+        };
 
         // Faz 32: glyph'leri ayarlardan yükle + koordinat durumlarını tazele
         _coordReader.Recognizer.LoadFromSettings(_state.Autonomous);
@@ -133,7 +139,7 @@ public partial class MainViewModel
             Application.Current.Dispatcher.BeginInvoke(() =>
             {
                 RefreshAutonomousTelemetry();
-                RefreshCalibrationSummary();   // kalibrasyon özeti state değişince tazele
+                RefreshAutonomousReadiness();   // ön-uçuş hazırlık state değişince tazele
             });
 
         // Faz 38: 5 sn'de bir telemetri tazele (süre + istatistik canlı gösterimi)
@@ -144,7 +150,7 @@ public partial class MainViewModel
         telTimer.Tick += (_, _) => { if (_autonomousEngine.IsRunning) RefreshAutonomousTelemetry(); };
         telTimer.Start();
 
-        RefreshCalibrationSummary();
+        RefreshAutonomousReadiness();
         RefreshAutonomousTelemetry();
     }
 
@@ -160,10 +166,15 @@ public partial class MainViewModel
 
     private void StartAutonomous()
     {
-        if (_farmEngine.Inferrer is null)
+        // Ön-uçuş kontrolü: ZORUNLU kalibrasyonlar eksikse başlatma. Eskiden yalnız mob modeli
+        // kontrol ediliyordu → koord-okuyucu/waypoint/envanter/Town-TP eksikse otonom başlayıp her
+        // aşamada SESSİZCE başarısız oluyordu (örn. envanter ROI yoksa hiç town'a gitmez = sonsuz farm).
+        // Şimdi tüm zorunlu zincir RefreshAutonomousReadiness'te ✓/✗ değerlendirilir; eksikse net uyarı.
+        RefreshAutonomousReadiness();
+        if (!AutonomousReady)
         {
-            AutonomousStatus = "⚠ Model yüklü değil — Oto-Farm sekmesinden .onnx seçin";
-            return;
+            AutonomousStatus = AutonomousReadinessHeader;   // "⛔ N zorunlu eksik: ..."
+            return;                                          // başlatma (Active = AutonomousRunning → false kalır)
         }
         AutonomousActivityLog.Clear();
         // HUD oturum sayacı + kill/saat otonomda da ilersin (FarmEngine singleton → FarmKills paylaşılıyor).
@@ -243,6 +254,7 @@ public partial class MainViewModel
             var missing = string.Join(",", Enumerable.Range(0, 10).Where(d => !mask[d]));
             CoordGlyphStatus = $"Rakamlar: {n}/10 (eksik: {missing})  {comma}";
         }
+        RefreshAutonomousReadiness();   // ön-uçuş paneli canlı tazelensin (kullanıcı kalibre edince)
     }
 
     [RelayCommand]
@@ -619,6 +631,7 @@ public partial class MainViewModel
         NavMerchantWaypoint = (a.MerchantX == 0 && a.MerchantY == 0) ? "ayarlanmadı" : $"({a.MerchantX}, {a.MerchantY})";
         NavPortalWaypoint   = (a.PortalX   == 0 && a.PortalY   == 0) ? "ayarlanmadı" : $"({a.PortalX}, {a.PortalY})";
         NavFarmSpotWaypoint = (a.FarmSpotX == 0 && a.FarmSpotY == 0) ? "ayarlanmadı" : $"({a.FarmSpotX}, {a.FarmSpotY})";
+        RefreshAutonomousReadiness();
     }
 
     [RelayCommand]
@@ -810,6 +823,7 @@ public partial class MainViewModel
         InventoryGridStatus = a.IsInventoryGridCalibrated
             ? $"Izgara: ✓ {a.InventoryGridW}×{a.InventoryGridH}px  ({a.InventoryCols} sütun × {a.InventoryRows} satır = {a.InventoryCols * a.InventoryRows} yuva)"
             : "Izgara: kalibre edilmedi";
+        RefreshAutonomousReadiness();
     }
 
     [RelayCommand]
@@ -952,6 +966,7 @@ public partial class MainViewModel
             ? $"✓ ({a.SellConfirmButtonX}, {a.SellConfirmButtonY})"
             : "kalibre edilmedi (opsiyonel)";
         SellIconStatus        = _iconMatcher.IsReady ? $"✓ {_iconMatcher.Count} örnek öğretildi" : "öğretilmedi";
+        RefreshAutonomousReadiness();
     }
 
     // Tek-tık buton konumu kalibrasyonu (master uzayda saklanır).
@@ -1142,7 +1157,7 @@ public partial class MainViewModel
     public ObservableCollection<RepairSlotCell> RepairSlotCells { get; } = new();
 
     partial void OnRepairEnabledChanged(bool v)
-    { _state.Autonomous.RepairEnabled = v; _store.Save(_state); }
+    { _state.Autonomous.RepairEnabled = v; _store.Save(_state); RefreshAutonomousReadiness(); }
     partial void OnRepairDialogDelayMsChanged(string v)
     { if (int.TryParse(v, out int n) && n >= 0) { _state.Autonomous.RepairDialogDelayMs = n; _store.Save(_state); } }
     partial void OnRepairItemDelayMsChanged(string v)
@@ -1155,6 +1170,7 @@ public partial class MainViewModel
         RepairEquipGridStatus = a.IsRepairEquipGridCalibrated ? $"✓ {a.RepairEquipGridW}×{a.RepairEquipGridH}px (3×5)" : "kalibre edilmedi";
         int n = a.RepairSlots?.Length ?? 0;
         RepairSlotsStatus = n > 0 ? $"✓ {n} slot seçili (sırayla onarılır)" : "slot seçilmedi";
+        RefreshAutonomousReadiness();
     }
 
     /// <summary>Hücrelerin seçili/sıra durumunu ayarlardaki RepairSlots dizisinden tazeler.</summary>
@@ -1351,6 +1367,7 @@ public partial class MainViewModel
         PortalMenuSlotStatus = a.IsPortalMenuSlotCalibrated
             ? $"✓ ({a.PortalMenuSlotX}, {a.PortalMenuSlotY})"
             : "kalibre edilmedi";
+        RefreshAutonomousReadiness();
     }
 
     [RelayCommand]
@@ -1423,6 +1440,7 @@ public partial class MainViewModel
     private void RefreshNpcPortalStatus()
     {
         var a = _state.Autonomous;
+        RefreshAutonomousReadiness();   // hem "model yok" hem "yüklü" yolunu kapsasın (erken return öncesi)
         if (!a.IsNpcPortalModelSet)
         { NpcPortalStatus = "Model seçilmedi (görsel tespit kapalı — eski kör-tık fallback)"; return; }
         NpcPortalStatus = _townDetector.IsReady
@@ -1497,8 +1515,9 @@ public partial class MainViewModel
         {
             await Task.Delay(500, ct);   // oyun öne gelsin
             // Infer (GPU) UI thread'ini tıkamasın diye arka planda çalıştır.
-            NpcPortalTestStatus = await Task.Run(
-                () => _townDetector.TestDetectAsync(_state.Autonomous.TownDetectTimeoutMs, ct), ct);
+            // Görsel test: npc+portal tespit kutularını çizili bir PNG olarak Masaüstü'ne kaydeder + özet döndürür
+            // (model tuning fazında kutu konumunu gözle doğrulamak için; ham X,Y metni yetersizdi).
+            NpcPortalTestStatus = await Task.Run(() => _townDetector.TestDetectVisual(ct), ct);
         }
         catch (OperationCanceledException) { NpcPortalTestStatus = "İptal edildi"; }
         catch (Exception ex) { NpcPortalTestStatus = $"Hata: {ex.Message}"; }
@@ -1517,8 +1536,15 @@ public partial class MainViewModel
 
     [ObservableProperty] private string _autonomousHotKey          = "F10";
     [ObservableProperty] private string _maxConsecutiveFailures    = "3";
-    [ObservableProperty] private string _calibrationSummary        = "";
     [ObservableProperty] private string _autonomousTelemetrySummary = "";
+
+    // ── Ön-uçuş hazırlık raporu (Faz 41+) ──────────────────────────────────────
+    /// <summary>Tüm kalibrasyon/model bağımlılıklarının ✓/✗ çok-satır dökümü (Otonom sayfası paneli).</summary>
+    [ObservableProperty] private string _autonomousReadiness       = "";
+    /// <summary>Tek-satır özet ("✅ Otonom hazır" / "⛔ N zorunlu eksik: ..."); kompakt kutu + başlatma uyarısı.</summary>
+    [ObservableProperty] private string _autonomousReadinessHeader = "";
+    /// <summary>Tüm ZORUNLU kalibrasyonlar tamam mı — StartAutonomous bunu gate olarak kullanır; panel rengini sürer.</summary>
+    [ObservableProperty] private bool   _autonomousReady;
 
     partial void OnAutonomousHotKeyChanged(string v)
     {
@@ -1532,27 +1558,94 @@ public partial class MainViewModel
         { _state.Autonomous.MaxConsecutiveFailures = n; _store.Save(_state); }
     }
 
-    private void RefreshCalibrationSummary()
+    /// <summary>
+    /// Otonom ön-uçuş hazırlık raporu — tüm kalibrasyon/model bağımlılıklarını ✓/✗ değerlendirir.
+    /// 9-aşamalı pipeline (Farm→Envanter→Town→Merchant→Sat→Tamir→Portal→Farm) her aşamanın AYRI
+    /// bağımlılığı var; biri eksikse otonom o aşamada sessizce takılır/atlar. Bu rapor + StartAutonomous
+    /// gate'i o sessiz başarısızlığı görünür kılar.
+    ///   • ZORUNLU (hard-block): bunlarsız döngü uçtan uca dönemez → eksikse başlatma engellenir.
+    ///   • SATIŞ & TESPİT (önerilir): eksikse otonom yine başlar ama NPC/portal doğrulanamayınca town
+    ///     turu güvenle yinelenir/durur (kör ilerleme yok) — yalnızca tam satış için gerekli.
+    ///   • TAMİR: yalnız RepairEnabled iken alt-kalemleri kontrol edilir.
+    /// </summary>
+    private void RefreshAutonomousReadiness()
     {
-        var a = _state.Autonomous;
+        var a    = _state.Autonomous;
         var mask = _coordReader.Recognizer.TaughtMask();
 
-        var lines = new System.Text.StringBuilder();
-        // Okuyucunun GERÇEK durumu (birleşik ROI'yi de sayar; combo modda virgülü de kontrol eder).
-        // Eskiden yalnız iki-ayrı-ROI bayrağına bakıp birleşik modu yanlışlıkla "eksik" gösteriyordu.
-        lines.AppendLine(_coordReader.IsReady
-            ? "✅ Koordinat okuyucu"
-            : $"❌ Koordinat okuyucu (ROI:{a.IsCoordReady} Glyph:{mask.Count(b => b)}/10)");
-        lines.AppendLine(a.IsInventoryGridCalibrated ? "✅ Envanter ızgara" : "❌ Envanter ızgara kalibre edilmedi");
-        bool merchantSet = a.MerchantX != 0 || a.MerchantY != 0;
-        bool portalSet   = a.PortalX   != 0 || a.PortalY   != 0;
-        bool farmSet     = a.FarmSpotX != 0 || a.FarmSpotY != 0;
-        lines.AppendLine(merchantSet ? "✅ Merchant waypoint" : "❌ Merchant waypoint ayarlanmadı");
-        lines.AppendLine(portalSet   ? "✅ Portal waypoint"   : "❌ Portal waypoint ayarlanmadı");
-        lines.AppendLine(farmSet     ? "✅ Farm waypoint"     : "❌ Farm waypoint ayarlanmadı");
-        lines.Append    (a.IsFullyConfigured ? "✅ Tam hazır" : "⚠ Kalibrasyon eksik");
+        // ── ZORUNLU (başlatma gate'i) ──
+        bool mobModel   = _farmEngine.Inferrer is not null;
+        bool coord      = _coordReader.IsReady;            // ROI (birleşik VEYA ayrı) + 10/10 glyph (+combo'da virgül)
+        bool inv        = _inventoryReader.IsReady;
+        bool merchantWp = a.MerchantX != 0 || a.MerchantY != 0;
+        bool portalWp   = a.PortalX   != 0 || a.PortalY   != 0;
+        bool farmWp     = a.FarmSpotX != 0 || a.FarmSpotY != 0;
+        bool townTpBtn  = a.IsTownTpButtonCalibrated;
+        bool townTpKey  = !string.IsNullOrWhiteSpace(a.TownTpKey);
+        bool townTp     = townTpBtn || townTpKey;          // buton tercih, tuş fallback (bu oyunda TP sabit UI butonu)
 
-        CalibrationSummary = lines.ToString().TrimEnd();
+        var missing = new List<string>();
+        if (!mobModel)   missing.Add("Mob modeli");
+        if (!coord)      missing.Add("Koordinat okuyucu");
+        if (!inv)        missing.Add("Envanter ızgara");
+        if (!merchantWp) missing.Add("Merchant wp");
+        if (!portalWp)   missing.Add("Portal wp");
+        if (!farmWp)     missing.Add("Farm wp");
+        if (!townTp)     missing.Add("Town TP");
+        AutonomousReady = missing.Count == 0;
+
+        // ── SATIŞ & TESPİT (önerilir) ──
+        bool npcModel = _townDetector.IsReady;
+        var sellMissing = new List<string>();
+        if (!a.IsTradeDialogCalibrated)     sellMissing.Add("Trade diyalog");
+        if (!a.IsSellTabCalibrated)         sellMissing.Add("Sell sekme");
+        if (!a.IsSellModeConfirmCalibrated) sellMissing.Add("Mod-onay");
+        if (!a.IsMerchantInvGridCalibrated) sellMissing.Add("Merchant envanter");
+        if (!_iconMatcher.IsReady)          sellMissing.Add("Satış ikonu");
+        if (!a.IsSellButtonCalibrated)      sellMissing.Add("Sell butonu");
+        int  sellTotal = 6, sellDone = sellTotal - sellMissing.Count;
+        bool portalSlot = a.IsPortalMenuSlotCalibrated;
+
+        static string Y(bool ok) => ok ? "✅" : "❌";
+        static string W(bool ok) => ok ? "✅" : "⚠";   // önerilen kalemler: eksikse engel değil, uyarı
+
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine("ZORUNLU (başlatmak için):");
+        sb.AppendLine($" {Y(mobModel)} Mob modeli (YOLO)");
+        sb.AppendLine($" {Y(coord)} Koordinat okuyucu" + (coord ? "" : $"  (ROI:{(a.IsCoordReady ? "✓" : "✗")} glyph:{mask.Count(b => b)}/10)"));
+        sb.AppendLine($" {Y(inv)} Envanter ızgara");
+        sb.AppendLine($" {Y(merchantWp)} Merchant waypoint");
+        sb.AppendLine($" {Y(portalWp)} Portal waypoint");
+        sb.AppendLine($" {Y(farmWp)} Farm waypoint");
+        sb.AppendLine($" {Y(townTp)} Town TP {(townTpBtn ? "(buton)" : townTpKey ? $"(tuş {a.TownTpKey})" : "")}");
+        sb.AppendLine();
+        sb.AppendLine("SATIŞ & TESPİT (önerilir — eksikse town turu güvenle yinelenir):");
+        sb.AppendLine($" {W(npcModel)} NPC/Portal modeli" + (npcModel ? "" : " (yoksa kör-tık ıskalayabilir)"));
+        sb.AppendLine($" {W(sellMissing.Count == 0)} Satış akışı: {sellDone}/{sellTotal}" + (sellMissing.Count > 0 ? $"  (eksik: {string.Join(", ", sellMissing)})" : ""));
+        sb.AppendLine($" {W(portalSlot)} Portal menü slotu" + (portalSlot ? "" : " (yoksa Enter fallback)"));
+
+        if (a.RepairEnabled)
+        {
+            bool rDlg  = a.IsRepairDialogCalibrated;
+            bool rGrid = a.IsRepairEquipGridCalibrated;
+            bool rSlot = (a.RepairSlots?.Length ?? 0) > 0;
+            var rMiss = new List<string>();
+            if (!rDlg)  rMiss.Add("diyalog");
+            if (!rGrid) rMiss.Add("ekipman ızgara");
+            if (!rSlot) rMiss.Add("slot");
+            sb.AppendLine($" {W(rMiss.Count == 0)} Tamir AÇIK: " + (rMiss.Count == 0 ? "hazır" : $"eksik: {string.Join(", ", rMiss)}"));
+        }
+        else
+        {
+            sb.AppendLine(" — Tamir kapalı (RepairEnabled=false)");
+        }
+
+        AutonomousReadiness = sb.ToString().TrimEnd();
+        AutonomousReadinessHeader = AutonomousReady
+            ? (npcModel && sellMissing.Count == 0
+                ? "✅ Otonom hazır"
+                : "✅ Zorunlu tamam — satış/tespit eksikleri var (aşağıya bak)")
+            : $"⛔ {missing.Count} zorunlu eksik: {string.Join(", ", missing)}";
     }
 
     private void RefreshAutonomousTelemetry()

@@ -149,6 +149,10 @@ public sealed class ComboEngine
     internal (List<(string line, int ms)> timeline, List<int> stepStartMs) BuildTimelineForTest(
         Combo combo, AdaptiveSettings? adapt = null) => BuildTimeline(combo, adapt);
 
+    // KO ~60-125Hz tick örnekler; çok kısa bir tuş-basımı (down+up aynı frame'e düşerse) oyun tarafından
+    // hiç basılmamış sayılır ("2 tuş düşmesi"). Bu yüzden her tuş-hold'a ≥2 frame'lik bir taban uygulanır.
+    private const int MinHoldMs = 35;
+
     // Converts combo steps to a flat list of (KEYDOWN/KEYUP line, absoluteMs) events.
     // Returns the event list and a parallel list of step-start times for progress events.
     private (List<(string line, int ms)> timeline, List<int> stepStartMs) BuildTimeline(
@@ -170,6 +174,10 @@ public sealed class ComboEngine
             // Effective delay after optional ping/FPS adaptation
             int effectiveDelay = DelayCalculator.Compute(step.DelayMs, step.IsAdaptive, adapt);
 
+            // Tuş-hold tabanı: patolojik küçük HoldMs'i ≥2 KO frame'ine yükselt (down+up frame-çakışması = tuş yutulması).
+            // Varsayılan HoldMs=50 zaten taban üstü → mevcut combo timeline'ları değişmez.
+            int holdMs = Math.Max(MinHoldMs, step.HoldMs);
+
             switch (step.Kind)
             {
                 case StepKind.Skill:
@@ -190,23 +198,23 @@ public sealed class ComboEngine
                     if (barIdx != activeBar)
                     {
                         var fKey = $"F{barIdx + 1}";
-                        timeline.Add((HidBridgeProtocol.BatchKeyDown(fKey, cursor),      cursor));
-                        timeline.Add((HidBridgeProtocol.BatchKeyUp(fKey,   cursor + 20), cursor + 20));
-                        cursor   += 40; // 20ms hold + 20ms settle
+                        timeline.Add((HidBridgeProtocol.BatchKeyDown(fKey, cursor),             cursor));
+                        timeline.Add((HidBridgeProtocol.BatchKeyUp(fKey,   cursor + MinHoldMs), cursor + MinHoldMs));
+                        cursor   += MinHoldMs + 20; // hold (taban) + 20ms settle
                         activeBar = barIdx;
                     }
-                    timeline.Add((HidBridgeProtocol.BatchKeyDown(slotKey, cursor),               cursor));
-                    timeline.Add((HidBridgeProtocol.BatchKeyUp(slotKey,   cursor + step.HoldMs), cursor + step.HoldMs));
-                    cursor += step.HoldMs + effectiveDelay;
+                    timeline.Add((HidBridgeProtocol.BatchKeyDown(slotKey, cursor),          cursor));
+                    timeline.Add((HidBridgeProtocol.BatchKeyUp(slotKey,   cursor + holdMs), cursor + holdMs));
+                    cursor += holdMs + effectiveDelay;
                     break;
 
                 default:
                     var key = step.Kind == StepKind.Cancel
                         ? (step.Key.Length > 0 ? step.Key : "W")
                         : step.Key;
-                    timeline.Add((HidBridgeProtocol.BatchKeyDown(key, cursor),               cursor));
-                    timeline.Add((HidBridgeProtocol.BatchKeyUp(key,   cursor + step.HoldMs), cursor + step.HoldMs));
-                    cursor += step.HoldMs + effectiveDelay;
+                    timeline.Add((HidBridgeProtocol.BatchKeyDown(key, cursor),          cursor));
+                    timeline.Add((HidBridgeProtocol.BatchKeyUp(key,   cursor + holdMs), cursor + holdMs));
+                    cursor += holdMs + effectiveDelay;
                     break;
             }
         }

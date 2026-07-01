@@ -14,6 +14,7 @@ public sealed class AutoPotService
     private readonly IKeyDeviceTransport _transport;
     private readonly AppState            _state;
 
+    private readonly object _lock = new();   // Start/Stop atomik (UI thread vs F12 hook thread)
     private CancellationTokenSource? _cts;
     private DateTime _lastHpTap = DateTime.MinValue;
     private DateTime _lastMpTap = DateTime.MinValue;
@@ -26,15 +27,25 @@ public sealed class AutoPotService
 
     public void Start()
     {
-        if (_cts is not null) return;
-        _cts = new CancellationTokenSource();
-        Task.Run(() => LoopAsync(_cts.Token));
+        // F12 hook thread'i (StopActiveEngineImmediate) ile UI thread'i (SyncAutoPotService) eşzamanlı Start/Stop
+        // çağırabildiğinden check-then-act'i kilit altına al → çift döngü / kayıp-Stop yarışı kapanır (master-gate).
+        lock (_lock)
+        {
+            if (_cts is not null) return;
+            var cts = new CancellationTokenSource();
+            _cts = cts;
+            Task.Run(() => LoopAsync(cts.Token));   // yerel token: _cts null'lansa bile döngü doğru token'ı kullanır
+        }
     }
 
     public void Stop()
     {
-        _cts?.Cancel();
-        _cts = null;
+        lock (_lock)
+        {
+            _cts?.Cancel();
+            _cts?.Dispose();
+            _cts = null;
+        }
     }
 
     private async Task LoopAsync(CancellationToken ct)

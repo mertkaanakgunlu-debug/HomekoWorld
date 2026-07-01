@@ -1,3 +1,5 @@
+using System.Drawing;
+using System.Drawing.Imaging;
 using HomekoWorld.Models;
 using HomekoWorld.Models.Farm;
 using HomekoWorld.Services.Capture;
@@ -90,6 +92,58 @@ public sealed class TownObjectDetector
         string p = portal is null ? "Portal: ✗ bulunamadı"
                                   : $"Portal: ✓ %{(int)(portal.Confidence * 100)} @ {(int)portal.Center.X},{(int)portal.Center.Y}";
         return $"{n}   |   {p}";
+    }
+
+    /// <summary>Test (görsel): tek kare yakalar, npc+portal kutularını + güven skorunu çizip Masaüstü'ne PNG
+    /// kaydeder. Model-tuning fazında "kutu doğru NPC üzerinde mi, kaymış mı" sorusunu yanıtlar (ham X,Y metni yetmiyor).
+    /// Model yoksa ham kareyi kaydeder → "model yok mu / ROI mı / gerçekten yok mu" ayrımı görünür olur.</summary>
+    public string TestDetectVisual(CancellationToken ct)
+    {
+        var inf = EnsureLoaded();
+        ct.ThrowIfCancellationRequested();
+        using var frame = ScreenCapture.CaptureScreen();
+
+        var dets = new List<Detection>();
+        if (inf is not null)
+        {
+            try { foreach (var d in inf.Infer(frame)) dets.Add(d); }
+            catch (Exception ex) { Status($"Infer hatası: {ex.Message}"); }
+        }
+
+        using (var g = Graphics.FromImage(frame))
+        {
+            foreach (var d in dets)
+            {
+                bool isNpc = string.Equals(d.ClassName, NpcClass, StringComparison.OrdinalIgnoreCase);
+                var  color = isNpc ? Color.Lime : Color.Cyan;
+                using var pen  = new Pen(color, 3f);
+                using var font = new Font("Consolas", 16f, FontStyle.Bold);
+                using var bgBr = new SolidBrush(Color.FromArgb(190, 0, 0, 0));
+                using var fgBr = new SolidBrush(color);
+                g.DrawRectangle(pen, d.BBox.X, d.BBox.Y, d.BBox.Width, d.BBox.Height);
+                string label = $"{d.ClassName} %{(int)(d.Confidence * 100)}";
+                var sz = g.MeasureString(label, font);
+                float ly = Math.Max(0, d.BBox.Y - sz.Height);
+                g.FillRectangle(bgBr, d.BBox.X, ly, sz.Width, sz.Height);
+                g.DrawString(label, font, fgBr, d.BBox.X, ly);
+            }
+        }
+
+        string path = System.IO.Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.Desktop),
+            $"npc_portal_test_{DateTime.Now:yyyyMMdd-HHmmss}.png");
+        try { frame.Save(path, ImageFormat.Png); }
+        catch (Exception ex) { return $"⚠ PNG kaydedilemedi: {ex.Message}"; }
+
+        string Best(string cls)
+        {
+            var b = dets.Where(d => string.Equals(d.ClassName, cls, StringComparison.OrdinalIgnoreCase))
+                        .OrderByDescending(d => d.Confidence).FirstOrDefault();
+            return b is null ? $"{cls}:✗"
+                             : $"{cls}:✓%{(int)(b.Confidence * 100)}@{(int)b.Center.X},{(int)b.Center.Y}";
+        }
+        string head = inf is null ? $"⚠ Model yok ({_loadError}) — ham kare" : $"{Best(NpcClass)}  {Best(PortalClass)}";
+        return $"{head}  |  PNG: {System.IO.Path.GetFileName(path)}";
     }
 
     /// <summary>Model yüklü mü; yol değiştiyse yeniden yükler. Hata/eksik → null + <see cref="LoadError"/> set.

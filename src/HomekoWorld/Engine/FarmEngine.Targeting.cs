@@ -169,8 +169,9 @@ public sealed partial class FarmEngine
                 await _router.ClickAsync(MouseButton.Left, ct);
                 await Task.Delay(s.ClickPostDelayMs, ct);
 
-                if (hpBarCalibrated && await PollHpBarAsync(ct))
-                    return await CheckGuardianAndReturnAsync(liveTarget, ct);
+                var hpPoll = hpBarCalibrated ? await PollHpBarAsync(ct) : (alive: false, barOffsetY: 0);
+                if (hpPoll.alive)
+                    return await CheckGuardianAndReturnAsync(liveTarget, hpPoll.barOffsetY, ct);
 
                 // HP bar yok — karakter hareket ettiyse auto-walk'ı iptal et
                 byte[] postCrop = SampleCharRegionDirect();
@@ -242,8 +243,9 @@ public sealed partial class FarmEngine
             await _router.ClickAsync(MouseButton.Left, ct);
             await Task.Delay(200, ct);
 
-            if (hpBarCalibrated && await PollHpBarAsync(ct))
-                return await CheckGuardianAndReturnAsync(target, ct);
+            var hpPoll = hpBarCalibrated ? await PollHpBarAsync(ct) : (alive: false, barOffsetY: 0);
+            if (hpPoll.alive)
+                return await CheckGuardianAndReturnAsync(target, hpPoll.barOffsetY, ct);
 
             if (!hpBarCalibrated)
                 return true;
@@ -273,12 +275,18 @@ public sealed partial class FarmEngine
     /// Koruma mobu ise W tap ile hedefi bırak, kara listeye ekle, false döner.
     /// Aksi hâlde true döner.
     /// </summary>
-    private async Task<bool> CheckGuardianAndReturnAsync(Detection target, CancellationToken ct)
+    /// <param name="barOffsetY">PollHpBarAsync'in "canlı" onayıyla AYNI taramadan gelen nameplate offset'i
+    /// (bkz IsTargetAliveNow) — global WtmVision.LastBarOffsetY yerine bunu kullanmak duyuru geçişlerinde
+    /// isim/bar konumu uyuşmazlığını (yanlış "normal" sanıp koruma mobuna vurma) önler.</param>
+    private async Task<bool> CheckGuardianAndReturnAsync(Detection target, int barOffsetY, CancellationToken ct)
     {
         if (_appState.Wtm.GuardianDetectionEnabled &&
             (_appState.Wtm.IsNameBandCalibrated || _appState.Wtm.IsTargetHpColorCalibrated))
         {
-            var nameClass = WtmVision.ReadNameplateClass(_appState.Wtm);
+            var nameClass = WtmVision.ReadNameplateClass(_appState.Wtm, barOffsetY);
+            // Tanılama: HER kontrolde logla (yalnız Guardian'da değil) — "normal sanılıp vuruldu" senaryosunda
+            // da iz kalsın (duyuru açık/kapalı + kullanılan offset görünür olsun, sonraki tune için).
+            Program.Log($"[Farm] Guardian kontrol: offset={barOffsetY} sonuç={nameClass}");
             if (nameClass == WtmVision.NameplateClass.Guardian)
             {
                 StatusChanged?.Invoke(this, "Koruma mobu tespit edildi — atlanıyor");
@@ -301,22 +309,38 @@ public sealed partial class FarmEngine
     //     taze seçimi ~200ms kaçırabilir (engage'de sorun değil, hedef sabit kalır).
     // KÖK NEDEN (2026-06-20 v2): önceki sürüm "DXGI taze ama FALSE" iken erken dönüp GDI'yi DENEMİYORDU →
     // çalışan GDI yolu kapanıp gecikmeli DXGI'ye kilitlendi → engage HİÇ tetiklenmedi. Artık GDI önce, DXGI yedek.
-    private async Task<bool> PollHpBarAsync(CancellationToken ct)
+    /// <summary>Döner: (canlı mı, nameplate offset'i — barOffsetY, guardian kontrolüne AYNI taramadan taşınır).</summary>
+    private async Task<(bool alive, int barOffsetY)> PollHpBarAsync(CancellationToken ct)
     {
         for (int i = 0; i < 16; i++) // ~16×30ms = ~480ms: GDI siyah dönerse DXGI'nin yetişmesine yeterli pencere
         {
-            if (IsTargetAliveNow()) return true;
+            if (IsTargetAliveNow(out int offsetY)) return (true, offsetY);
             await Task.Delay(30, ct);
         }
-        return false;
+        return (false, 0);
     }
 
-    /// <summary>Hedef seçili/canlı mı — GDI canlı (gecikmesiz) VEYA DXGI snapshot (güvenilir/gecikmeli); biri yeterli.</summary>
-    private bool IsTargetAliveNow()
+    /// <summary>Hedef seçili/canlı mı — GDI canlı (gecikmesiz) VEYA DXGI snapshot (güvenilir/gecikmeli); biri yeterli.
+    /// barOffsetY: BU kararla eşleşen nameplate offset'i. KÖK NEDEN (2026-07-01): DXGI dalı eskiden
+    /// WtmVision.LastBarOffsetY'yi (sürekli çalışan DetectionLoop'un yazdığı racy global) okurdu — guardian
+    /// kontrolü bu "canlı" onayından ms'ler SONRA çalıştığından, o ara global BAŞKA bir tick'in (farklı duyuru
+    /// durumunun) offset'ini yazmış olabilirdi. Artık DXGI dalı, TargetAliveHsv ile AYNI taramadan gelen
+    /// snap.BarOffsetY'yi kullanır — atomik eşleşme, duyuru açılır/kapanır anında da doğru.</summary>
+    private bool IsTargetAliveNow(out int barOffsetY)
     {
-        if (WtmVision.IsTargetAliveSmoothed(_appState.Wtm)) return true;               // GDI: gecikmesiz
+        if (WtmVision.IsTargetAliveSmoothed(_appState.Wtm))                            // GDI: gecikmesiz, senkron taze
+        {
+            barOffsetY = WtmVision.LastBarOffsetY;
+            return true;
+        }
         var snap = _latestDetections;                                                  // DXGI: GDI siyah dönerse
-        return snap?.TargetAliveHsv is bool av && av && NowMs() - snap.PublishedAtMs < 300;
+        if (snap?.TargetAliveHsv is bool av && av && NowMs() - snap.PublishedAtMs < 300)
+        {
+            barOffsetY = snap.BarOffsetY;
+            return true;
+        }
+        barOffsetY = 0;
+        return false;
     }
 
     /// <summary>

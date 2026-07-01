@@ -10,7 +10,9 @@ public sealed partial class FarmEngine
 
     private async Task LootAsync(Detection target, FarmSettings s, CancellationToken ct)
     {
-        await _router.MoveAbsAsync((int)target.Center.X, (int)target.Center.Y, ct);
+        // Ceset ayakta-merkezden ~CorpseFallOffsetPx aşağı düşer (combat'in ceset modeliyle tutarlı); ayrıca
+        // angajman boyunca güncellenen _lastEngagedCenter'ı kullan (uzaktan ölen mobta ilk 'target' konumu kaymış olabilir).
+        await _router.MoveAbsAsync((int)_lastEngagedCenter.X, (int)(_lastEngagedCenter.Y + CorpseFallOffsetPx), ct);
         await Task.Delay(150, ct);
 
         for (int i = 0; i < s.LootTapsCount; i++)

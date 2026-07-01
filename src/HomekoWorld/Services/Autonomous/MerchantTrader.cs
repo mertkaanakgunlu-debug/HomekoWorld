@@ -55,10 +55,11 @@ public sealed class MerchantTrader
         Status("NPC seçiliyor…");
         var (cx, cy) = ResolveNpcClick(s, npcScreenPoint);
 
-        // Menü doğrulama için tık ÖNCESİ imleç-çevresi (yalnız tespit-tabanlı tıkta; kör fallback'te atlanır).
+        // Menü doğrulama için tık ÖNCESİ imleç-çevresi. KÖR fallback'te de yap: imleç ekran-merkezi+offset'te
+        // olduğundan MenuProbeRect orayı kapsar → kör tık ıskalasa bile "menü açılmadı" yakalanır (yoksa kör
+        // satış adımlarına devam edip "satıldı" sanılır, envanter boşalmaz). CaptureRegion null dönerse guard atlar.
         var (px, py, pw, ph) = MenuProbeRect(cx, cy);
-        System.Drawing.Bitmap? beforeMenu = npcScreenPoint is not null
-            ? WtmVision.CaptureRegion(px, py, pw, ph) : null;
+        System.Drawing.Bitmap? beforeMenu = WtmVision.CaptureRegion(px, py, pw, ph);
 
         await _transport.MoveAbsAsync(cx, cy, ct);
         await Task.Delay(80, ct);
@@ -141,8 +142,7 @@ public sealed class MerchantTrader
         Status("Tamir için NPC seçiliyor…");
         var (cx, cy) = ResolveNpcClick(s, npcScreenPoint);
         var (mpx, mpy, mpw, mph) = MenuProbeRect(cx, cy);
-        System.Drawing.Bitmap? beforeMenu = npcScreenPoint is not null
-            ? WtmVision.CaptureRegion(mpx, mpy, mpw, mph) : null;
+        System.Drawing.Bitmap? beforeMenu = WtmVision.CaptureRegion(mpx, mpy, mpw, mph);   // kör fallback dahil doğrula
         await _transport.MoveAbsAsync(cx, cy, ct);
         await Task.Delay(80, ct);
         await _transport.ClickAsync(MouseButton.Left, ct);

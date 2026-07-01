@@ -285,6 +285,9 @@ public partial class MainViewModel
             _farmEngine.Inferrer = inferrer;
 
             FarmStatus = $"Model hazır ({names.Count} sınıf)";
+            // Otonom ön-uçuş paneli: model ctor'da WireAutonomous'tan SONRA (senkron) yüklendiği için
+            // readiness ilk hesapta Inferrer=null görüp "Mob modeli ✗" gösteriyordu → yüklenince tazele.
+            RefreshAutonomousReadiness();
 
             // GPU (CUDA/DirectML) warm-up'ı arka planda başlat — ilk inference'ın derleme/tahsis
             // maliyetini Başlat'tan önce öder (UI donmasını önler). (TensorRT şu an yok; ileride
@@ -310,6 +313,7 @@ public partial class MainViewModel
         catch (Exception ex)
         {
             FarmStatus = $"❌ Model yüklenemedi: {ex.Message}";
+            RefreshAutonomousReadiness();   // yükleme başarısız → Mob modeli ✗ doğru kalsın
         }
     }
 

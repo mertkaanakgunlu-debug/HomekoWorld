@@ -118,12 +118,13 @@ public class WtmSettings
     // val ≤ HpTroughMaxVal (koyu) VE sat ≤ HpTroughMaxSat (doygunsuz/gri).
     public float HpTroughMaxVal  { get; set; } = 0.28f; // ≤ bu parlaklık → koyu (boş bar zemini/çerçeve)
     public float HpTroughMaxSat  { get; set; } = 0.40f; // ≤ bu doygunluk → doygunsuz/gri (oluk)
-    // Bar var kararı koyu-oluk oranı YERİNE "dolu oranı" = (kırmızı + koyu-oluk)/toplam ile verilir:
-    // gerçek HP barı (her HP'de) ROI'yi neredeyse tümüyle kırmızı VEYA koyu-oluk doldurur (~%80); karanlık
-    // çalı/zemin koyu-oluğu yüksek olsa bile dolu oranı düşük kalır (kırmızı+oluk ≠ tüm bar) → sahte "bar var"
-    // biter, düşük-HP (kırmızı~0 ama oluk dolu) yine canlı kalır. Canlı test verisi: gerçek bar dolu≈%79-88,
-    // karanlık-çalı sahte-pozitif dolu≈%41, ölü/panel-gitti dolu≈%0 → eşik ~0.60 ikisini güvenle ayırır.
-    public float HpBarFillMinFrac { get; set; } = 0.60f; // (kırmızı+oluk)/toplam ≥ bu → bar var (canlı)
+    // "Bar var" kararı (WtmVision.BarPresent): red≥HpHsvMinPx VE (kırmızı+koyu-oluk)/toplam ≥ bu — AND.
+    // Dolu-oranı, ROI'yi doldurmayan KIRMIZI arka planı (kırmızı obje; red yüksek ama dolu düşük) eler;
+    // saf-kırmızı taban ise KOYU arka planı (red~0) eler. Gerçek HP barı her HP'de ROI'yi ~%74+ doldurur
+    // (kırmızı+koyu-oluk). Canlı test verisi (2026-07-01): kırmızı arka plan dolu≈%29, gerçek bar dolu≈%74-91
+    // (düşük-HP dahil) → eşik ~0.60 ikisini güvenle ayırır. NOT: eski OR (red VEYA dolu) koyu-çalıyı sahte-canlı
+    // yapıyordu; AND o regresyonu önler. "Bar var sanıyor / seçili sanıyor" olursa BÜYÜT, düşük-HP'yi kaçırırsa KÜÇÜLT.
+    public float HpBarFillMinFrac { get; set; } = 0.60f;
     // #5 Karanlık-zemin guard: darkFrac (koyu-oluk/toplam) ≥ bu VE kırmızı yoksa → ROI tek-renk karanlık
     // zemin (bar yok/ölü), "canlı" sayma. Gerçek boş bar ~%79-88 dolu kalır (kenarlar koyu değil) → 0.95
     // güvenli; karanlık mağara/yükleme ~%100 koyu olur. Karanlık haritada ölüm-tespitini düzeltir.

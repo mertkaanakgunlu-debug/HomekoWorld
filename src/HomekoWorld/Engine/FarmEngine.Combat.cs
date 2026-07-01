@@ -11,6 +11,15 @@ public sealed partial class FarmEngine
 {
     // ── Engaging — moba yürü + takip + kombo ─────────────────────────────────
 
+    /// <summary>Archer yaklaşma davranışı (W sürekli + R yönelme) YALNIZ Sınıf="archer" seçiliyken uygulanır.
+    /// KÖK NEDEN (2026-07-01): "🏹 Archer modu" checkbox'ı (s.EngageMovement) sınıf değişince SIFIRLANMIYOR —
+    /// OtoFarmPage'de yalnız CurrentClass≠"archer" iken panel GİZLENİYOR (ayar aynen kalıyor, checkbox görünmez
+    /// olduğundan kullanıcı kapatamıyor bile). Kullanıcı Archer'da işaretleyip başka sınıfa geçince ayar
+    /// ArcherWalkAndFace'te takılı kalıyor → archer dışı sınıfta da W-hold+R yaklaşması çalışıyordu.</summary>
+    private bool ArcherApproachActive(FarmSettings s) =>
+        s.EngageMovement == EngageMovement.ArcherWalkAndFace &&
+        string.Equals(_appState.ClassId, "archer", StringComparison.OrdinalIgnoreCase);
+
     private async Task EngageAsync(
         Detection target, MobInfo? mobInfo, FarmSettings s, CancellationToken ct)
     {
@@ -18,7 +27,7 @@ public sealed partial class FarmEngine
 
         // Archer: ayrı, UI'dan ayarlanabilir yaklaşma mesafesi (per-mob'u geçersiz kılar).
         // Archer dışı: rangePx kullanılmaz (kombo hemen ateşlenir) ama tutarlılık için doldur.
-        int    rangePx  = s.EngageMovement == EngageMovement.ArcherWalkAndFace
+        int    rangePx  = ArcherApproachActive(s)
             ? s.ArcherApproachRangePx
             : (mobInfo?.EngagementRangePx ?? s.DefaultEngagementRangePx);
         string comboId  = _appState.Farm.SelectedComboId;
@@ -100,7 +109,7 @@ public sealed partial class FarmEngine
         // ── B1: hareket modu ───────────────────────────────────────────────────
         // Archer dışı sınıflar kombo başlayınca oyunun kendi pathing'iyle hedefe gidip vurur →
         // engageStarted baştan true (W/R yok, kombo hemen). Archer ise B2 yaklaşmasını yapar.
-        bool archerApproach = s.EngageMovement == EngageMovement.ArcherWalkAndFace;
+        bool archerApproach = ArcherApproachActive(s);
 
         Detection currentTarget = target;
         _lastEngagedCenter  = target.Center;  // ilk tick'te HP ile ölüm tespit edilse de geçerli konum
@@ -173,7 +182,12 @@ public sealed partial class FarmEngine
                     // LastBarScan: son DXGI ROI taramasının kırmızı + koyu-oranı (DetectionLoop her ~30ms tazeler;
                     // TargetAliveHsv ile AYNI taramadan gelir). Kullanıcı modeli: önce KIRMIZI, kırmızı yokken SİYAH-bar.
                     var bar = WtmVision.LastBarScan;
-                    bool redPresent   = bar.red >= _appState.Wtm.HpHsvMinPx;            // canlı/seçili → KIRMIZI var
+                    // bar.alive = BarPresent'in fill-farkında kararı (red≥thr && fill≥HpBarFillMinFrac) → ROI'deki
+                    // KIRMIZI arka planı (red var ama fill düşük) "canlı" SANMAZ. Eskiden ham bar.red≥HpHsvMinPx idi →
+                    // arka plan kırmızısı (log: red=2078) combat'ı sahte-canlıda takıyordu ("kırmızı=2078 → canlı"
+                    // tekrarları). Düşük-HP korunur: gerçek düşük-HP bar fill≥%74 → alive true; kırmızı büsbütün
+                    // gidince aşağıdaki emptyBarHere (darkFrac) devreye girer.
+                    bool redPresent   = bar.alive;                                      // canlı/seçili → BAR VAR (kırmızı + dolu)
                     bool emptyBarHere = !redPresent
                         && bar.darkFrac >= EmptyBarMinDarkFrac                          // kırmızı yok ama SİYAH boş bar var
                         && bar.darkFrac <  _appState.Wtm.HpTroughAllDarkMaxFrac;        // tüm-koyu ekran (mağara/gece) hariç
@@ -202,7 +216,13 @@ public sealed partial class FarmEngine
                             // Anti-freeze tavanı: gerçek düşük-HP mob vurmaya devam edince RedGoneGraceMs içinde ölür
                             // (bar kaybolur). Kırmızı bu kadar süredir hiç dönmediyse bar değil koyu-ARKA-PLANdır → bitir.
                             if (lastRedSeenMs >= 0 && sw.ElapsedMilliseconds - lastRedSeenMs >= RedGoneGraceMs)
+                            {
+                                // Grace-tavanı ile "öldü" sayıldı (gerçek ölüm değil de uzun koyu-arka-plan olabilir).
+                                // Normal ölümden ayırt edilebilsin diye etiketli logla → kill-kaçırma şüphesinde
+                                // kullanıcı bunu görüp HpEmptyBarGraceMs'i tek-tür tank mob için büyütebilir.
+                                Program.Log($"[Farm] ölüm: grace-tavanı ({RedGoneGraceMs}ms kırmızı yok) → öldü-sayıldı");
                                 return true;
+                            }
                         }
                     }
 

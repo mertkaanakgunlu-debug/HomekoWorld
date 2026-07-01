@@ -87,9 +87,12 @@ public sealed partial class FarmEngine
     //  • CapturedAtMs  : ekran yakalamasının BAŞLADIĞI an → "frame age at click" = NowMs - CapturedAtMs
     //                    (capture+inference+publish+karar gecikmesinin tamamı; bayat-kutu tıklama ölçümü).
     //  • PublishedAtMs : snapshot'ın yayınlandığı an (inference bitişi). Combat "snapshot yaşı" için kullanır.
+    // BarOffsetY: TargetAliveHsv ile AYNI taramadan gelen nameplate offset'i (0=duyuru yok, +Δy=duyuru var).
+    // Guardian kontrolü bunu kullanır — DetectionLoop sürekli çalıştığından, guardian check anında okunan
+    // global WtmVision.LastBarOffsetY BAŞKA (daha yeni) bir tick'e ait olabilir; bu alan taramayla ATOMİK eşleşir.
     private sealed record DetectionSnapshot(
         long FrameId, IReadOnlyList<Detection> Dets, int W, int H,
-        long CapturedAtMs, long PublishedAtMs, bool? TargetAliveHsv);
+        long CapturedAtMs, long PublishedAtMs, bool? TargetAliveHsv, int BarOffsetY = 0);
 
     // P2: üreticiden tüketiciye geçen iş birimi. Yalnız TENSOR slot + meta geçer; capture Bitmap üreticide
     // KALIR (recorder klonu + HSV onun thread'inde). ReplayClone: replay açıksa üretici klonladı (tüketici yazar).
@@ -98,7 +101,7 @@ public sealed partial class FarmEngine
     private sealed record PipeItem(
         int Slot, long FrameId, long CapturedAtMs, float PadX, float PadY, float Scale,
         int W, int H, bool? TargetAliveHsv, double CapMs, double PrepMs, Bitmap? ReplayClone,
-        int RoiX = 0, int RoiY = 0, int FullW = 0, int FullH = 0);
+        int RoiX = 0, int RoiY = 0, int FullW = 0, int FullH = 0, int BarOffsetY = 0);
 
     // ms cinsinden monotonik "şimdi" (Stopwatch tabanlı).
     private static long NowMs() =>

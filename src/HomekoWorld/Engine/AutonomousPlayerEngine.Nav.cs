@@ -33,6 +33,7 @@ public sealed partial class AutonomousPlayerEngine
         catch (Exception ex)
         {
             Log($"Merchant nav hatası: {ex.Message}", "event");
+            _lastFailedState = _fsm;   // RecoveringTickAsync sınırlı tur-tekrara yönlensin (yoksa sonsuz döngü)
             SetState(AutoPlayerState.Recovering, "Navigasyon hatası");
         }
         finally { _navigator.StatusChanged -= OnNavStatus; }
@@ -62,6 +63,7 @@ public sealed partial class AutonomousPlayerEngine
         catch (Exception ex)
         {
             Log($"Portal nav hatası: {ex.Message}", "event");
+            _lastFailedState = _fsm;   // RecoveringTickAsync sınırlı tur-tekrara yönlensin (yoksa sonsuz döngü)
             SetState(AutoPlayerState.Recovering, "Navigasyon hatası");
         }
         finally { _navigator.StatusChanged -= OnNavStatus; }
@@ -94,6 +96,7 @@ public sealed partial class AutonomousPlayerEngine
         catch (Exception ex)
         {
             Log($"Farm nav hatası: {ex.Message}", "event");
+            _lastFailedState = _fsm;   // farm-nav hatası → RecoveringTick else-dalı (mevcut konumda farm)
             SetState(AutoPlayerState.Recovering, "Navigasyon hatası");
         }
         finally { _navigator.StatusChanged -= OnNavStatus; }
@@ -114,8 +117,11 @@ public sealed partial class AutonomousPlayerEngine
             AutoPlayerState.NavToPortal   or
             AutoPlayerState.UsingPortal)
         {
-            Log("Town turunun başından yeniden deneniyor (GoingToTown)", "event");
-            SetState(AutoPlayerState.GoingToTown, "Kurtarma → Town TP yeniden deneniyor");
+            // Sınırlı tur-tekrar makinesine bağla: nav hataları _consecutiveFailures'ı sıfırladığından
+            // MaxConsecutiveFailures tetiklenmez → eskiden kalıcı bir nav engelinde (ulaşılamaz/yanlış
+            // koordinat) SONSUZ Recovering↔GoingToTown↔Town-TP döngüsüydü. TownTourFailedAsync
+            // _townTourAttempt'i artırır; TownTourMaxAttempts (vars. 3) tükeninince güvenle durur.
+            await TownTourFailedAsync("Navigasyon kurtarması", ct);
             return;
         }
 
