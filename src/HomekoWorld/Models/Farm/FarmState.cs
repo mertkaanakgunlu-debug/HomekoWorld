@@ -24,6 +24,12 @@ public enum FarmState
     /// <summary>Spot boşaldı, waypoint'lere yürünüyor.</summary>
     Roaming,
 
+    /// <summary>Dev 2 — uzun süre hedef yok, başlangıç farm koordinatına yürünüyor.</summary>
+    ReturningHome,
+
+    /// <summary>Dev 3 — envanter dolu, klan bankasına boşaltılıyor.</summary>
+    Banking,
+
     /// <summary>F12 kill-switch — güvenli durdurma.</summary>
     KillSwitched,
 }

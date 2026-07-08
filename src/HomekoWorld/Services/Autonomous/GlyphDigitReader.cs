@@ -84,11 +84,16 @@ public sealed class GlyphDigitReader
         for (int d = 0; d < Classes; d++)
             multi[d] = _b64s[d].Count > 0 ? _b64s[d].ToArray() : Array.Empty<string>();
         s.DigitGlyphsMulti = multi;
+        s.DigitGlyphsVersion = 2;   // V2 normalizasyon (sıkı-kırpma + letterbox) ile üretildi
     }
 
     public void LoadFromSettings(AutonomousSettings s)
     {
         Clear();
+        // V2 kapısı (2026-07-02): eski normalizasyonla (ham-kırpım) kaydedilmiş örnekler yeni sıkı-kırpma +
+        // letterbox hücreleriyle NCC≈0 verir (kanıt: aynı "7" iki kırpımda 0.36; 1551→"11" okuma bug'ı).
+        // Bozuk okuma üretmektense hiç yükleme → UI "öğretilmedi" gösterir, kullanıcı bir kez yeniden öğretir.
+        if (s.DigitGlyphsVersion < 2) return;
         // Yeni çok-örnekli format (0-9 + virgül)
         var multi = s.DigitGlyphsMulti;
         if (multi is not null)

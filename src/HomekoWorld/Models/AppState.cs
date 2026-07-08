@@ -52,6 +52,9 @@ public class AppState
     // ---- Faz 17: Oto Farm ----
     public Farm.FarmSettings Farm { get; set; } = new();
 
+    // ---- Dev 3: OtoFarm envanter boşaltma (klan bankası) ----
+    public ClanBankSettings ClanBank { get; set; } = new();
+
     /// <summary>
     /// Kalibrasyonun yapıldığı çözünürlük (fiziksel piksel) — tüm kalibre koordinatlarının
     /// "master"ı. Başka çözünürlükte çalışınca koordinatlar buradan anchor-aware ölçeklenir

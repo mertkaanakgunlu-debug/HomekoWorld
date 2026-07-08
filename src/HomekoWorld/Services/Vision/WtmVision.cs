@@ -5,6 +5,17 @@ using HomekoWorld.Models;
 using HomekoWorld.Services.Capture;
 namespace HomekoWorld.Services.Vision;
 
+/// <summary>V4 — bir karedeki hedef-penceresi durumunun TAM özeti (tek yazar: ScanTargetBar, capture thread).
+/// StructureKnown=false → çerçeve şablonu öğretilmemiş; tüketiciler eski renk (RedAlive) yoluna düşer.</summary>
+public readonly record struct TargetBarState(
+    bool  StructureKnown,     // çerçeve şablonu öğretilmiş + yüklü mü
+    bool  StructurePresent,   // çerçeve eşleşti (histerezisli) = pencere AÇIK = mob seçili/canlı
+    float StructureScore,     // en iyi NCC (teşhis/log)
+    int   OffsetY,            // duyuru offseti: yapı bulunduysa yapıdan, yoksa renk taramasından
+    int   Red, int Dark, int Total, float DarkFrac, float FillFrac,
+    bool  RedAlive,           // BarPresent kararı (legacy canlı + doluluk/hasar ölçümü)
+    long  StampMs);
+
 public static class WtmVision
 {
 
@@ -100,13 +111,16 @@ public static class WtmVision
     /// "bar yok oldu" sanılmaz; bar yalnız hedef seçimi düşünce (panel kaybolur) sıfırlanır.
     /// ROI yoksa tek-satır HpColorScan bölgesine düşer. Hue ışıktan bağımsız → kararlı.
     /// </summary>
-    public static bool IsTargetAliveByHsv(WtmSettings s)
+    public static bool IsTargetAliveByHsv(WtmSettings s) => IsTargetAliveByHsv(s, out _);
+
+    /// <summary>V4 review-fix: offset'i AYNI taramadan (out-param) döner — bkz RedAtAreas out-param notu.</summary>
+    public static bool IsTargetAliveByHsv(WtmSettings s, out int offsetY)
     {
         // Tercih: iki-köşe HP bar dikdörtgeni (2B) — düşük HP'ye dayanıklı, koruma mobuyla aynı motor.
         if (s.IsHpBarRoiCalibrated)
         {
             var r = ResolutionMapper.Map(s.HpBarRoiX, s.HpBarRoiY, s.HpBarRoiW, s.HpBarRoiH);
-            return RedAtAreas(r.X, r.Y, r.Width, r.Height, s.HpHsvMinPx, s);
+            return RedAtAreas(r.X, r.Y, r.Width, r.Height, s.HpHsvMinPx, s, out offsetY);
         }
 
         // Fallback: tek-satır renk tarama bölgesi (1px → eşik düşük tutulur).
@@ -115,16 +129,84 @@ public static class WtmVision
             var r = ResolutionMapper.Map(
                 Math.Max(0, s.HpColorScanX - s.HpColorScanHalfW), s.HpColorScanY,
                 s.HpColorScanHalfW * 2, 1);
-            return RedAtAreas(r.X, r.Y, r.Width, r.Height, Math.Min(s.HpHsvMinPx, 4), s);
+            return RedAtAreas(r.X, r.Y, r.Width, r.Height, Math.Min(s.HpHsvMinPx, 4), s, out offsetY);
         }
+        offsetY = 0;
         return false;
     }
 
     /// <summary>Son HP-bar taramasının tanılama değerleri (eşik tune'u için): kırmızı/koyu-oluk/toplam piksel,
-    /// koyu-oluk oranı ve "bar var (canlı)" kararı. Combat/UI bunu okuyup farklı arka planlarda eşik ayarlar.
-    /// NOT: best-effort tanılama alanı — birden çok thread yazarsa yırtık okuma olabilir; yalnız log/UI'da
-    /// kullanıldığı için zararsız (karar mantığı bu alanı OKUMAZ, dönüş değerini kullanır).</summary>
+    /// koyu-oluk oranı ve "bar var (canlı)" kararı. Combat ölüm mantığı bunu LastBarScanAtMs ile birlikte okur.
+    /// NOT: tuple yazımı atomik değil — yırtık okuma teoride mümkün; karar tarafı tazelik + çok-kare teyidiyle
+    /// tek kötü okumaya dayanıklı (bkz FarmEngine.Combat V3).</summary>
     public static (int red, int dark, int total, float darkFrac, float fillFrac, bool alive) LastBarScan;
+
+    /// <summary>LastBarScan'ın yazıldığı an (monotonik ms). V3 (2026-07-02): combat, ölüm sayaçlarını yalnız
+    /// YENİ (damgası değişmiş) + TAZE karelerle ilerletir — tespit thread'i takılıp LastBarScan DONUNCA eski
+    /// kod aynı (kötü bir geçiş anına denk gelmiş) kareyi her 30ms'de "bağımsız teyit" sanıp sahte-ölüm
+    /// üretebiliyordu (canlı mob atlama + kill sayacı şişmesi).</summary>
+    public static long LastBarScanAtMs;
+
+    private static long NowMsMono() =>
+        System.Diagnostics.Stopwatch.GetTimestamp() / (System.Diagnostics.Stopwatch.Frequency / 1000);
+
+    // ── V4 — yapı-tabanlı hedef-penceresi tespiti ────────────────────────────
+    /// <summary>Son ScanTargetBar sonucu (tek yazar: capture thread). Combat ölüm mantığı bunu okur;
+    /// null = HSV taraması çalışmıyor (ColorScan modu / HP bar kalibresiz) → GDI legacy yolu.</summary>
+    public static TargetBarState? LastTargetBar;
+
+    private static bool _structHyst; // çerçeve histerezis hafızası (eşik bandında son durum korunur)
+
+    /// <summary>Farm oturumu başında histerezis + son durum sıfırlanır.</summary>
+    public static void ResetTargetBar() { _structHyst = false; LastTargetBar = null; }
+
+    /// <summary>V4 — karedeki hedef-penceresi durumunu ÇIKARIR (kare başına BİR kez, capture thread'inde):
+    /// (1) renk taraması (mevcut IsTargetAliveByHsvFromFrame yolu; LastBarScan/AtMs/OffsetY statiklerini de
+    /// doldurur → UI/teşhis kırılmaz), (2) çerçeve şablonu 2 sabit konumda (offset 0 / +Δy) puanlanır,
+    /// histerezisli VAR/YOK kararı verilir. Yapı bulunduysa duyuru offseti YAPIDAN alınır (kırmızı arka
+    /// planın offset-0'ı yanlış tetiklemesi biter — guardian isim-bandı doğru konumda arar).</summary>
+    public static TargetBarState? ScanTargetBar(Bitmap frame, WtmSettings s,
+        System.Collections.Generic.IReadOnlyList<Autonomous.TemplateLocator.Template>? frameTpl,
+        Rectangle frameRectPhys)
+    {
+        if (s.HpBarMode != HpBarDetectionMode.Hsv || !s.IsHpBarLocated) { LastTargetBar = null; return null; }
+
+        // 1) Renk taraması — statikleri (LastBarScan/AtMs/OffsetY) mevcut davranışla doldurur.
+        bool redAlive = IsTargetAliveByHsvFromFrame(frame, s, out int colorOffset);
+        // V4 review-fix: kilitli oku — BarPresent'in eşzamanlı (GDI/combat-thread) yazımıyla yarışabilir.
+        (int red, int dark, int total, float darkFrac, float fillFrac, bool alive) ls;
+        lock (_barScanLock) { ls = LastBarScan; }
+
+        // 2) Yapı (çerçeve) — 2 sabit konum + histerezis.
+        bool known = frameTpl is { Count: > 0 } && frameRectPhys.Width > 0;
+        bool present = false; float score = -2f; int offsetY = colorOffset;
+        if (known)
+        {
+            float s0 = Autonomous.TemplateLocator.ScoreAt(frame, frameRectPhys, frameTpl!);
+            float s1 = -2f;
+            int   dy = s.AnnounceShiftY > 0 ? ResolutionMapper.ScaleLen(s.AnnounceShiftY) : 0;
+            if (dy > 0)
+                s1 = Autonomous.TemplateLocator.ScoreAt(frame,
+                    new Rectangle(frameRectPhys.X, frameRectPhys.Y + dy, frameRectPhys.Width, frameRectPhys.Height),
+                    frameTpl!);
+            score = System.Math.Max(s0, s1);
+            int structOffset = (s1 > s0) ? dy : 0;
+            present = score >= s.TargetFrameMatchThreshold  ? true
+                    : score <  s.TargetFrameAbsentThreshold ? false
+                    : _structHyst;
+            _structHyst = present;
+            if (present)
+            {
+                offsetY        = structOffset;
+                LastBarOffsetY = structOffset; // guardian/nameplate yapının offsetini kullansın
+            }
+        }
+
+        var tb = new TargetBarState(known, present, score, offsetY,
+            ls.red, ls.dark, ls.total, ls.darkFrac, ls.fillFrac, redAlive, LastBarScanAtMs);
+        LastTargetBar = tb;
+        return tb;
+    }
 
     /// <summary>Bar görünür (mob canlı) mü — SAF KIRMIZI (2026-06-20, kullanıcı isteği). Canlı sinyali YALNIZ
     /// kırmızı eşiği: <c>alive = red ≥ redThreshold</c>. Eski "kırmızı VEYA dolu-oran(≥0.6)" mantığı koyu
@@ -147,9 +229,20 @@ public static class WtmVision
         // KÖK NEDEN (2026-07-01): saf-kırmızı TEK BAŞINA, ROI'deki kırmızı arka planı "canlı" sanıp hem sahte-hedef
         // hem yanlış duyuru-offset'i (RedAtAreas offset-0'ı tetikleyip guardian ismini yanlış yerde aratma) üretiyordu.
         bool  alive    = red >= redThreshold && fillFrac >= s.HpBarFillMinFrac;
-        LastBarScan = (red, dark, total, darkFrac, fillFrac, alive);
+        // V4 review-fix: LastBarScan artık kozmetik değil — ScanTargetBar (tespit thread'i) bunu
+        // TargetBarState.Red/Dark/... olarak paketleyip Combat'ın hasar-kapısına (Killed/Lost ayrımı)
+        // besliyor; AYRICA GDI dalı (IsTargetAliveSmoothed → combat/farm-loop thread'i) da BarPresent'i
+        // eşzamanlı çağırabiliyor. 6-alanlı tuple .NET'te atomik değil → kilit olmadan yırtık okuma
+        // (iki farklı taramanın karışık alanları) mümkündü. Yazım + ScanTargetBar'daki okuma kilitli.
+        lock (_barScanLock)
+        {
+            LastBarScan     = (red, dark, total, darkFrac, fillFrac, alive);
+            LastBarScanAtMs = NowMsMono();
+        }
         return alive;
     }
+
+    private static readonly object _barScanLock = new();
 
     /// <summary>Bar'ın EN SON bulunduğu dikey offset (ekran px): 0 = kalibre konum (duyuru yok),
     /// +Δy = duyuru kayması (duyuru var). Nameplate/guardian kontrolü ismi DOĞRU konumda araması için kullanır.</summary>
@@ -159,13 +252,23 @@ public static class WtmVision
     /// Bar bulunduğunda <see cref="LastBarOffsetY"/> set edilir. NOT: yalnız bu iki konum geçerli — isim de barla
     /// aynı kadar kayar; eski −Δy denemesi duyuru/isim alanına bakıp guardian'ı şaşırtıyordu (kaldırıldı). Ekrandan yakalar.</summary>
     private static bool RedAtAreas(int x, int y, int w, int h, int threshold, WtmSettings s)
+        => RedAtAreas(x, y, w, h, threshold, s, out _);
+
+    /// <summary>V4 review-fix: offset'i AYNI taramadan out-param ile döner (LastBarOffsetY global'ini de
+    /// yazar — geriye uyum için). Çağıran (IsTargetAliveSmoothed/IsTargetAliveNow) artık ayrı bir satırda
+    /// global'i okumak ZORUNDA değil — tespit thread'i araya girip başka bir taramanın offset'ini
+    /// yazamaz (eski hâlde bu, guardian kontrolünü yanlış isim-konumuna yönlendirebiliyordu).</summary>
+    private static bool RedAtAreas(int x, int y, int w, int h, int threshold, WtmSettings s, out int offsetY)
     {
-        if (BarPresent(CountRedHsv(x, y, w, h, s, out int d1, out int t1), d1, t1, threshold, s)) { LastBarOffsetY = 0; return true; }
+        if (BarPresent(CountRedHsv(x, y, w, h, s, out int d1, out int t1), d1, t1, threshold, s))
+        { offsetY = 0; LastBarOffsetY = 0; return true; }
         if (s.AnnounceShiftY > 0)
         {
             int dy = ResolutionMapper.ScaleLen(s.AnnounceShiftY);
-            if (BarPresent(CountRedHsv(x, y + dy, w, h, s, out int d2, out int t2), d2, t2, threshold, s)) { LastBarOffsetY = dy; return true; }
+            if (BarPresent(CountRedHsv(x, y + dy, w, h, s, out int d2, out int t2), d2, t2, threshold, s))
+            { offsetY = dy; LastBarOffsetY = dy; return true; }
         }
+        offsetY = 0;
         return false;
     }
 
@@ -549,18 +652,28 @@ public static class WtmVision
     /// <summary>
     /// HP bar varlığını seçili yönteme göre kontrol eder: Hsv (varsayılan) veya ColorScan.
     /// </summary>
-    public static bool IsTargetAliveSmoothed(WtmSettings s)
+    public static bool IsTargetAliveSmoothed(WtmSettings s) => IsTargetAliveSmoothed(s, out _);
+
+    /// <summary>V4 review-fix: offset'i AYNI taramadan (out-param) döner. KÖK NEDEN: çağıran eskiden
+    /// bool döndükten SONRA ayrı bir satırda global WtmVision.LastBarOffsetY'yi okuyordu — araya sürekli
+    /// çalışan tespit thread'i girip BAŞKA bir taramanın offset'ini yazabiliyordu (guardian ismi yanlış
+    /// konumda arandı). Artık offset bu ÇAĞRIYLA atomik — araya kimse giremez.</summary>
+    public static bool IsTargetAliveSmoothed(WtmSettings s, out int offsetY)
     {
         // ── HSV kırmızı-oran (varsayılan, en hızlı) ──────────────────────────
         // Mob HP bar ROI kutusu VEYA renk noktası kalibre ise çalışır.
         if (s.HpBarMode == HpBarDetectionMode.Hsv && s.IsHpBarLocated)
-            return IsTargetAliveByHsv(s);
+            return IsTargetAliveByHsv(s, out offsetY);
 
-        // ── RGB renk taraması ────────────────────────────────────────────────
+        // ── RGB renk taraması ─────────────────────────────────────────────── (offset kavramı yok)
         if (s.HpBarMode == HpBarDetectionMode.ColorScan && s.IsTargetHpColorCalibrated)
+        {
+            offsetY = 0;
             return IsTargetSelectedByHpColor(s);
+        }
 
         // ── Fallback: seçili mod için kalibrasyon yok → renk taraması ─────────
+        offsetY = 0;
         return IsTargetAlive(s);
     }
 }

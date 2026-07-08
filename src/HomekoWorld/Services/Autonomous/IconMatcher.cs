@@ -55,18 +55,38 @@ public sealed class IconMatcher
 
     public void SaveToSettings(AutonomousSettings s) => s.SellTemplatesB64 = _b64s.ToArray();
 
-    public void LoadFromSettings(AutonomousSettings s)
+    /// <summary>Verilen base64 PNG dizisinden örnekleri yükler (Dev 3 — tür-başına eşya bankası; SellTemplatesB64
+    /// dışında herhangi bir kaynaktan). Bozuk örnek atlanır (loglanır).
+    /// KÖK NEDEN FIX (2026-07-03, klan-banka "eşleşen=0" canlı log kanıtı): eskiden Resize YAPILMADAN doğrudan
+    /// Vectorize çağrılıyordu; Vectorize LockBits(0,0,24,24) ile ham bitmap'in SOL-ÜST 24×24 KÖŞESİNİ okur →
+    /// klan-banka öğretme akışı (ToB64Png, ham crop) 24×24'ten büyük şablon kaydettiğinden vektörler ikon değil
+    /// köşe kırpıntısıydı (NCC ~0.3-0.5, eşik 0.60'ta 0/13). AddTemplate yolu (Otonom satış) resize edip
+    /// kaydettiği için etkilenmiyordu. Artık boyut N×N değilse Resize; N×N ise DOKUNMA (mevcut satış
+    /// şablonlarının skoru bit-değişmeden kalsın).</summary>
+    public void LoadFrom(IEnumerable<string> b64s)
     {
         Clear();
-        var arr = s.SellTemplatesB64;
-        if (arr is null) return;
-        foreach (var b64 in arr)
+        if (b64s is null) return;
+        foreach (var b64 in b64s)
         {
             if (string.IsNullOrEmpty(b64)) continue;
-            try { using var wh = FromB64(b64); _vecs.Add(Vectorize(wh)); _b64s.Add(b64); }
-            catch { /* bozuk örnek atlanır */ }
+            try
+            {
+                using var raw = FromB64(b64);
+                using var wh  = (raw.Width == N && raw.Height == N) ? new Bitmap(raw) : Resize(raw);
+                _vecs.Add(Vectorize(wh));
+                _b64s.Add(b64);
+            }
+            catch (Exception ex) { HomekoWorld.Program.Log($"[Icon] örnek atlandı (bozuk): {ex.Message}"); }
         }
     }
+
+    /// <summary>Mevcut örneklerin base64 PNG kopyası (Dev 3 — tür setine kaydetme).</summary>
+    public string[] ToB64Array() => _b64s.ToArray();
+
+    /// <summary>SellTemplatesB64'ten yükler — <see cref="LoadFrom"/> ile aynı boyut-normalizasyonu uygulanır
+    /// (AddTemplate hep 24×24 kaydettiğinden burada resize pratikte no-op; savunma amaçlı tutarlılık).</summary>
+    public void LoadFromSettings(AutonomousSettings s) => LoadFrom(s.SellTemplatesB64 ?? Array.Empty<string>());
 
     /// <summary>Öğretilen template'leri &lt;dir&gt;\sell_template_N.png olarak kaydeder (teşhis). Kaydedilen sayıyı döndürür.</summary>
     public int SaveTemplateImages(string dir)

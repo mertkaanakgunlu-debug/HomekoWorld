@@ -81,6 +81,13 @@ public sealed partial class AutonomousPlayerEngine
         _consecutiveFailures = 0;
         _townTourAttempt     = 0;
         _lastFailedState     = AutoPlayerState.Idle;
+        // Dev 2 — Otonom'da "farm lokasyonuna dönüş" evi kalibre FarmSpot'tur (her başlatmada sabit).
+        // FarmEngine.Start() bu override'ı okur (koordinat okumaz). FarmSpot kalibre değilse dönüş kapalı.
+        var au = _state.Autonomous;
+        _farm.HomeOverride = (au.FarmSpotX != 0 || au.FarmSpotY != 0)
+            ? (au.FarmSpotX, au.FarmSpotY)
+            : null;
+        _farm.AutonomousControlled = true;   // Dev 3 — OtoFarm banka tetiğini bastır (Otonom kendi town-sat akışını yürütür)
         SetState(AutoPlayerState.Farming, "Otonom mod başladı — farm");
         _ = Task.Run(() => LoopAsync(_cts.Token));
     }
@@ -95,6 +102,8 @@ public sealed partial class AutonomousPlayerEngine
         // (FarmEngine bu yarıştan cancel→join→dispose ile kaçınır). CTS ucuz nesne; GC toplar, sızıntı önemsiz.
         // Otonom mod farm'ı yönetiyor → kapanınca farm'ı da durdur.
         try { if (_farm.IsRunning) _farm.Stop(); } catch { /* yoksay */ }
+        _farm.HomeOverride = null;          // Dev 2 — Otonom bitti; sonraki manuel OtoFarm kendi koordinatını okusun
+        _farm.AutonomousControlled = false; // Dev 3 — manuel OtoFarm banka tetiği tekrar serbest
         SetState(AutoPlayerState.Idle, "Otonom mod durduruldu");
     }
 

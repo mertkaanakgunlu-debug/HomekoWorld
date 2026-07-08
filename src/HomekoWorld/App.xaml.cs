@@ -183,6 +183,9 @@ public partial class App : Application
         // Faz 41 — TownObjectDetector (NPC + portal görsel YOLO tespiti; mob modelinden ayrı)
         services.AddSingleton<Services.Autonomous.TownObjectDetector>();
 
+        // Dev 3 — OtoFarm envanter boşaltma (klan bankası)
+        services.AddSingleton<Services.Farm.ClanBankService>();
+
         // Faz 31 — Otonom Oyuncu orkestratörü (FarmEngine üstünde FSM; WorldNavigator bağımlı)
         services.AddSingleton<AutonomousPlayerEngine>();
 

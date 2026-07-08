@@ -138,6 +138,17 @@ public sealed class JsonStateStore
             if (state.Farm.DeadBlacklistMs == 4000)
                 state.Farm.DeadBlacklistMs = 8000;
 
+            // Migration: DeadBlacklistMs 8000 → 20000 (2026-07-03). 8sn hâlâ "~10sn+" gözleminin altında
+            // kalıyordu — MobTracker.DeadLingerMs (12000) ile birlikte "cesede tıklama" A-belirtisinin
+            // ikinci kaynağıydı (bkz. MobTracker fix). Yalnız eski varsayılana dokun.
+            if (state.Farm.DeadBlacklistMs == 8000)
+                state.Farm.DeadBlacklistMs = 20000;
+
+            // Migration (V3, 2026-07-02): HpDeathConfirmMs 60 → 150. 60ms, tek titrek/donuk DXGI karesiyle
+            // sahte-ölüm üretebiliyordu (canlı mob atlama + kill sayacı şişmesi); yalnız eski varsayılana dokun.
+            if (state.Farm.HpDeathConfirmMs == 60)
+                state.Farm.HpDeathConfirmMs = 150;
+
             // Faz 22 — agresif tepki süreleri: eski yavaş varsayılanları BİR KEZ hızlıya taşı.
             // Flag ile korunur → kullanıcı sonradan UI'dan elle ayarlarsa tekrar ezilmez.
             if (!state.AggressiveTimingMigrated)

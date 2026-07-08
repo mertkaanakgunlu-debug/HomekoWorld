@@ -138,6 +138,26 @@ public class WtmSettings
     /// kaydığı için ikisine de uygulanır. 0 = kapalı. Runtime'da ResolutionMapper.ScaleLen ile ölçeklenir.
     /// </summary>
     public int AnnounceShiftY { get; set; }
+
+    // ── V4 (2026-07-02) — hedef penceresi ÇERÇEVE şablonu (yapı-tabanlı seçili/canlı/öldü) ─────
+    // "Pencere açık mı?" artık renk sayımından değil, HP'den bağımsız SABİT çerçeve parçasının NCC
+    // eşleşmesinden okunur (kullanıcı doğruladı: çerçeve sabit, boş barda oluk+çerçeve yerinde kalır,
+    // bölgede çakışan UI yok). Pencere ekranda sabit konumda → kayan arama YOK, yalnız 2 sabit konum
+    // (offset 0 ve +AnnounceShiftY) puanlanır. Öğretilmemişse tüm sistem eski renk (V3) yoluyla çalışır.
+    public int      TargetFrameRectX { get; set; }
+    public int      TargetFrameRectY { get; set; }
+    public int      TargetFrameRectW { get; set; }
+    public int      TargetFrameRectH { get; set; }
+    /// <summary>Çerçeve şablonları (≤3 örnek, base64 PNG — yakalandıkları fiziksel boyutta; runtime'da ölçeklenir).</summary>
+    public string[] TargetFrameTemplatesB64 { get; set; } = System.Array.Empty<string>();
+    /// <summary>NCC ≥ bu → çerçeve VAR (pencere açık). Test butonuyla gözlenen skora göre ayarlanabilir.</summary>
+    public float    TargetFrameMatchThreshold  { get; set; } = 0.80f;
+    /// <summary>NCC &lt; bu → çerçeve YOK. Aradaki bant histerezis: son durum korunur (sınırda titreme yok).</summary>
+    public float    TargetFrameAbsentThreshold { get; set; } = 0.65f;
+
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool IsTargetFrameCalibrated =>
+        TargetFrameRectW > 0 && TargetFrameRectH > 0 && TargetFrameTemplatesB64.Length > 0;
 }
 
 /// <summary>Hedef HP bar varlık tespiti yöntemi.</summary>

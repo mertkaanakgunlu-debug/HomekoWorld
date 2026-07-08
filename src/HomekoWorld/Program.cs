@@ -34,7 +34,12 @@ public static class Program
         // AboveNormal yeterli avantajı verir, sistemi boğmaz. Kritik input worker zaten Highest.
         Process.GetCurrentProcess().PriorityClass = ProcessPriorityClass.AboveNormal;
 
+        // Log rotasyonu: detaylı telemetri (2026-07-03) dosyayı saatte ~2-4MB büyütebilir — sınırsız
+        // büyüme yerine her açılışta >2MB ise .prev'e devril (tek nesil yeter: önceki oturum incelenebilir).
+        bool rotated = RotateLogIfLarge();
+
         Log("=== Uygulama başlatılıyor ===");
+        if (rotated) Log("[Log] önceki günlük döndürüldü (>2MB) → HomekoWorld_log.prev.txt");
 
         AppDomain.CurrentDomain.UnhandledException += (_, e) =>
         {
@@ -73,5 +78,21 @@ public static class Program
                 $"[{DateTime.Now:HH:mm:ss.fff}] {msg}{Environment.NewLine}");
         }
         catch { }
+    }
+
+    /// <summary>Açılışta günlük >2MB ise HomekoWorld_log.prev.txt'e taşır (öncekinin üstüne yazar).
+    /// true = rotasyon yapıldı. Sessiz başarısızlık: logger henüz güvenilir değilken hata bildirilemez.</summary>
+    private static bool RotateLogIfLarge()
+    {
+        try
+        {
+            var fi = new FileInfo(LogFile);
+            if (!fi.Exists || fi.Length <= 2 * 1024 * 1024) return false;
+            string prev = Path.Combine(fi.DirectoryName!, "HomekoWorld_log.prev.txt");
+            if (File.Exists(prev)) File.Delete(prev);
+            File.Move(LogFile, prev);
+            return true;
+        }
+        catch { return false; }
     }
 }

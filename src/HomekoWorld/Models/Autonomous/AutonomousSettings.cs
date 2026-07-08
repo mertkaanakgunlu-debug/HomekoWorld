@@ -115,8 +115,12 @@ public class AutonomousSettings
     public int CoordBinThreshold { get; set; } = -1;
     /// <summary>Rakamlar koyu zemine AÇIK ise false; açık zemine KOYU ise true.</summary>
     public bool CoordBinInvert { get; set; } = false;
-    /// <summary>İki rakam arası minimum boşluk (px) — segmentasyonu böler.</summary>
-    public int CoordMinGapPx { get; set; } = 2;
+    /// <summary>İki karakteri ayıran minimum TAM-BOŞ (sıfır mürekkep) sütun sayısı. V2 segmentasyonda
+    /// zayıf (anti-alias) sütunlar artık BÖLMEZ → 1 güvenli varsayılan (bitişik rakamlar tek boş sütunla ayrılır).</summary>
+    public int CoordMinGapPx { get; set; } = 1;
+    /// <summary>Glyph örneklerinin normalizasyon sürümü. 2 = sıkı-kırpma + oran-koruyan letterbox (2026-07-02).
+    /// Eski örnekler yeni normalizasyonla eşleşmez → sürüm&lt;2 örnekleri YÜKLENMEZ (rakamlar yeniden öğretilir).</summary>
+    public int DigitGlyphsVersion { get; set; } = 0;
     /// <summary>Minimum rakam genişliği (px) — bundan dar run'lar gürültü sayılır.</summary>
     public int CoordMinDigitW { get; set; } = 2;
     /// <summary>Rakam kabul güven eşiği — altındaki tahmin "okunamadı" yapar.</summary>

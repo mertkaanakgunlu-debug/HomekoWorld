@@ -112,9 +112,12 @@ public sealed partial class FarmEngine
         foreach (var d in snap.Dets)
         {
             if (d.Dead) continue;
+            if (d.Guardian) continue;   // 2026-07-03: iz-damgalı guardian — tarama filtresiyle aynı
             if (selectedIds.Count > 0 && !selectedIds.Contains(d.ClassId)) continue;
             if (NearAnyActive(d.Center, _guardianBlacklist, GuardianBlacklistRadiusPx, now)) continue;
-            if (NearAnyActive(d.Center, _deadBlacklist,     DeadBlacklistRadiusPx,     now)) continue;
+            // Hareketli aday muaf (cesetler yürümez) — tarama filtresiyle aynı kural.
+            if (NearAnyActive(d.Center, _deadBlacklist, DeadBlacklistRadiusPx, now) &&
+                d.MovedPx < MobTracker.MovingAliveExemptPx) continue;
             return true;
         }
         return false;

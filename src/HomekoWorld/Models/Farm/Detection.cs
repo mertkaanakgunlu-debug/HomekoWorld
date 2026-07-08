@@ -23,6 +23,15 @@ public sealed record Detection(
     /// (cesetlere tekrar tıklama döngüsünü bitirir; ceset despawn olunca iz düşer).</summary>
     public bool Dead { get; init; }
 
+    /// <summary>Tracker bu izi "koruma mobu" işaretledi mi (2026-07-03). true → aday listesinden elenir.
+    /// Konumsal guardian-blacklist'ten farkı: iz mob'u YÜRÜRKEN de takip eder (60px yarıçap kaçağı biter).</summary>
+    public bool Guardian { get; init; }
+
+    /// <summary>İzin global-hareket-kompanzasyonlu kümülatif yer değiştirmesi (px, 2026-07-03). Kamera/karakter
+    /// kayması medyan-delta ile düşülür → yalnız MOB'UN kendi hareketi birikir. Cesetler yürümez: eşik
+    /// (MobTracker.MovingAliveExemptPx) üstündeki aday kesin canlıdır → spatial dead-blacklist'ten muaf tutulur.</summary>
+    public float MovedPx { get; init; }
+
     /// <summary>Bbox'ın geometrik merkezi.</summary>
     public PointF Center => new(BBox.X + BBox.Width / 2f, BBox.Y + BBox.Height / 2f);
 

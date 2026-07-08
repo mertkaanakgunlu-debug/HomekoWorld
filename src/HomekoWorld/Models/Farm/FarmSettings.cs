@@ -73,17 +73,23 @@ public class FarmSettings
     /// HP bar üretmediğinde o konum bu süre boyunca atlanır → en yakın diğer moba geçilir.
     /// Ceset despawn süresi kadar; respawn'ı kalıcı engellemeyecek kadar kısa tutulur.
     /// F2: 4000→8000 — cesetler ~10sn+ ekranda kaldığından 4sn dolunca aynı cesede yeniden tıklanıyordu.
+    /// 2026-07-03: 8000→20000 — 8sn HÂLÂ "10sn+" gözleminin altındaydı (MobTracker.DeadLingerMs=12000 ile
+    /// birlikte "cesede tıklama" A-belirtisinin ikinci kaynağıydı). Artık MobTracker kendi izini ceset
+    /// görünür kaldığı sürece süresiz tutuyor (bkz. MobTracker.DeadLingerMs) — bu alan yalnız YEDEK
+    /// (pozisyon-tabanlı) savunma; cömert tutmak güvenli (en kötü ihtimalle aynı noktaya respawn biraz
+    /// geç fark edilir, ceset yanlışlıkla canlı sayılmaz).
     /// </summary>
-    public int    DeadBlacklistMs          { get; set; } = 8000;
+    public int    DeadBlacklistMs          { get; set; } = 20000;
     /// <summary>Angajman + tracking döngüsü tick süresi (ms). Düşük = daha hızlı takip.
     /// Faz 22: YOLO ayrı thread'e alındığı için döngü inference beklemez → 15ms güvenli.</summary>
     public int    WtmTickMs                { get; set; } = 15;
     /// <summary>
-    /// Ölüm onayı debounce (ms, varsayılan 60). HP barı bu kadar KESİNTİSİZ "kırmızı yok" okununca mob
-    /// öldü sayılır. Düşük (60) = agresif/hızlı ama titrek HSV'de yanlış-ölüm riski; 100-150 = dengeli;
-    /// 200 = güvenli. hadHpOnce gate ile birlikte (önce en az bir kez canlı görülmeli). Combat tick'inden bağımsız.
+    /// Ölüm onayı debounce (ms). HP barı bu kadar KESİNTİSİZ "kırmızı yok" okununca mob öldü sayılır.
+    /// V3 (2026-07-02): varsayılan 60→150 — 60ms tek titrek/donuk DXGI karesiyle sahte-ölüm üretebiliyordu;
+    /// 150 + tazelik/3-taze-kare şartı + hasar-kapısı dengeli. 200+ = daha güvenli/yavaş.
+    /// hadHpOnce gate ile birlikte (önce en az bir kez canlı görülmeli). Combat tick'inden bağımsız.
     /// </summary>
-    public int    HpDeathConfirmMs         { get; set; } = 60;
+    public int    HpDeathConfirmMs         { get; set; } = 150;
     /// <summary>
     /// "Boş/siyah bar" anti-freeze tavanı (ms, varsayılan 600). Kırmızı kaybolup yerinde koyu-oluk
     /// kaldığında mob "çok düşük HP, hâlâ canlı" sayılır; ama kırmızı bu kadar süredir HİÇ dönmediyse
@@ -92,6 +98,31 @@ public class FarmSettings
     /// gerçek düşük-HP mob kombo sürerken bu süreden önce ölür. Min 150ms tabanına kıstırılır.
     /// </summary>
     public int    HpEmptyBarGraceMs        { get; set; } = 600;
+    /// <summary>
+    /// Angajman başladıktan sonra HP barı/yapı HİÇ "canlı" onaylanmazsa (hadHpOnce hiç true olmazsa) bu kadar
+    /// ms sonra vazgeçilir (Lost — kill sayılmaz, kısa blacklist, hemen yeni hedefe geçilir). KÖK NEDEN
+    /// (2026-07-03 canlı log): acquisition (GDI renk taraması, yapıdan BAĞIMSIZ) "canlı" onaylayıp engage
+    /// başlatabiliyor, ama combat döngüsünün V4 yapı skoru bu angajmanda HİÇ Match eşiğine ulaşmayabiliyor
+    /// (tek-örnek şablon fragile / hedef aslında zaten geçersiz) → hadHpOnce hiç true olmazsa "yapı-kayboldu"
+    /// dalı `hadHpOnce` şartlı olduğundan ASLA çalışmaz → kombo safetyMs'e (120sn) kadar boşa atılırdı (canlı
+    /// log kanıtı: 34+ saniye kesintisiz "yapı=YOK" + sıfır angajman-sonu satırı). Min 300ms tabanına kıstırılır.
+    /// </summary>
+    public int    HpFirstAliveGraceMs      { get; set; } = 1500;
+    /// <summary>
+    /// V4 yapı modu hızlı-terk (2026-07-03): angajman başında yapı skoru KESİNTİSİZ absent-eşiğin ALTINDA
+    /// kalırsa (hadHpOnce hiç olmadan) bu kadar ms sonra LostFast ile bırakılır — hayalet/ıska tık, hedef
+    /// penceresi HİÇ yokken <see cref="HpFirstAliveGraceMs"/> (1500ms) dolmasını beklemez (canlı log: 3 Lost,
+    /// her biri tam 1512ms, yapı skoru İLK örnekten beri 0.05-0.13). Yalnız StructureKnown iken aktif;
+    /// skor eşik-bandına/VAR'a dönerse sayaç sıfırlanır ("kesintisiz" şartı). Min 200ms tabanına kıstırılır.
+    /// </summary>
+    public int    StructAbsentAbandonMs    { get; set; } = 500;
+    /// <summary>
+    /// Dev 1 — hızlı hedef-kaybı: hedefin YOLO izi bu kadar ms (varsayılan 250) görünmez VE HP barı
+    /// "kırmızı yok" iken hedef gitti (başkası kesti / despawn / bizim kill) sayılır → karanlık arka planda
+    /// <see cref="HpEmptyBarGraceMs"/> tavanını (600ms) beklemeden ANINDA yeni hedefe geçilir. Kırmızı VARsa
+    /// bu dala hiç girilmez (canlı) → flicker-güvenli (iki bağımsız sinyal aynı anda "gitti" demeli). Min 80ms.
+    /// </summary>
+    public int    TargetLostYoloMs         { get; set; } = 250;
     /// <summary>
     /// YOLO tespit thread'i için minimum kare aralığı (ms) = FPS sınırı. Faz 26: DXGI yakalama
     /// ~1-2ms olduğundan eski GDI-dönemi cap'i (40ms ≈ 25 FPS) gevşetildi → 12ms ≈ 80 FPS (agresif:
@@ -120,22 +151,9 @@ public class FarmSettings
     /// </summary>
     public bool   PipelinedInference { get; set; } = true;
 
-    // ── P3: ROI yakalama ─────────────────────────────────────────────────────────
-    /// <summary>
-    /// DXGI ROI modu (P3). Açıkken tam ekran (ör. 2560×1600) yerine yalnız belirtilen dikdörtgen
-    /// yakalanır → GPU DMA + CPU readback küçülür → Cap ms düşer.
-    /// Tespitler otomatik ekran-uzayına çevrilir (tıklama koordinatları bozulmaz).
-    /// GDI fallback'te etkisizdir. Farm yeniden başlatılınca aktif olur.
-    /// </summary>
-    public bool CaptureRoiEnabled { get; set; } = false;
-    /// <summary>ROI sol kenarı (ekran pikseli). 4'ün katı olması önerilir (DXGI hizalama).</summary>
-    public int  CaptureRoiX       { get; set; } = 0;
-    /// <summary>ROI üst kenarı (ekran pikseli).</summary>
-    public int  CaptureRoiY       { get; set; } = 0;
-    /// <summary>ROI genişliği (piksel). 0 → ekranın tamamı.</summary>
-    public int  CaptureRoiW       { get; set; } = 0;
-    /// <summary>ROI yüksekliği (piksel). 0 → ekranın tamamı.</summary>
-    public int  CaptureRoiH       { get; set; } = 0;
+    // NOT: P3 "CaptureRoi*" (kısmi-ekran yakalama) KALDIRILDI (2026-07-02). CUDA + DXGI sonrası
+    // ölçülür faydası kalmadı (inference girdisi zaten ModelInputSize'a küçülür); ham-piksel ROI
+    // farklı çözünürlük/DPI'da kayma riskiydi. Eski state.json'lardaki alanlar sessizce yok sayılır.
     /// <summary>
     /// YOLO/ONNX çalıştırma sağlayıcısı (T4). Auto = donanım GPU varsa DirectML, yoksa CPU (DXGI autodetect);
     /// DirectML = zorla GPU (her DX12 GPU: NVIDIA/AMD/Intel); Cpu = zorla CPU.
@@ -243,6 +261,18 @@ public class FarmSettings
     // ── Roam ──────────────────────────────────────────────────────────────────
     public List<WaypointPoint> RoamWaypoints  { get; set; } = [];
     public int    IdleBeforeRoamMs { get; set; } = 4000;
+
+    // ── Dev 2 — Farm lokasyonuna dönüş ────────────────────────────────────────
+    // Bot uzak bir spawn'ı kesince kalabalık noktadan uzaklaşıyor → tanıma düşüyor. Bu kadar süre (ms)
+    // hiç canlı hedef seçilmez/savaşılmazsa başlangıç farm koordinatına yürünür. OtoFarm: başlangıç koordinatı
+    // başlatmada CoordinateReader ile okunur. Otonom: kalibre FarmSpotX/Y kullanılır. Nav+koord kalibre değilse
+    // özellik sessizce devre dışı. Kamera-scan (hızlı spawn için) önce çalışır; dönüş uzun-vadeli kurtarmadır.
+    /// <summary>Farm lokasyonuna otomatik dönüş açık mı (nav + koordinat okuyucu kalibre gerektirir).</summary>
+    public bool   ReturnHomeEnabled        { get; set; } = false;
+    /// <summary>Bu kadar süre (ms, vars. 20000) canlı hedef/savaş yoksa başlangıç farm koordinatına dönülür.</summary>
+    public int    ReturnHomeIdleMs         { get; set; } = 20000;
+    /// <summary>Ev koordinatına bu kadar oyun-biriminden (vars. 30) yakınsa dönüş tetiklenmez (boşa yürüme yok).</summary>
+    public int    ReturnHomeMinStrayCoords { get; set; } = 30;
 
     // ── Kill-switch ───────────────────────────────────────────────────────────
     public string KillSwitchKey   { get; set; } = "F12";

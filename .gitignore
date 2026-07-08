@@ -30,7 +30,7 @@ Build-DirectML/
 Build*/
 Output/
 redist/
-models/
+/models/
 state-live.json
 cuda_core/
 cudnn_core/

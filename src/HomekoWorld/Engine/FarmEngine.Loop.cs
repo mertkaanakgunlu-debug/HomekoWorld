@@ -25,6 +25,18 @@ public sealed partial class FarmEngine
             StatusChanged?.Invoke(this,
                 "⚠ Hedef HP bar kalibre edilmemiş — Geliştirilmiş Ayarlar > Hedef HP Bar'ı Kalibre Et");
 
+        // Dev 2 — ev koordinatını KARARLI oku (iki uyuşan okuma): tek okumadaki hane-hatası
+        // evi bozup botu yanlış yere yürütemez. Okunamazsa dönüş bu oturumda devre dışı.
+        if (_homeReadPending)
+        {
+            _homeReadPending = false;
+            try { _homeCoord = await ReadHomeStableAsync(ct); }
+            catch (OperationCanceledException) { return; }
+            Program.Log(_homeCoord is null
+                ? "[Farm] ⚠ başlangıç farm koordinatı okunamadı — otomatik dönüş bu oturumda devre dışı"
+                : $"[Farm] başlangıç farm koordinatı: ({_homeCoord.Value.x},{_homeCoord.Value.y})");
+        }
+
         while (!ct.IsCancellationRequested)
         {
             var s = _appState.Farm;   // Her iterasyonda taze al — ayar değişiklikleri anında yansır
@@ -39,10 +51,32 @@ public sealed partial class FarmEngine
             }
             catch (Exception ex)
             {
+                // 2026-07-04 (7.tur-b): GÖRÜNMEZ-HATA deliği kapatıldı — bu catch eskiden yalnız HUD status'a
+                // yazıyordu (dosya loguna HİÇ düşmüyordu); tick zincirindeki (loot/engage/scan) tekrarlayan bir
+                // exception log-adli-analizinde tamamen görünmezdi. Artık dosyaya tam iz yazılır.
+                Program.Log($"[Farm] TICK HATASI: {ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}");
                 SetState(FarmState.Scanning, $"Hata: {ex.Message}");
                 await Task.Delay(1000, ct);
             }
         }
+    }
+
+    /// <summary>Dev 2 — ev koordinatını KARARLI okur: en çok 6 denemede, ±3 birim uyuşan İKİ okuma ister.
+    /// V2 okuyucu şüpheli okumada zaten null döner; buradaki çifte-teyit kalan tekil yanlış-okumayı da eler.
+    /// Bulunamazsa null (dönüş özelliği bu oturumda devre dışı kalır).</summary>
+    private async Task<(int x, int y)?> ReadHomeStableAsync(CancellationToken ct)
+    {
+        (int x, int y)? prev = null;
+        for (int i = 0; i < 6 && !ct.IsCancellationRequested; i++)
+        {
+            var r = CoordReader?.Read();
+            if (r is not null && prev is not null &&
+                Math.Abs(r.Value.x - prev.Value.x) <= 3 && Math.Abs(r.Value.y - prev.Value.y) <= 3)
+                return r;
+            if (r is not null) prev = r;
+            await Task.Delay(150, ct);
+        }
+        return null;
     }
 
     private async Task TickAsync(FarmSettings s, CancellationToken ct)
@@ -57,6 +91,29 @@ public sealed partial class FarmEngine
         if (_paused)
         {
             await Task.Delay(80, ct);
+            return;
+        }
+
+        // Dev 3 — envanter dolu tetiği (kill eşiği): banka boşaltmayı combat'tan AYRI, tarama tick'inde çalıştır.
+        // Combat sırasında EngageAsync _bankPending'i kurar; burada duraklat → boşalt → tarama'ya dön.
+        if (_bankPending && Bank is not null)
+        {
+            _bankPending = false;
+            _bankRanSinceEngage = true;   // hedef-geçiş metriği: bu geçiş banka içeriyor → medyana katma
+            Telemetry.BankRuns++;
+            SetState(FarmState.Banking, "Envanter kontrol — klan bankası…");
+            _combo.CancelAll();
+            try
+            {
+                var msg = await Bank.RunAsync(ct);
+                Telemetry.BankItemsMoved += Bank.LastMovedCount;
+                StatusChanged?.Invoke(this, $"Banka: {msg}");
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception ex) { Program.Log($"[Farm] banka hatası: {ex.Message}"); }
+            SetState(FarmState.Scanning, "Taranıyor…");
+            _idleWatch.Restart();
+            _noCombatWatch.Restart();
             return;
         }
 

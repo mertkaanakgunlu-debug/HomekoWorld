@@ -389,13 +389,6 @@ public partial class MainViewModel
     }
     partial void OnFarmHpBarModeChanged(Models.HpBarDetectionMode value) { _state.Wtm.HpBarMode = value; _store.Save(_state); }
 
-    // P3: ROI yakalama — bir sonraki farm Start'ında geçerli olur (DetectionLoop kaynağı başta kurulur).
-    partial void OnFarmRoiEnabledChanged(bool value)   { _state.Farm.CaptureRoiEnabled = value; _store.Save(_state); }
-    partial void OnFarmRoiXChanged(int value)          { _state.Farm.CaptureRoiX = value; _store.Save(_state); }
-    partial void OnFarmRoiYChanged(int value)          { _state.Farm.CaptureRoiY = value; _store.Save(_state); }
-    partial void OnFarmRoiWChanged(int value)          { _state.Farm.CaptureRoiW = value; _store.Save(_state); }
-    partial void OnFarmRoiHChanged(int value)          { _state.Farm.CaptureRoiH = value; _store.Save(_state); }
-
     // ── Otomatik dosya keşfi ──────────────────────────────────────────────────
 
     [RelayCommand]

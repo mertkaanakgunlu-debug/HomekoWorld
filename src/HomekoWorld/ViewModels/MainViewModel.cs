@@ -155,11 +155,6 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private Models.Farm.InferenceBackend _farmInferenceBackend; // T4: ONNX EP (Auto/DirectML/Cpu)
     [ObservableProperty] private int    _farmSelectedMobCount;      // çoklu seçimde kaç mob seçili (UI badge)
     // P3: ROI yakalama — tam ekran yerine belirlenen bölge (Cap ms düşer)
-    [ObservableProperty] private bool   _farmRoiEnabled;
-    [ObservableProperty] private int    _farmRoiX;
-    [ObservableProperty] private int    _farmRoiY;
-    [ObservableProperty] private int    _farmRoiW;
-    [ObservableProperty] private int    _farmRoiH;
 
     /// <summary>HP bar tespit yöntemi seçenekleri (ComboBox ItemsSource).</summary>
     public Array HpBarModeOptions { get; } = Enum.GetValues(typeof(Models.HpBarDetectionMode));
@@ -245,6 +240,7 @@ public partial class MainViewModel : ObservableObject
     private readonly HomekoWorld.Services.Autonomous.MerchantTrader   _merchantTrader;
     private readonly HomekoWorld.Services.Autonomous.IconMatcher      _iconMatcher;
     private readonly HomekoWorld.Services.Autonomous.TownObjectDetector _townDetector;
+    private readonly HomekoWorld.Services.Farm.ClanBankService        _clanBank;
 
     private CancellationTokenSource? _reconnectCts;
 
@@ -267,7 +263,8 @@ public partial class MainViewModel : ObservableObject
         HomekoWorld.Services.Autonomous.InventoryReader  inventoryReader,
         HomekoWorld.Services.Autonomous.MerchantTrader   merchantTrader,
         HomekoWorld.Services.Autonomous.IconMatcher      iconMatcher,
-        HomekoWorld.Services.Autonomous.TownObjectDetector townDetector)
+        HomekoWorld.Services.Autonomous.TownObjectDetector townDetector,
+        HomekoWorld.Services.Farm.ClanBankService        clanBankService)
     {
         _router        = router;
         _transport     = router;
@@ -288,6 +285,15 @@ public partial class MainViewModel : ObservableObject
         _iconMatcher      = iconMatcher;
         _townDetector     = townDetector;
         Editor          = editor;
+
+        // Dev 2 — paylaşımlı FarmEngine'e Otonom nav/koord servislerini enjekte et (OtoFarm "farm lokasyonuna
+        // dönüş" için). Kalibre değilse FarmEngine tarafında sessizce devre dışı kalır.
+        _farmEngine.Navigator   = _navigator;
+        _farmEngine.CoordReader = _coordReader;
+
+        // Dev 3 — OtoFarm envanter boşaltma (klan bankası) servisini FarmEngine'e bağla.
+        _clanBank = clanBankService;
+        _farmEngine.Bank = _clanBank;
 
         _state         = state;
 
@@ -325,11 +331,6 @@ public partial class MainViewModel : ObservableObject
         _farmDxgiCapture     = _state.Farm.CaptureBackend == Models.Farm.CaptureBackend.Dxgi;
         _farmInferenceBackend = _state.Farm.InferenceBackend;
         _farmSelectedMobCount = _state.Farm.SelectedMobNames.Count;
-        _farmRoiEnabled      = _state.Farm.CaptureRoiEnabled;
-        _farmRoiX            = _state.Farm.CaptureRoiX;
-        _farmRoiY            = _state.Farm.CaptureRoiY;
-        _farmRoiW            = _state.Farm.CaptureRoiW;
-        _farmRoiH            = _state.Farm.CaptureRoiH;
         _hpBarRoiPreviewStatus = _state.Wtm.IsHpBarRoiCalibrated
             ? $"✓ Mob HP barı  X={_state.Wtm.HpBarRoiX}  Y={_state.Wtm.HpBarRoiY}  {_state.Wtm.HpBarRoiW}×{_state.Wtm.HpBarRoiH}px"
             : "✗ Kalibre edilmedi (Ana kalibrasyon 3. adım)";
@@ -389,6 +390,8 @@ public partial class MainViewModel : ObservableObject
         _portalClickOffsetY     = _state.Autonomous.PortalClickOffsetY.ToString();
         _portalInteractDelayMs  = _state.Autonomous.PortalInteractDelayMs.ToString();
         WireAutonomous();
+        LoadFarmExtrasSettings();   // Dev 2 (dönüş) + Dev 3 (klan bankası) kalıcı ayarları
+        LoadTargetFrameSettings();  // V4 — hedef penceresi çerçeve şablonu kalıcı ayarları
 
         // Faz 17: Farm — populate mob list from persisted mobs.json
         if (!string.IsNullOrWhiteSpace(_farmMobsJsonPath))
@@ -702,7 +705,10 @@ public partial class MainViewModel : ObservableObject
     {
         _state.CurrentPage = value;
         _store.Save(_state);
-        SyncSelectedModeFromPage();   // FujiMacro: sayfa seçimi = çalıştırılacak mod
+        // FujiMacro: sayfa seçimi = çalıştırılacak mod. "settings" bir MOD DEĞİL —
+        // Ayarlar'a geçmek F12'nin başlatacağı modu değiştirmesin (son mod korunur).
+        if (value != "settings")
+            SyncSelectedModeFromPage();
     }
 
     private void UpdateStats(string comboId, double elapsedMs)

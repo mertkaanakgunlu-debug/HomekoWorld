@@ -61,6 +61,7 @@ public sealed partial class FarmEngine
                     inferred = 0;
                     lastFpsTime = now;
                     TelemetryUpdated?.Invoke(this, Telemetry);
+                    MaybeLogPerfLine();   // 1/dk perf satırı (fine-tuning telemetrisi)
                 }
                 try
                 {
@@ -103,15 +104,15 @@ public sealed partial class FarmEngine
                     dets = _tracker.Update(dets, NowMs());
                     int snapW = screen.FullScreenW, snapH = screen.FullScreenH;
 
-                    // P3: ROI aktifken frame HP bar koordinatlarıyla uyumsuz → null bırak, combat fallback kullanır.
-                    bool? targetAliveHsv = null;
-                    int   barOffsetY = 0;
+                    // V4: karedeki hedef-penceresi durumu (yapı + renk + offset) — tek tarama, snapshot'a
+                    // atomik taşınır. P3: ROI aktifken frame HP bar koordinatlarıyla uyumsuz → null bırak.
+                    TargetBarState? barState = null;
                     var wtm = _appState.Wtm;
-                    if (roiX == 0 && roiY == 0 && wtm.HpBarMode == HpBarDetectionMode.Hsv && wtm.IsHpBarLocated)
-                        targetAliveHsv = WtmVision.IsTargetAliveByHsvFromFrame(frame, wtm, out barOffsetY);
+                    if (roiX == 0 && roiY == 0)
+                        barState = WtmVision.ScanTargetBar(frame, wtm, _frameTemplates, _frameRectPhys);
 
                     _latestDetections = new DetectionSnapshot(
-                        frameId, dets, snapW, snapH, capStart, NowMs(), targetAliveHsv, barOffsetY);
+                        frameId, dets, snapW, snapH, capStart, NowMs(), barState);
 
                     PublishOverlay(dets, s, snapW, snapH);
 
@@ -155,7 +156,7 @@ public sealed partial class FarmEngine
     /// <summary>
     /// Ayardaki yönteme göre ekran kaynağı kurar (DetectionLoop thread'inde çağrılır).
     /// DXGI seçili ama başlatılamıyorsa (exclusive-fullscreen/RDP/sürücü) sessizce GDI'ye düşülür.
-    /// P3: CaptureRoiEnabled ise DxgiScreenSource'a ROI Rectangle verilir.
+    /// Daima TAM EKRAN yakalanır (eski P3 kısmi-ROI özelliği kaldırıldı — CUDA sonrası faydasızdı).
     /// </summary>
     private static IScreenSource CreateScreenSource(FarmSettings s)
     {
@@ -163,10 +164,7 @@ public sealed partial class FarmEngine
         {
             try
             {
-                var roi = s.CaptureRoiEnabled && s.CaptureRoiW > 0 && s.CaptureRoiH > 0
-                    ? new System.Drawing.Rectangle(s.CaptureRoiX, s.CaptureRoiY, s.CaptureRoiW, s.CaptureRoiH)
-                    : System.Drawing.Rectangle.Empty;
-                return new DxgiScreenSource(roi);
+                return new DxgiScreenSource();
             }
             catch (Exception ex)
             {
@@ -260,12 +258,12 @@ public sealed partial class FarmEngine
                     double prepMs = inferrer.LastTimings.Preprocess;
                     frameId++;
 
+                    // V4: karedeki hedef-penceresi durumu (yapı + renk + offset) — tek tarama, üretici thread'de.
                     // P3: ROI aktifken frame koordinatları uyumsuz → null bırak.
-                    bool? targetAliveHsv = null;
-                    int   barOffsetY = 0;
+                    TargetBarState? barState = null;
                     var wtm = _appState.Wtm;
-                    if (roiX == 0 && roiY == 0 && wtm.HpBarMode == HpBarDetectionMode.Hsv && wtm.IsHpBarLocated)
-                        targetAliveHsv = WtmVision.IsTargetAliveByHsvFromFrame(frame, wtm, out barOffsetY);
+                    if (roiX == 0 && roiY == 0)
+                        barState = WtmVision.ScanTargetBar(frame, wtm, _frameTemplates, _frameRectPhys);
 
                     // Replay (throttle): capture buffer tüketiciye geçemez → ÜRETİCİ klonlar, tüketici dets ile yazar.
                     Bitmap? replayClone = null;
@@ -277,8 +275,8 @@ public sealed partial class FarmEngine
                     }
 
                     var item = new PipeItem(slot, frameId, capStart, padX, padY, scale,
-                        frame.Width, frame.Height, targetAliveHsv, capEnd - capStart, prepMs, replayClone,
-                        roiX, roiY, fullW, fullH, barOffsetY);
+                        frame.Width, frame.Height, barState, capEnd - capStart, prepMs, replayClone,
+                        roiX, roiY, fullW, fullH);
 
                     // latest-wins mailbox: eski pending'i DÜŞÜR (slot'unu iade, klonu dispose) → tüketici hep en taze.
                     lock (_pipeLock)
@@ -299,6 +297,19 @@ public sealed partial class FarmEngine
         }
         catch { /* CT yarışı vb. */ }
         finally { try { screen.Dispose(); } catch { } }
+    }
+
+    /// <summary>Dakikada 1 perf satırı loglar (2026-07-03 telemetri): Telemetry perf alanları zaten 1/sn
+    /// ölçülüyor ama yalnız UI HUD'a gidiyordu — fine-tuning için kalıcı kayıt gerek. Hangi tespit döngüsü
+    /// (seri/pipelined) aktifse yalnız o çağırır → tek throttle alanı yeter.</summary>
+    private void MaybeLogPerfLine()
+    {
+        long now = NowMs();
+        if (now - _lastPerfLogMs < 60_000) return;
+        _lastPerfLogMs = now;
+        Program.Log($"[Farm] perf: fps={Telemetry.InferenceFps} yakalama={Telemetry.CaptureMs}ms " +
+                    $"çıkarım={Telemetry.InferenceMs}ms (prep={Telemetry.PreprocessMs} gpu={Telemetry.GpuRunMs} " +
+                    $"post={Telemetry.PostprocessMs}) bekleme={Telemetry.WaitMs}ms");
     }
 
     // ── P2: PIPELINED inference — TÜKETİCİ (GPU Run + postprocess + publish) ──
@@ -328,6 +339,7 @@ public sealed partial class FarmEngine
                     totalCap = totalWait = 0; totalPrep = totalRun = totalPost = 0; inferred = 0;
                     lastFpsTime = now;
                     TelemetryUpdated?.Invoke(this, Telemetry);
+                    MaybeLogPerfLine();   // 1/dk perf satırı (fine-tuning telemetrisi)
                 }
 
                 PipeItem? item;
@@ -361,7 +373,7 @@ public sealed partial class FarmEngine
                     int snapH = item.FullH > 0 ? item.FullH : item.H;
 
                     _latestDetections = new DetectionSnapshot(
-                        item.FrameId, dets, snapW, snapH, item.CapturedAtMs, NowMs(), item.TargetAliveHsv, item.BarOffsetY);
+                        item.FrameId, dets, snapW, snapH, item.CapturedAtMs, NowMs(), item.Bar);
                     PublishOverlay(dets, _appState.Farm, snapW, snapH);
 
                     if (item.ReplayClone is { } clone)

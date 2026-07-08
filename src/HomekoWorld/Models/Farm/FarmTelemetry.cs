@@ -30,6 +30,30 @@ public sealed class FarmTelemetry
     /// <summary>Farm engine'in son gönderdiği tuş (TapKeyAsync'den güncellenir).</summary>
     public string LastKeyTapped { get; set; } = "";
 
+    // ── Oturum-özeti sayaçları (2026-07-03 telemetri) — yalnız FarmLoop task zincirinden mutasyona
+    // uğrar (ScanningTick/TargetAsync/EngageAsync/TickAsync sıralı await'ler) → kilit gerekmez. ──
+    /// <summary>Angajman-sonu Lost sayısı (pencere kayboldu, hasar görülmedi).</summary>
+    public int Losts          { get; set; }
+    /// <summary>Angajman-sonu LostFast sayısı (hızlı-terk: iz kayıp / yapı hiç görünmedi).</summary>
+    public int LostFasts      { get; set; }
+    /// <summary>Angajman-sonu Timeout sayısı (safetyMs doldu).</summary>
+    public int Timeouts       { get; set; }
+    /// <summary>Hedef-alma (TargetAsync) deneme sayısı.</summary>
+    public int AcqAttempts    { get; set; }
+    /// <summary>Hedef-alma başarı sayısı (angajmana ulaşan).</summary>
+    public int AcqSuccesses   { get; set; }
+    /// <summary>Guardian nedeniyle reddedilen hedef sayısı.</summary>
+    public int GuardianBlocks { get; set; }
+    /// <summary>MobTracker hareket-dirilişi sayısı. 7.tur (2026-07-04): diriliş mekanizması KALDIRILDI —
+    /// bu alan artık hep 0 (oturum-özeti formatı bozulmasın diye tutuluyor; 0 = mekanizma kapalı doğrulaması).</summary>
+    public int Resurrections  { get; set; }
+    /// <summary>Klan bankası çalışma sayısı.</summary>
+    public int BankRuns       { get; set; }
+    /// <summary>Klan bankasına taşınan toplam eşya.</summary>
+    public int BankItemsMoved { get; set; }
+    /// <summary>Kill→sonraki-angajman geçiş süreleri (ms; banka içeren geçişler hariç, 2000 kayıt sınırı).</summary>
+    public System.Collections.Generic.List<int> SwitchTimesMs { get; } = new();
+
     /// <summary>Sıfırlar (yeni oturum başında çağır).</summary>
     public void Reset()
     {
@@ -39,5 +63,9 @@ public sealed class FarmTelemetry
         SessionMs   = 0;
         CurrentMob  = "";
         LastKeyTapped = "";
+        Losts = LostFasts = Timeouts = 0;
+        AcqAttempts = AcqSuccesses = GuardianBlocks = Resurrections = 0;
+        BankRuns = BankItemsMoved = 0;
+        SwitchTimesMs.Clear();
     }
 }
