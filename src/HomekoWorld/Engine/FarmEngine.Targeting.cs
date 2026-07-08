@@ -555,6 +555,14 @@ public sealed partial class FarmEngine
         if (WtmVision.IsTargetAliveSmoothed(_appState.Wtm, out int gdiOffsetY))         // GDI: gecikmesiz, senkron taze
         {
             barOffsetY = gdiOffsetY;
+            // 8.tur (2026-07-08): yapı (V4) offset-OTORİTESİ — taze snapshot'ta çerçeve şablonu
+            // bulunduysa nameplate offset'ini ondan al: ScanTargetBar iki konumu max(s0,s1) NCC ile
+            // kıyaslar, renk kapısından çok daha güvenilir konum kanıtıdır. Canlılık kararı GDI'de
+            // kalır (gecikmesiz); yalnız guardian/nameplate'in bakacağı konum otoritesi değişir.
+            var structSnap = _latestDetections;
+            if (structSnap?.Bar is { } stb && NowMs() - structSnap.PublishedAtMs < 300 &&
+                stb.StructureKnown && stb.StructurePresent)
+                barOffsetY = stb.OffsetY;
             return true;
         }
         var snap = _latestDetections;                                                  // DXGI: GDI siyah dönerse

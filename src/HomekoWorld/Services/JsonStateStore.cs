@@ -177,10 +177,20 @@ public sealed class JsonStateStore
                 state.AutoPot.StartKey = "F11";
 
             // FarmSettings scan mod defaults — 0 ise default set
-            if (state.Farm.ScanIdleMs == 0)      state.Farm.ScanIdleMs      = 2000;
+            if (state.Farm.ScanIdleMs == 0)      state.Farm.ScanIdleMs      = 1000;
             if (state.Farm.ScanDragPx == 0)      state.Farm.ScanDragPx      = 100;
             if (state.Farm.ScanWaitMsBetween == 0) state.Farm.ScanWaitMsBetween = 1000;
             if (state.Farm.ScanMaxAttempts == 0) state.Farm.ScanMaxAttempts  = 6;
+
+            // 8.tur (2026-07-08) — akıcılık varsayılanları: eski varsayılanda kalmış kullanıcıyı
+            // BİR KEZ yeni değere taşı (elle farklı değer seçtiyse dokunma; flag sayesinde kullanıcı
+            // sonradan bilerek 2000/200'e dönerse bir daha ezilmez).
+            if (!state.FluidityDefaultsMigrated)
+            {
+                if (state.Farm.ScanIdleMs == 2000)    state.Farm.ScanIdleMs     = 1000;
+                if (state.Farm.LootTapDelayMs == 200) state.Farm.LootTapDelayMs = 120;
+                state.FluidityDefaultsMigrated = true;
+            }
 
             // WtmSettings guardian / ROI defaults — tolerans 0 ise set
             if (state.Wtm.NameplateColorTol == 0)          state.Wtm.NameplateColorTol = 50;

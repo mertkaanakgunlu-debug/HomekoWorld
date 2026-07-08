@@ -242,7 +242,9 @@ public class FarmSettings
     public bool   LootEnabled     { get; set; } = false;
     public string LootKey         { get; set; } = "F";
     public int    LootTapsCount   { get; set; } = 3;
-    public int    LootTapDelayMs  { get; set; } = 200;
+    /// <summary>Loot tap'leri arası bekleme (ms). 8.tur: 200→120 — loot bloğu kill başına ~990ms→~630ms
+    /// (loot sırasında tarama durur; kill temposunda görünür duraksamaydı).</summary>
+    public int    LootTapDelayMs  { get; set; } = 120;
 
     // ── Tespit overlay (YOLO kutuları) ────────────────────────────────────────
     /// <summary>Açıksa farm çalışırken YOLO tespit kutuları ekranda çizilir (seçili mob türü).</summary>
@@ -279,8 +281,9 @@ public class FarmSettings
 
     // ── Scan mod (hedef yoksa kamera çevirme) ────────────────────────────────
     public bool ScanModeEnabled     { get; set; } = true;
-    /// <summary>Bu kadar süre (ms) mob bulunamazsa kamera drag başlar.</summary>
-    public int  ScanIdleMs          { get; set; } = 2000;
+    /// <summary>Bu kadar süre (ms) mob bulunamazsa kamera drag başlar. 8.tur: 2000→1000 —
+    /// boş sahada ilk kamera-dönüşü kararı 1sn erken gelsin (spawn-tepki hissi).</summary>
+    public int  ScanIdleMs          { get; set; } = 1000;
     /// <summary>Her scan adımında sağa sürüklenen piksel (göreli).</summary>
     public int  ScanDragPx          { get; set; } = 100;
     /// <summary>İki scan adımı arasında bekleme (ms).</summary>

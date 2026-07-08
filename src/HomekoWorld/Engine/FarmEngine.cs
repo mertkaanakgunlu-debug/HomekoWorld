@@ -456,6 +456,12 @@ public sealed partial class FarmEngine
 
     public void Stop()
     {
+        // 8.tur (2026-07-08): idempotent — F12 tek basışta ÜÇ ayrı durdurma yolu tetikleniyor
+        // (ViewModel StopActiveEngineImmediate + ToggleSelectedMode→StopFarm + FarmEngine'in kendi
+        // kill-switch hook'u) ve her biri tam teardown + oturum-özeti logluyordu (canlı logda özet
+        // hep 3×). İlk çağrı state'i Idle'a çeker; sonrakiler burada döner.
+        if (_state == FarmState.Idle) return;
+
         _keyHook.KeyDown -= OnKeyDown;
 
         // A4: önce iptal → detection thread'i Join et → SONRA CTS'i dispose et. Eski sıra

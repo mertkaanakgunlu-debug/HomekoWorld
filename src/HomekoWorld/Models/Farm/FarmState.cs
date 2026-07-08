@@ -18,8 +18,8 @@ public enum FarmState
     /// <summary>Mob öldü, loot toplanıyor.</summary>
     Looting,
 
-    /// <summary>HP veya MP düştü, pot içiliyor.</summary>
-    Potting,
+    // NOT (8.tur, 2026-07-08): "Potting" üyesi kaldırıldı — hiçbir SetState kullanmıyordu;
+    // potlama tek otorite AutoPotService'te (ayrı thread), farm state makinesine hiç girmiyor.
 
     /// <summary>Spot boşaldı, waypoint'lere yürünüyor.</summary>
     Roaming,

@@ -409,7 +409,11 @@ public sealed partial class FarmEngine
                     else
                     {
                         // ── Legacy GDI dalı (ColorScan modu vb.) — senkron tarama = her okuma taze ──
-                        // Damga makinesi uygulanamaz; hasar-geçmişi yok → kill hasar-kapısız sayılır.
+                        // Damga makinesi uygulanamaz; hasar-geçmişi yok. 8.tur (2026-07-08): eskiden burada
+                        // doğrudan Finish(Killed) çağrılıyordu = angaje bile olmamış (kombo hiç ateşlenmemiş,
+                        // örn. archer yaklaşmadayken çalınan) hedefler de kill sayılıyordu. Artık FinishDeath:
+                        // hasar-geçmişi bu dalda hiç örneklenmediği için karar tek-vuruş kuralına iner —
+                        // engageStarted ise Killed, değilse Lost (V4/V3 dallarıyla tutarlı).
                         bool redPresent = WtmVision.IsTargetAliveSmoothed(_appState.Wtm);
                         if (redPresent)
                         {
@@ -419,7 +423,7 @@ public sealed partial class FarmEngine
                         {
                             if (firstHpMissMs < 0) firstHpMissMs = sw.ElapsedMilliseconds;
                             else if (sw.ElapsedMilliseconds - firstHpMissMs >= hpDeathConfirmMs)
-                                return Finish(EngageResult.Killed, "pencere-kayboldu (GDI renk-modu, hasar-kapısız)");
+                                return FinishDeath("pencere-kayboldu (GDI renk-modu)");
                         }
                     }
                 }

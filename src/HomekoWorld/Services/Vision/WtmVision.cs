@@ -228,7 +228,7 @@ public static class WtmVision
         // sahte-canlı yapıp geri alınmıştı; AND o regresyonu önler (koyu-çalıda red<thr → elenir).
         // KÖK NEDEN (2026-07-01): saf-kırmızı TEK BAŞINA, ROI'deki kırmızı arka planı "canlı" sanıp hem sahte-hedef
         // hem yanlış duyuru-offset'i (RedAtAreas offset-0'ı tetikleyip guardian ismini yanlış yerde aratma) üretiyordu.
-        bool  alive    = red >= redThreshold && fillFrac >= s.HpBarFillMinFrac;
+        bool  alive    = BarWouldPass(red, dark, total, redThreshold, s);
         // V4 review-fix: LastBarScan artık kozmetik değil — ScanTargetBar (tespit thread'i) bunu
         // TargetBarState.Red/Dark/... olarak paketleyip Combat'ın hasar-kapısına (Killed/Lost ayrımı)
         // besliyor; AYRICA GDI dalı (IsTargetAliveSmoothed → combat/farm-loop thread'i) da BarPresent'i
@@ -244,11 +244,20 @@ public static class WtmVision
 
     private static readonly object _barScanLock = new();
 
+    /// <summary>BarPresent'in YAN-ETKİSİZ (LastBarScan yazmayan) karar çekirdeği: red≥eşik VE
+    /// fill≥HpBarFillMinFrac. Çift-konum (duyuru) değerlendirmesinde aday konumları LastBarScan'i
+    /// kirletmeden kıyaslamak için ayrıldı — kapı mantığı tek yerde kalsın.</summary>
+    private static bool BarWouldPass(int red, int dark, int total, int redThreshold, WtmSettings s)
+    {
+        float fillFrac = total > 0 ? (float)(red + dark) / total : 0f;
+        return red >= redThreshold && fillFrac >= s.HpBarFillMinFrac;
+    }
+
     /// <summary>Bar'ın EN SON bulunduğu dikey offset (ekran px): 0 = kalibre konum (duyuru yok),
     /// +Δy = duyuru kayması (duyuru var). Nameplate/guardian kontrolü ismi DOĞRU konumda araması için kullanır.</summary>
     public static int LastBarOffsetY;
 
-    /// <summary>Bar görünür mü (kırmızı). Kalibre konum (duyuru YOK, offset 0) → bulamazsa +Δy (duyuru VAR).
+    /// <summary>Bar görünür mü (kırmızı). İki geçerli konum: kalibre (duyuru YOK, offset 0) ve +Δy (duyuru VAR).
     /// Bar bulunduğunda <see cref="LastBarOffsetY"/> set edilir. NOT: yalnız bu iki konum geçerli — isim de barla
     /// aynı kadar kayar; eski −Δy denemesi duyuru/isim alanına bakıp guardian'ı şaşırtıyordu (kaldırıldı). Ekrandan yakalar.</summary>
     private static bool RedAtAreas(int x, int y, int w, int h, int threshold, WtmSettings s)
@@ -257,17 +266,38 @@ public static class WtmVision
     /// <summary>V4 review-fix: offset'i AYNI taramadan out-param ile döner (LastBarOffsetY global'ini de
     /// yazar — geriye uyum için). Çağıran (IsTargetAliveSmoothed/IsTargetAliveNow) artık ayrı bir satırda
     /// global'i okumak ZORUNDA değil — tespit thread'i araya girip başka bir taramanın offset'ini
-    /// yazamaz (eski hâlde bu, guardian kontrolünü yanlış isim-konumuna yönlendirebiliyordu).</summary>
+    /// yazamaz (eski hâlde bu, guardian kontrolünü yanlış isim-konumuna yönlendirebiliyordu).
+    /// 8.tur (2026-07-08): ilk-eşleşen → EN-GÜÇLÜ-KANIT. Duyuru AÇIKKEN gerçek bar +Δy'deyken, 0
+    /// konumundaki ROI'ye kayan içerik (isim bandı/duyuru metni) zayıf kapıyı (red≥5 + fill≥0.60)
+    /// geçebiliyor ve ilk-eşleşen 0'ı seçince nameplate yanlış konumda okunup HER mob guardian
+    /// sanılıyordu (canlı log 18:28: 82 denemenin 41'i sahte guardian-red, geçiş ort 11.3sn).
+    /// Artık iki konum da ölçülür; ikisi de geçerse KIRMIZI SAYISI yüksek olan kazanır (gerçek bar =
+    /// dolu kırmızı blok, sızıntı/metin = düşük sayı). LastBarScan'e yalnız SEÇİLEN konum yazılır.</summary>
     private static bool RedAtAreas(int x, int y, int w, int h, int threshold, WtmSettings s, out int offsetY)
     {
-        if (BarPresent(CountRedHsv(x, y, w, h, s, out int d1, out int t1), d1, t1, threshold, s))
-        { offsetY = 0; LastBarOffsetY = 0; return true; }
-        if (s.AnnounceShiftY > 0)
+        int  red1 = CountRedHsv(x, y, w, h, s, out int d1, out int t1);
+        bool p1   = BarWouldPass(red1, d1, t1, threshold, s);
+        int  dy   = s.AnnounceShiftY > 0 ? ResolutionMapper.ScaleLen(s.AnnounceShiftY) : 0;
+        int  red2 = 0, d2 = 0, t2 = 0;
+        bool p2   = false;
+        if (dy > 0)
         {
-            int dy = ResolutionMapper.ScaleLen(s.AnnounceShiftY);
-            if (BarPresent(CountRedHsv(x, y + dy, w, h, s, out int d2, out int t2), d2, t2, threshold, s))
-            { offsetY = dy; LastBarOffsetY = dy; return true; }
+            red2 = CountRedHsv(x, y + dy, w, h, s, out d2, out t2);
+            p2   = BarWouldPass(red2, d2, t2, threshold, s);
         }
+        if (p1 || p2)
+        {
+            bool useShift = p2 && (!p1 || red2 > red1);
+            BarPresent(useShift ? red2 : red1, useShift ? d2 : d1, useShift ? t2 : t1, threshold, s);
+            offsetY = useShift ? dy : 0;
+            LastBarOffsetY = offsetY;
+            return true;
+        }
+        // Canlı değil: LastBarScan'i boş-bar teyidinin (Combat emptyBarHere, DarkFrac) işine yarayan
+        // konumla yaz — koyu-oluk oranı yüksek olan konum siyah boş barın gerçekte olduğu yerdir.
+        bool shiftDarker = dy > 0 && (long)d2 * Math.Max(1, t1) > (long)d1 * Math.Max(1, t2);
+        if (shiftDarker) BarPresent(red2, d2, t2, threshold, s);
+        else             BarPresent(red1, d1, t1, threshold, s);
         offsetY = 0;
         return false;
     }
@@ -348,15 +378,30 @@ public static class WtmVision
     }
 
     /// <summary>RedAtAreas'ın sağlanan tam kareden (yeni yakalama yok) çalışan eşi — kalibre konum (offset 0) +
-    /// duyuru +Δy. Bar bulununca <see cref="LastBarOffsetY"/> set eder.</summary>
+    /// duyuru +Δy. Bar bulununca <see cref="LastBarOffsetY"/> set eder. 8.tur: RedAtAreas ile aynı
+    /// en-güçlü-kanıt seçimi (ilk-eşleşen 0-önyargısı guardian sahte-pozitifinin köküydü — üstteki nota bak).</summary>
     private static bool RedAtAreasFromFrame(Bitmap frame, int x, int y, int w, int h, int threshold, WtmSettings s)
     {
-        if (BarPresent(CountRedHsvFromFrame(frame, x, y, w, h, s, out int d1, out int t1), d1, t1, threshold, s)) { LastBarOffsetY = 0; return true; }
-        if (s.AnnounceShiftY > 0)
+        int  red1 = CountRedHsvFromFrame(frame, x, y, w, h, s, out int d1, out int t1);
+        bool p1   = BarWouldPass(red1, d1, t1, threshold, s);
+        int  dy   = s.AnnounceShiftY > 0 ? ResolutionMapper.ScaleLen(s.AnnounceShiftY) : 0;
+        int  red2 = 0, d2 = 0, t2 = 0;
+        bool p2   = false;
+        if (dy > 0)
         {
-            int dy = ResolutionMapper.ScaleLen(s.AnnounceShiftY);
-            if (BarPresent(CountRedHsvFromFrame(frame, x, y + dy, w, h, s, out int d2, out int t2), d2, t2, threshold, s)) { LastBarOffsetY = dy; return true; }
+            red2 = CountRedHsvFromFrame(frame, x, y + dy, w, h, s, out d2, out t2);
+            p2   = BarWouldPass(red2, d2, t2, threshold, s);
         }
+        if (p1 || p2)
+        {
+            bool useShift = p2 && (!p1 || red2 > red1);
+            BarPresent(useShift ? red2 : red1, useShift ? d2 : d1, useShift ? t2 : t1, threshold, s);
+            LastBarOffsetY = useShift ? dy : 0;
+            return true;
+        }
+        bool shiftDarker = dy > 0 && (long)d2 * Math.Max(1, t1) > (long)d1 * Math.Max(1, t2);
+        if (shiftDarker) BarPresent(red2, d2, t2, threshold, s);
+        else             BarPresent(red1, d1, t1, threshold, s);
         return false;
     }
 

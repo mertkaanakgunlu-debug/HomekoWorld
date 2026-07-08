@@ -75,6 +75,10 @@ public class AppState
     /// Flag olmadan migration her açılışta ≤0.45'i ezer → kullanıcının bilerek düşürdüğü eşiği kaybeder.</summary>
     public bool ConfidenceThresholdMigrated { get; set; }
 
+    /// <summary>8.tur (2026-07-08): akıcılık varsayılanlarının (ScanIdleMs 2000→1000,
+    /// LootTapDelayMs 200→120) eski varsayılanda kalmış kullanıcıya bir kez taşındığı işareti.</summary>
+    public bool FluidityDefaultsMigrated { get; set; }
+
     // ---- Faz 18: Global Auto-Pot & Settings ----
     public AutoPotSettings   AutoPot        { get; set; } = new();
     public SettingsHotkeys   Hotkeys        { get; set; } = new();
