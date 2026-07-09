@@ -198,6 +198,7 @@ public partial class MainViewModel : ObservableObject
 
     // ---- Koruma mobu (guardian) kalibrasyonu ----
     [ObservableProperty] private bool   _guardianDetectionEnabled = true;
+    [ObservableProperty] private bool   _guardianUnknownStrict    = true; // 9.tur: Unknown = saldırma, kısa atla
     [ObservableProperty] private string _nameplateCalibStatus     = "";
     [ObservableProperty] private string _nameBandCalibStatus      = "";
     [ObservableProperty] private System.Windows.Media.ImageSource? _nameBandPreview;
@@ -338,6 +339,7 @@ public partial class MainViewModel : ObservableObject
             ? $"Renk fallback: X={_state.Wtm.HpColorScanX} Y={_state.Wtm.HpColorScanY}"
             : "Renk fallback: kalibre edilmedi";
         _guardianDetectionEnabled = _state.Wtm.GuardianDetectionEnabled;
+        _guardianUnknownStrict    = _state.Wtm.GuardianUnknownStrict;
         _nameplateCalibStatus     = _state.Wtm.IsNameplateCalibrated
             ? "✓ Normal + Koruma rengi kalibre"
             : "✗ Kalibre edilmedi";

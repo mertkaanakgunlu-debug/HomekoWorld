@@ -914,6 +914,17 @@
                                 VerticalAlignment="Center"
                                 ToolTip="Kırmızı isimli koruma moblarını tespit et ve kara listeye ekle"/>
                     </Grid>
+                    <Grid Margin="0,4,0,0">
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                      </Grid.ColumnDefinitions>
+                      <TextBlock Grid.Column="0" Text="Belirsiz isim = atla (strict)" FontSize="10"
+                                 Foreground="{StaticResource TextMuted}" VerticalAlignment="Center"/>
+                      <CheckBox Grid.Column="1" IsChecked="{Binding GuardianUnknownStrict}"
+                                VerticalAlignment="Center"
+                                ToolTip="İsim plakası okunamadığında (Unknown) saldırmak yerine hedefi kısa süre atla — koruma mobuna yanlışlıkla vurma riskini düşürür"/>
+                    </Grid>
                     <TextBlock Text="{Binding NameplateCalibStatus}"
                                FontSize="9" Foreground="{StaticResource Gold}"
                                TextWrapping="Wrap" Margin="0,4,0,0"/>

@@ -345,7 +345,7 @@ public sealed partial class FarmEngine
                                     $"süre={acqSw.ElapsedMilliseconds}ms kare-yaşı={Telemetry.FrameAgeAtClickMs}ms " +
                                     $"denemeler=[{string.Join(",", attempts)}]");
                     else
-                        Program.Log($"[Farm] hedef-bırakıldı trk={liveTarget.TrackId}: guardian " +
+                        Program.Log($"[Farm] hedef-bırakıldı trk={liveTarget.TrackId}: guardian-kapısı " +
                                     $"(süre={acqSw.ElapsedMilliseconds}ms)");
                     return ok;
                 }
@@ -524,6 +524,23 @@ public sealed partial class FarmEngine
                                / (System.Diagnostics.Stopwatch.Frequency / 1000)
                                + GuardianBlacklistDurationMs;
                 _guardianBlacklist.Add((target.Center, expireAt));
+                return false;
+            }
+            // 9.tur STRICT: Unknown = isim okunAMAdı — guardian hükmü DEĞİL, okuma-kalitesi sinyali; ama
+            // fail-open (eski davranış: Unknown'a saldır) unattended'da guardian'a vurma riskiydi (canlı
+            // log: 54× Unknown, çoğu saldırıyla devam etti). Saldırma; MarkGuardian/iz-damga YOK,
+            // GuardianBlocks sayılmaz (o "kesin guardian" demek). Kısa konum atlaması: okuma düzelince
+            // aynı mob geri alınır. RecordAcqFailure: HP-canlı krediti az önce seriyi sıfırladı — hareketli
+            // Unknown mob bl-muafiyetiyle anında geri seçilip tık-döngüsü kurmasın; 3 ardışıkta trk-throttle
+            // (4sn) döngüyü kırar.
+            if (nameClass == WtmVision.NameplateClass.Unknown && _appState.Wtm.GuardianUnknownStrict)
+            {
+                Program.Log($"[Farm] Guardian kontrol: offset={barOffsetY} sonuç={nameClass} süre={gSw.ElapsedMilliseconds}ms " +
+                            $"→ strict-skip konum-bl {MissReselectSkipMs}ms@({(int)target.Center.X},{(int)target.Center.Y})");
+                StatusChanged?.Invoke(this, "İsim okunamadı (Unknown) — güvenli atlama");
+                await CancelClickMovementAsync(ct);
+                _deadBlacklist.Add((target.Center, NowMs() + MissReselectSkipMs));
+                RecordAcqFailure(target.TrackId);
                 return false;
             }
             // Tanılama: HER kontrolde logla (yalnız Guardian'da değil) — "normal sanılıp vuruldu" senaryosunda

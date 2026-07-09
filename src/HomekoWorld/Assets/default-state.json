@@ -37,6 +37,7 @@
                 "DirectionKey":  "R",
                 "PollIntervalMs":  100,
                 "GuardianDetectionEnabled":  true,
+                "GuardianUnknownStrict":  true,
                 "NameplateOffsetY":  -22,
                 "NormalNameR":  168,
                 "NormalNameG":  136,

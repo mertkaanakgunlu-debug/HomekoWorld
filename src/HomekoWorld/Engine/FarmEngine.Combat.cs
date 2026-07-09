@@ -155,7 +155,13 @@ public sealed partial class FarmEngine
         // engageStarted baştan true (W/R yok, kombo hemen). Archer ise B2 yaklaşmasını yapar.
         bool archerApproach = ArcherApproachActive(s);
 
-        Detection currentTarget = target;
+        Detection currentTarget = target; // KİMLİK: kilitli iz — yalnız kesin-aynı-TrackId eşleşmesiyle ilerler
+        // 9.tur: NİŞAN/KİMLİK AYRIMI — aimTarget mesafe/overlay için EN TAZE gözlemi izler (120px pozisyon-
+        // fallback dahil); currentTarget/_lastEngagedCenter/_lastEngagedTrackId ise yalnız kesin-aynı-iz
+        // eşleşmesinde güncellenir. Eski davranışta fallback currentTarget+_lastEngagedCenter'ı da
+        // kaydırıyordu → kill-sonrası ceset blacklist'i 120px komşunun (canlı mob/ceset) üstüne düşebiliyor,
+        // kimlik sürükleniyordu.
+        Detection aimTarget     = target;
         _lastEngagedCenter  = target.Center;  // ilk tick'te HP ile ölüm tespit edilse de geçerli konum
         _lastEngagedTrackId = target.TrackId; // kill sonrası MobTracker.MarkDead için kilitli iz kimliği
         bool walkHeld     = false;
@@ -361,7 +367,7 @@ public sealed partial class FarmEngine
                                 // ── V3 renk yolu (çerçeve öğretilmemiş) — davranış birebir korunur ──
                                 // Dev 1 — YOLO-hızlandırmalı kayıp: mesafe kapılı (yakın dövüşte iz kaybı normal).
                                 if (!redPresent && hadHpOnce && Inferrer is not null &&
-                                    currentTarget.DistanceTo(charCenter) > LostFastMinDistPx &&
+                                    aimTarget.DistanceTo(charCenter) > LostFastMinDistPx &&
                                     sw.ElapsedMilliseconds - lastStickySeenMs >= targetLostYoloMs)
                                     return Finish(EngageResult.LostFast, $"YOLO izi {targetLostYoloMs}ms yok + HP kırmızı yok");
 
@@ -463,32 +469,43 @@ public sealed partial class FarmEngine
                         ? dets.FirstOrDefault(d => d.TrackId == currentTarget.TrackId)
                         : null;
                     bool stuckByTrackId = sticky is not null; // kesin-aynı-iz mi yoksa pozisyon-fallback mi?
-                    // Track kaybolduysa eski pozisyon-kilidi (aynı tür + 120px en yakın) fallback.
+                    // Track kaybolduysa pozisyon-kilidi (aynı tür + 120px en yakın) fallback — 9.tur: çapa
+                    // aimTarget.Center (en taze gözlem; hızlı mobda iz churn'ünde takip kabiliyeti korunur)
+                    // ve ölü/guardian aday nişan hedefi olamaz (cesede doğru yürüme/yönelme olmasın).
                     if (sticky is null)
                     {
                         const float stickyRadius = 120f;
                         sticky = dets
                             .Where(d => d.ClassId == currentTarget.ClassId &&
-                                        d.DistanceTo(currentTarget.Center) <= stickyRadius)
-                            .OrderBy(d => d.DistanceTo(currentTarget.Center)) // pozisyon kilidi: aynı mob'u izle
+                                        !d.Dead && !d.Guardian &&
+                                        d.DistanceTo(aimTarget.Center) <= stickyRadius)
+                            .OrderBy(d => d.DistanceTo(aimTarget.Center)) // pozisyon kilidi: aynı mob'u izle
                             .FirstOrDefault();
                     }
 
                     if (sticky is not null)
                     {
-                        currentTarget      = sticky;
-                        _lastEngagedCenter = sticky.Center;    // kill sonrası ceset kara listesi için taze konum
-                        // _lastEngagedTrackId YALNIZ kesin-aynı-iz (TrackId) eşleşmesinde güncellenir (#2):
-                        // pozisyon-fallback yakındaki BAŞKA bir CANLI mobu yakalayabilir → onu MarkDead etme.
-                        // Fallback'te eski iz kimliği korunur; mob iz değiştirdiyse yeni iz DeadInheritRadiusPx
-                        // köprüsüyle yine ölü damgalanır, canlı komşu yanlışlıkla elenmez.
-                        if (stuckByTrackId) _lastEngagedTrackId = sticky.TrackId;
+                        aimTarget = sticky;                    // nişan/mesafe/overlay daima en taze gözlem
+                        // 9.tur: KİMLİK + ceset-bl çapası YALNIZ kesin-aynı-iz (TrackId) eşleşmesinde ilerler.
+                        // Pozisyon-fallback yakındaki BAŞKA bir mobu yakalayabilir → kimliği/çapayı ona
+                        // kaydırmak kill-sonrası blacklist'i komşuya düşürüyor, MarkDead'i yanlış ize
+                        // taşıyabiliyordu. Fallback'te eski kimlik/çapa korunur; mob iz değiştirdiyse yeni iz
+                        // DeadInheritRadiusPx köprüsüyle yine ölü damgalanır, canlı komşu yanlışlıkla elenmez.
+                        if (stuckByTrackId)
+                        {
+                            currentTarget       = sticky;
+                            _lastEngagedCenter  = sticky.Center; // kill sonrası ceset kara listesi için taze konum
+                            _lastEngagedTrackId = sticky.TrackId;
+                        }
                         lastStickySeenMs = sw.ElapsedMilliseconds;   // Dev 1 — iz en son bu an görüldü
+                                                                     // (fallback'te de tazelenir: LostFast
+                                                                     // semantiği değişmesin — komşu görünürlüğü
+                                                                     // de "iz görüldü" sayılır, eski davranış)
                     }
-                    // sticky yoksa: currentTarget (+ _lastEngaged*) son değerinde KALIR (zıplama yok).
+                    // sticky yoksa: aimTarget/currentTarget (+ _lastEngaged*) son değerinde KALIR (zıplama yok).
 
-                    // Overlay vurgusu: kilitli/saldırılan hedef (kutuları DetectionLoop çizer).
-                    _currentTargetForOverlay = currentTarget;
+                    // Overlay vurgusu: nişan alınan hedef (kutuları DetectionLoop çizer).
+                    _currentTargetForOverlay = aimTarget;
                 }
 
                 // ── B2v2: Archer AKICI yaklaşma — W SÜREKLİ basılı; yakında yönelme YOK ──
@@ -501,7 +518,7 @@ public sealed partial class FarmEngine
                 // → bu blok çalışmaz, kombo hemen.)
                 if (!engageStarted)
                 {
-                    float dist = currentTarget.DistanceTo(charCenter); // ekran merkez mesafesi
+                    float dist = aimTarget.DistanceTo(charCenter); // ekran merkez mesafesi (en taze gözlem)
                     bool  approachTO = approachStartMs >= 0 &&
                                        sw.ElapsedMilliseconds - approachStartMs >= s.EngageApproachTimeoutMs;
 

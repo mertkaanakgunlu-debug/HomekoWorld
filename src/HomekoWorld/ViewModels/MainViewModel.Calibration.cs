@@ -296,6 +296,12 @@ public partial class MainViewModel
         _store.Save(_state);
     }
 
+    partial void OnGuardianUnknownStrictChanged(bool value)
+    {
+        _state.Wtm.GuardianUnknownStrict = value;
+        _store.Save(_state);
+    }
+
     // ── Koruma mobu nameplate kalibrasyon komutları ───────────────────────────
 
     [RelayCommand]

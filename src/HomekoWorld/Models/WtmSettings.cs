@@ -45,6 +45,11 @@ public class WtmSettings
     // Target HP bar'ının NameplateOffsetY piksel üstündeki satır taranır.
     // Normal mob ismi (mor) ve koruma mobu ismi (kırmızı) ayrı ayrı kalibre edilir.
     public bool GuardianDetectionEnabled { get; set; } = true;
+    // 9.tur: Unknown = isim OKUNAMADI (bant boş/oklüzyon/duyuru geçişi) — guardian HÜKMÜ değil, okuma-
+    // kalitesi sinyali. Strict modda Unknown'a saldırılmaz: kısa konum atlaması (iz-damga YOK; okuma
+    // düzelince mob geri alınır). Unattended kullanım için varsayılan AÇIK — guardian'a yanlışlıkla
+    // vurmak birkaç normal mob kaçırmaktan daha pahalı.
+    public bool GuardianUnknownStrict    { get; set; } = true;
     public int  NameplateOffsetY         { get; set; } = -22; // HpColorScanY + bu ofset = nameplate Y
     public byte NormalNameR              { get; set; }
     public byte NormalNameG              { get; set; }
