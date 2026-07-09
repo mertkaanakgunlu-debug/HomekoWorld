@@ -8,6 +8,9 @@
     <RootNamespace>HomekoWorld</RootNamespace>
     <AssemblyName>HomekoWorld</AssemblyName>
 
+    <!-- Sürüm TEK KAYNAK: UI (AppInfo) assembly'den okur; .iss AppVersion release'te elle eşitlenir. -->
+    <Version>1.0.2</Version>
+
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <StartupObject>HomekoWorld.Program</StartupObject>
     <Platforms>x64</Platforms>

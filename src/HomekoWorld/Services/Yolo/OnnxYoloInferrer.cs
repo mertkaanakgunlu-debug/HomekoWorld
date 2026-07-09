@@ -139,6 +139,7 @@ public sealed class OnnxYoloInferrer : IYoloInferrer, IDisposable
             var opts = OrtEpFactory.Create(backend, out _epUsed);
             _session = new InferenceSession(_onnxPath, opts);
             HomekoWorld.Program.Log($"[YOLO] Execution provider: {_epUsed}");
+            LogModelDiag();
         }
         catch (Exception ex) when (backend != InferenceBackend.Cpu)
         {
@@ -147,7 +148,32 @@ public sealed class OnnxYoloInferrer : IYoloInferrer, IDisposable
             var cpuOpts = OrtEpFactory.Create(InferenceBackend.Cpu, out _epUsed);
             _session = new InferenceSession(_onnxPath, cpuOpts);
             HomekoWorld.Program.Log($"[YOLO] Execution provider: {_epUsed}");
+            LogModelDiag();
         }
+    }
+
+    /// <summary>Model yükleme teşhisi (9.tur): FPS kıyasları oturumlar arası atfedilebilir olsun diye
+    /// model dosyası + imgsz + EP + ONNX girdi/çıktı şekilleri tek satırda; modelin export imgsz'i ile
+    /// ayarlanan imgsz uyuşmuyorsa açık uyarı (doğruluk/FPS sessizce sapmasın).</summary>
+    private void LogModelDiag()
+    {
+        var session = _session;
+        if (session is null) return;
+        try
+        {
+            var im = session.InputMetadata.First();
+            var om = session.OutputMetadata.First();
+            HomekoWorld.Program.Log(
+                $"[YOLO] model={System.IO.Path.GetFileName(_onnxPath)} imgsz={_inputSize} ep={_epUsed} " +
+                $"girdi={im.Key}:[{string.Join("x", im.Value.Dimensions)}] " +
+                $"çıktı={om.Key}:[{string.Join("x", om.Value.Dimensions)}]");
+            var d = im.Value.Dimensions; // NCHW beklenir; -1 = dinamik boyut → uyarı atlanır
+            if (d.Length == 4 && ((d[2] > 0 && d[2] != _inputSize) || (d[3] > 0 && d[3] != _inputSize)))
+                HomekoWorld.Program.Log(
+                    $"[YOLO] ⚠ imgsz UYUMSUZ: model girdisi {d[2]}x{d[3]} ≠ ayarlanan {_inputSize} — " +
+                    "FarmSettings.ModelInputSize modelin export imgsz'ine eşitlenmeli");
+        }
+        catch (Exception ex) { HomekoWorld.Program.Log($"[YOLO] model-teşhis okunamadı: {ex.Message}"); }
     }
 
     /// <summary>

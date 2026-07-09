@@ -17,7 +17,8 @@
 ; CUDA variant'i kendi AppId'sine sahip (DirectML variant'indan ayri urun olarak izlenir).
 AppId={{8B8B5E89-CD9D-4F7F-9F2D-A1B2C3D4E5F6}
 AppName=HomekoWorld
-AppVersion=1.0.1
+; NOT: surum tek kaynagi csproj <Version> — release'te burayi da esitleyin.
+AppVersion=1.0.2
 AppPublisher=Mert Kaan
 AppPublisherURL=https://github.com/mertkaanakgunlu-debug/HomekoWorld
 AppSupportURL=https://github.com/mertkaanakgunlu-debug/HomekoWorld/issues

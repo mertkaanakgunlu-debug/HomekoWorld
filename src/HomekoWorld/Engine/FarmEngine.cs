@@ -33,6 +33,7 @@ public sealed partial class FarmEngine
 
     // ── Durum ─────────────────────────────────────────────────────────────────
     private FarmState _state = FarmState.Idle;
+    private int _stopInProgress; // 9.tur: Stop tek-atım kilidi — Idle-guard tek başına yarışa açıktı
     private CancellationTokenSource? _cts;
     private Detection? _lastTarget;
     private int        _wayIndex;
@@ -325,7 +326,9 @@ public sealed partial class FarmEngine
 
     public void Start()
     {
-        if (_state != FarmState.Idle) return;
+        // 9.tur: Idle yerine IsRunning — yarışta kaybeden bir Stop'un bıraktığı KillSwitched
+        // kalıntı state'i restart'ı kilitlemesin (IsRunning: Idle ve KillSwitched = çalışmıyor).
+        if (IsRunning) return;
 
         bool hpBarCalibrated   = _appState.Wtm.IsHpBarLocated;
         if (!hpBarCalibrated)
@@ -338,6 +341,7 @@ public sealed partial class FarmEngine
         _cts = new CancellationTokenSource();
         Telemetry.Reset();
         _paused = false;
+        _stopInProgress = 0; // 9.tur: yeni oturum → Stop tek-atım kilidi yeniden kurulur
         _idleWatch.Restart();
         _noCombatWatch.Restart();
         _sessionWatch.Restart();
@@ -401,6 +405,8 @@ public sealed partial class FarmEngine
         // rağmen 0 banka çalışması görüldü; eşiğin o an bellekte 10 mu 30 mu olduğu ispatlanamadı).
         Program.Log($"[Farm] oturum-başlangıç: sınıf={_appState.ClassId} hareket={sCfg.EngageMovement}" +
                     $"(archer-gate: {(ArcherApproachActive(sCfg) ? "AKTİF" : "PASİF")}) " +
+                    $"model={System.IO.Path.GetFileName(sCfg.ModelPath)} imgsz={sCfg.ModelInputSize} " +
+                    $"ep={(Inferrer as OnnxYoloInferrer)?.ActiveEp ?? "?"} " +
                     $"conf={sCfg.ConfidenceThreshold:F2} iou={sCfg.IouThreshold:F2} " +
                     $"deadBl={sCfg.DeadBlacklistMs}ms grace={sCfg.HpFirstAliveGraceMs}ms " +
                     $"yapı-terk={sCfg.StructAbsentAbandonMs}ms eşya-eşiği={_appState.ClanBank.ItemMatchThreshold:F2} " +
@@ -461,6 +467,11 @@ public sealed partial class FarmEngine
         // kill-switch hook'u) ve her biri tam teardown + oturum-özeti logluyordu (canlı logda özet
         // hep 3×). İlk çağrı state'i Idle'a çeker; sonrakiler burada döner.
         if (_state == FarmState.Idle) return;
+
+        // 9.tur: Idle-guard atomik değil — kazanan Stop, Join(1000)'lerde ~1-2sn blokeyken ikinci yol
+        // (UI BeginInvoke) state'i hâlâ Scanning görüp girebiliyordu (canlı logda özet yine 3×).
+        // Tek-atım: kazanan tam teardown + özet basar; kaybedenler anında döner. Start() sıfırlar.
+        if (Interlocked.Exchange(ref _stopInProgress, 1) != 0) return;
 
         _keyHook.KeyDown -= OnKeyDown;
 
@@ -543,6 +554,10 @@ public sealed partial class FarmEngine
         var killKey = _appState.Farm.KillSwitchKey;
         if (e.Key.ToString().Equals(killKey, StringComparison.OrdinalIgnoreCase))
         {
+            // 9.tur: bitmiş motoru yeniden KillSwitched'e ARM ETME — kill-switch tuşu GlobalStartKey ile
+            // aynı (F12) olabildiğinden ViewModel yolu aynı basışta çoğu kez önce durdurur; Idle sonrası
+            // state'i kirletmek Stop'un Idle-guard'ını deliyor ve oturum-özetini çoğaltıyordu.
+            if (!IsRunning) return;
             SetState(FarmState.KillSwitched, "⛔ Kill-switch — durduruldu");
             Stop();
         }
