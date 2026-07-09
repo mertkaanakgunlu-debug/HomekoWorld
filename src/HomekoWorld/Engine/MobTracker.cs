@@ -57,6 +57,7 @@ public sealed class MobTracker
     private readonly List<Track> _tracks = new();
     private int  _nextId = 1;
     private long _lastMs = -1;
+    private long _quietUntilMs = -1; // 9.tur: SuppressMotionCredit penceresi (bot-kamera hareketi)
 
     /// <summary>Eşleme IoU eşiği (kare-kare aynı moba kalıcı kimlik).</summary>
     public float IouThreshold { get; set; } = 0.3f;
@@ -148,10 +149,21 @@ public sealed class MobTracker
         }
     }
 
+    /// <summary>Bot KENDİ kamerasını oynattı (kamera-scan 180° flip / nav dönüşü / roam yürüyüşü) — bu
+    /// pencere boyunca ekran-uzayı kayması izlerin "kendi hareketi" DEĞİLDİR: eşleşen her izin çapası o
+    /// karenin konumuna resync edilir, RelDispPx SIFIRLANIR → ceset kamera hareketinden "hareketli=canlı"
+    /// konum-blacklist muafiyeti devralamaz (9.tur; kanıt: 180° flip'te iz 1sn'de ~1000px "yürüdü", 90sn
+    /// escalation bl'si aynı noktada 5× bypass edildi — teshis satırı spatial-bl=0 hareket-muaf=1).
+    /// Ölü damgasına DOKUNMAZ ("ölü kalıcıdır") — yalnız MovedPx muafiyet metriğinin birikimi kesilir.</summary>
+    public void SuppressMotionCredit(long untilMs)
+    {
+        lock (_lock) { if (untilMs > _quietUntilMs) _quietUntilMs = untilMs; }
+    }
+
     /// <summary>Yeni farm oturumunda tüm izleri sıfırla.</summary>
     public void Reset()
     {
-        lock (_lock) { _tracks.Clear(); _nextId = 1; _lastMs = -1; ResurrectionCount = 0; }
+        lock (_lock) { _tracks.Clear(); _nextId = 1; _lastMs = -1; ResurrectionCount = 0; _quietUntilMs = -1; }
     }
 
     /// <summary>Bu karenin tespitlerini izlere eşler; her tespite TrackId/Dead iliştirilmiş YENİ liste döner.</summary>
@@ -215,6 +227,9 @@ public sealed class MobTracker
 
             var outArr = new Detection[n];
 
+            // 9.tur: bot-kamera penceresi aktif mi? (bkz SuppressMotionCredit) — kare başına bir kez oku.
+            bool camQuiet = nowMs <= _quietUntilMs;
+
             // 3) Eşleşen tespitleri güncelle; eşleşmeyenlere yeni iz aç.
             for (int i = 0; i < n; i++)
             {
@@ -237,34 +252,49 @@ public sealed class MobTracker
                     tr.Missed     = 0;
                     tr.LastSeenMs = nowMs;
 
-                    // Tekil-kare sıçrama koruması (6.tur): anchor'a göre DEĞİL, EN SON eşleşen kareye göre bak.
-                    // Global medyan-kompanzasyonu (adım 2c) zaten uygulandı (LastMatchedCx/Cy, AnchorCx/Cy ile
-                    // AYNI medyanla kaydı). Büyük tek-kare sıçrama (kamera-flip / <2 eşleşen izle kompanzasyon
-                    // atlandı) → RelDispPx'e (MovedPx muafiyet metriği) KREDİLENMEZ, çapa BU KAREYE resync
-                    // edilir — flip artefaktı cesede sahte "hareket" yazıp konum-blacklist'ten kaçıramaz.
-                    if (tr.HasLastMatched)
+                    if (camQuiet)
                     {
-                        float jdx = ncx - tr.LastMatchedCx, jdy = ncy - tr.LastMatchedCy;
-                        float jumpPx = MathF.Sqrt(jdx * jdx + jdy * jdy);
-                        if (jumpPx >= MaxPerFrameJumpPx)
+                        // 9.tur: bot KENDİ kamerasını oynatıyor (SuppressMotionCredit penceresi) — bu karedeki
+                        // ekran-uzayı kayması izin "kendi hareketi" DEĞİL: çapa bu kareye resync edilir, birikim
+                        // SIFIRLANIR (pencere içindeki ilk eşleşme flip-ÖNCESİ birikimi de siler). 180° süpürme
+                        // ~30px/kare ile MaxPerFrameJumpPx(220)'nin ALTINDA kaldığından tekil-kare koruması bunu
+                        // yakalayAMIYORDU; medyan-kompanzasyon da <2 eşleşen izde/rotasyonel paralaksta yetersiz →
+                        // ceset sahte MovedPx toplayıp "hareketli=canlı" muafiyetiyle 90sn blacklist'i deliyordu.
+                        // Dead bayrağına dokunmaz ("ölü kalıcıdır") — yalnız muafiyet metriği kesilir.
+                        tr.AnchorCx = ncx; tr.AnchorCy = ncy;
+                        tr.RelDispPx = 0f;
+                    }
+                    else
+                    {
+                        // Tekil-kare sıçrama koruması (6.tur): anchor'a göre DEĞİL, EN SON eşleşen kareye göre bak.
+                        // Global medyan-kompanzasyonu (adım 2c) zaten uygulandı (LastMatchedCx/Cy, AnchorCx/Cy ile
+                        // AYNI medyanla kaydı). Büyük tek-kare sıçrama (kamera-flip / <2 eşleşen izle kompanzasyon
+                        // atlandı) → RelDispPx'e (MovedPx muafiyet metriği) KREDİLENMEZ, çapa BU KAREYE resync
+                        // edilir — flip artefaktı cesede sahte "hareket" yazıp konum-blacklist'ten kaçıramaz.
+                        if (tr.HasLastMatched)
                         {
-                            // Resync: çapa BU kareye taşınır (aksi hâlde sonraki karelerde RelDispPx sıçramayı
-                            // taşımaya devam ederdi).
-                            tr.AnchorCx = ncx; tr.AnchorCy = ncy;
-                            Log?.Invoke($"[Track] sicrama-yoksay: iz#{tr.Id} cls={tr.ClassId} {(int)jumpPx}px tek-karede " +
-                                        $"(esik={MaxPerFrameJumpPx:0}px) — MovedPx kredisi verilmedi, capa resync");
+                            float jdx = ncx - tr.LastMatchedCx, jdy = ncy - tr.LastMatchedCy;
+                            float jumpPx = MathF.Sqrt(jdx * jdx + jdy * jdy);
+                            if (jumpPx >= MaxPerFrameJumpPx)
+                            {
+                                // Resync: çapa BU kareye taşınır (aksi hâlde sonraki karelerde RelDispPx sıçramayı
+                                // taşımaya devam ederdi).
+                                tr.AnchorCx = ncx; tr.AnchorCy = ncy;
+                                Log?.Invoke($"[Track] sicrama-yoksay: iz#{tr.Id} cls={tr.ClassId} {(int)jumpPx}px tek-karede " +
+                                            $"(esik={MaxPerFrameJumpPx:0}px) — MovedPx kredisi verilmedi, capa resync");
+                            }
                         }
+
+                        // Net yer değiştirme (MovedPx): çapa global hareketle (medyan) kaydırıldığından bu mesafe
+                        // yalnız mob'un KENDİ hareketidir → FarmEngine konumsal-blacklist hareket-muafiyeti okur.
+                        // 7.tur: HAREKET-TABANLI DİRİLİŞ KALDIRILDI — ölü iz eşik üstü "hareket" etse de damga
+                        // KALKMAZ (dirilişlerin %91'i kompanzasyon-hatasıyla şişen GERÇEK cesetlerdi → tekrar
+                        // tıklanıyordu). Yanlış-ölü CANLI mob senaryosu kamera-flip churn'üyle kendiliğinden düzelir
+                        // (flip'te iz düşer, temiz kimlik doğar — en kötü ~2-6sn; bkz sınıf-üstü 7.tur notu).
+                        float adx = ncx - tr.AnchorCx, ady = ncy - tr.AnchorCy;
+                        tr.RelDispPx = MathF.Sqrt(adx * adx + ady * ady);
                     }
                     tr.LastMatchedCx = ncx; tr.LastMatchedCy = ncy; tr.HasLastMatched = true;
-
-                    // Net yer değiştirme (MovedPx): çapa global hareketle (medyan) kaydırıldığından bu mesafe
-                    // yalnız mob'un KENDİ hareketidir → FarmEngine konumsal-blacklist hareket-muafiyeti okur.
-                    // 7.tur: HAREKET-TABANLI DİRİLİŞ KALDIRILDI — ölü iz eşik üstü "hareket" etse de damga
-                    // KALKMAZ (dirilişlerin %91'i kompanzasyon-hatasıyla şişen GERÇEK cesetlerdi → tekrar
-                    // tıklanıyordu). Yanlış-ölü CANLI mob senaryosu kamera-flip churn'üyle kendiliğinden düzelir
-                    // (flip'te iz düşer, temiz kimlik doğar — en kötü ~2-6sn; bkz sınıf-üstü 7.tur notu).
-                    float adx = ncx - tr.AnchorCx, ady = ncy - tr.AnchorCy;
-                    tr.RelDispPx = MathF.Sqrt(adx * adx + ady * ady);
                 }
                 else
                 {

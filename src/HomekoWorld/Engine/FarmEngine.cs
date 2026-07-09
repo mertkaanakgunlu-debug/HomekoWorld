@@ -89,6 +89,13 @@ public sealed partial class FarmEngine
     // döngüsüne girmesin diye KISA süre atla (statik false-positive ya da kaymış mob). Onaylanan ceset
     // blacklist'inden (DeadBlacklistMs) çok daha kısa: gerçekten kaydıysa mob kısa sürede geri alınır.
     private const int MissReselectSkipMs = 2500;
+    // 9.tur: bot KENDİ kamerasını oynattığı pencerede (180° flip / nav dönüşü / roam yürüyüşü) tracker'a
+    // hareket kredisi yazdırılmaz (MobTracker.SuppressMotionCredit): flip süpürmesi ~30px/kare ile
+    // sıçrama-korumasının (220px/kare) altında kalıp cesetlere sahte MovedPx yazıyor, 90sn escalation
+    // blacklist'i bile hareket-muafiyetiyle deliniyordu (canlı log 2026-07-08: aynı nokta 5× üst üste,
+    // teshis spatial-bl=0 hareket-muaf=1). 800ms: süpürme + 200ms sert-oturma penceresini kapsar,
+    // ScanWaitMsBetween(1000) altında kalır → oturma sonrası tarama normal muafiyet davranışı görür.
+    private const int CameraFlipSuppressMs = 800;
 
     // ── Tekrar-suçlu escalation (2026-07-04) ─────────────────────────────────────
     // Canlı log (6.5sa): 156× "tık-sonrası-kayıp" + aynı 60px hücrede 8×'e kadar tekrar. Kök neden: statik
@@ -112,7 +119,10 @@ public sealed partial class FarmEngine
     // hareket-muafiyeti ne olursa olsun kısa süre aday-dışı. Kısa cooldown (4sn) — "kesin canlı" mobu kalıcı
     // yazmaz, yalnız döngüyü kırıp diğer adaylara şans tanır (kendi kendine iyileşir).
     private readonly Dictionary<int, (int consecutiveFails, long lastFailMs)> _trackFailStreak = new();
-    private const int  TrackFailStreakLimit    = 5;      // kanıt: 13-19 ardışık başarısızlık gözlendi
+    // 9.tur: 5→3 — sayaç artık TIKLANAN ize yazılıyor (bayat scan-TrackId değil; bkz TargetAsync
+    // lastLiveTrackId) → 3. ardışık başarısızlıkta durak devreye girer (canlı log: trk=44 aynı noktada
+    // 5× denendi, throttle hiç tetiklenmedi — teshis trk-throttle=0).
+    private const int  TrackFailStreakLimit    = 3;
     private const long TrackFailStreakWindowMs = 8_000;  // gözlenen 5.5-8sn pencereyle eşleşir
     private const long TrackFailCooldownMs     = 4_000;  // kısa — döngüyü kır, kalıcı yazma
 

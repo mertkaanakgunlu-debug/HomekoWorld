@@ -39,6 +39,9 @@ public sealed partial class FarmEngine
         await _router.KeyDownAsync("W", ct);
         await Task.Delay(3000, ct);
         await _router.KeyUpAsync("W", CancellationToken.None);
+        // 9.tur: 3sn W-yürüyüşü tüm sahneyi kaydırdı — oturma penceresinde hareket kredisi verilmesin
+        // (pencere içindeki ilk eşleşme yürüyüş boyunca birikmiş sahte MovedPx'i de siler).
+        _tracker.SuppressMotionCredit(NowMs() + CameraFlipSuppressMs);
 
         _wayIndex = (_wayIndex + 1) % s.RoamWaypoints.Count;
         SetState(FarmState.Scanning, "Taranıyor…");
@@ -70,6 +73,9 @@ public sealed partial class FarmEngine
         // Orta (scroll) tuş = kamerayı 180° döndürür; ayrı atomic DOWN/UP (ACME kuralı).
         await _router.MouseDownAsync(MouseButton.Middle, ct);
         await _router.MouseUpAsync(MouseButton.Middle, ct);
+        // 9.tur: 180° süpürme başlıyor — pencere boyunca izlere hareket kredisi yazılmasın (ceset kamera
+        // kaymasından "hareketli=canlı" muafiyeti devralamaz; bkz FarmEngine.CameraFlipSuppressMs).
+        _tracker.SuppressMotionCredit(NowMs() + CameraFlipSuppressMs);
 
         _scanAttempts++;
         // ScanWaitMsBetween: 180° flip sonrası kamera oturması + mob'un görünmesi için bekleme.

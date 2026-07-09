@@ -23,6 +23,12 @@ public sealed partial class FarmEngine
     // tam tıklanan noktanın ıskalandığını doğrular, blacklist/escalation'ı besler).
     private const int   AcqYoloLossGraceMs = 320;  // idi: satır-içi 150
     private const float AcqMatchRadiusPx   = 160f; // idi: satır-içi 100f (TargetAsync taze-arama + PollHpBarAsync stillThere)
+    // 9.tur: HP-poll bütçesi DUVAR-SAATİ oldu — eski 16-iterasyon×30ms sayacı "480ms" varsayıyordu ama her
+    // iterasyondaki SENKRON GDI yakalaması (~30ms, IsTargetAliveNow içinde) fiilen ~950ms sürdürüyordu
+    // (canlı log 2026-07-08: isim:hp-yok(947-1006ms) × 121). Başarılı onay ~230ms tepesinde bimodal →
+    // 450ms yeterli marj bırakır, başarısız denemenin maliyeti yarıdan fazla iner. İKİ deneme de aynı
+    // bütçeyi kullanır (simetrik `denemeler` telemetrisi; tek ayar düğmesi).
+    private const int   AcqHpPollBudgetMs  = 450;
 
     // ── Scanning ──────────────────────────────────────────────────────────────
 
@@ -196,6 +202,9 @@ public sealed partial class FarmEngine
         {
             Program.Log($"[Farm] dönüş hatası: {ex.Message}");
         }
+        // 9.tur: nav D-rotasyonu/yürüyüşü sahneyi kaydırdı (hata yolunda da kısmen dönmüş olabilir) —
+        // tarama dönmeden hareket kredisi kesilsin (bkz FarmEngine.CameraFlipSuppressMs).
+        _tracker.SuppressMotionCredit(NowMs() + CameraFlipSuppressMs);
         SetState(FarmState.Scanning, "Taranıyor…");
         _idleWatch.Restart();
         _noCombatWatch.Restart();
@@ -247,10 +256,13 @@ public sealed partial class FarmEngine
                 firstDy = Math.Clamp(target.BBox.Height * offsetPct, -45f, 45f);
             }
 
+            // 9.tur: MERKEZ-ÖNCE — canlı log (2026-07-08): isim-önce ilk deneme 121× "hp-yok" ile ~950ms/adet
+            // yaktı (farm süresinin ~%20'si); başarılı alımların ezici kısmı merkez tıkından geldi.
+            // İsim/keypoint noktası fallback'e indi.
             (float dx, float dy)[] yoloOffsets =
             [
-                (firstDx, firstDy),  // 1. deneme: keypoint veya offset
-                (0f,      0f),       // 2. deneme: merkez
+                (0f,      0f),       // 1. deneme: merkez
+                (firstDx, firstDy),  // 2. deneme: keypoint veya isim-offset (fallback)
             ];
 
             // V3: HP-poll'lerden herhangi biri YOLO-iz-kaybı erken-çıkışıyla bittiyse "kesin ceset" kanıtı yok.
@@ -261,11 +273,16 @@ public sealed partial class FarmEngine
             // noktasına düşmesini sağlar (kanıt: trk=215 gibi sürüklenen mob'larda target.Center tık-anından
             // tık-anına 300+px kayabiliyordu, escalation'ı (5.tur) etkisiz kılıyordu).
             PointF lastLiveCenter = target.Center;
+            // 9.tur: damga/sayaç kimliği — TIKLANAN izin TrackId'si (bayat scan-anı target.TrackId DEĞİL).
+            // liveTarget döngü-lokal; döngü-sonrası MarkDead/RecordAcqFailure bunun üstünden yazar. Eski
+            // davranışta ceset damgası hiç tıklanmamış ize gidebiliyor, tıklanan iz "canlı aday" kalıp
+            // tekrar tekrar seçiliyordu (başarı krediti zaten liveTarget.TrackId'ye gidiyordu — asimetri).
+            int lastLiveTrackId = target.TrackId;
 
             for (int i = 0; i < yoloOffsets.Length; i++)
             {
                 ct.ThrowIfCancellationRequested();
-                string offName  = i == 0 ? "isim" : "merkez";
+                string offName  = i == 0 ? "merkez" : "isim";
                 long   attStart = acqSw.ElapsedMilliseconds;
 
                 // KRİTİK: tıklamadan HEMEN ÖNCE hedefin EN TAZE tespit konumunu al. Mob/kamera hareketli
@@ -273,10 +290,23 @@ public sealed partial class FarmEngine
                 // ("kutuya tıkladık, mob orada yok"). Mob bu an TAZE karede YOKSA (flicker/kayıp) hiç tıklama
                 // → taramaya dön (asla bayat/hayalet konuma tıklanmaz).
                 var clickSnap = _latestDetections;
-                var liveTarget = clickSnap?.Dets
-                    .Where(d => d.ClassId == target.ClassId && d.DistanceTo(target.Center) < AcqMatchRadiusPx)
-                    .OrderBy(d => d.DistanceTo(target.Center))
-                    .FirstOrDefault();
+                // 9.tur: önce AYNI İZ (en sağlam — scan→tık arası on-ms'lerde iz ışınlanamaz, yarıçap şartsız),
+                // yoksa tür+mesafe fallback; İKİSİ DE ölü/guardian DIŞI. Eski seçim yalnız tür+mesafeydi:
+                // tıklanan taze aday aynı türden yakın CESET/GUARDIAN olabiliyordu (!Dead/!Guardian filtreleri
+                // yalnız ScanningTick'te, orijinal target üstünde uygulanıyordu). Mesafe çapası da bayat
+                // target.Center yerine son tıklanan konum (lastLiveCenter) — hareketli mobda 2. deneme
+                // gerçekten tıklanan yerin çevresinde arar.
+                Detection? liveTarget = null;
+                if (clickSnap is not null)
+                {
+                    liveTarget = clickSnap.Dets.FirstOrDefault(d =>
+                        d.TrackId == lastLiveTrackId && !d.Dead && !d.Guardian);
+                    liveTarget ??= clickSnap.Dets
+                        .Where(d => d.ClassId == target.ClassId && !d.Dead && !d.Guardian &&
+                                    d.DistanceTo(lastLiveCenter) < AcqMatchRadiusPx)
+                        .OrderBy(d => d.DistanceTo(lastLiveCenter))
+                        .FirstOrDefault();
+                }
                 if (liveTarget is null)
                 {
                     StatusChanged?.Invoke(this, "Hedef taze karede yok — tıklama atlandı, yeniden tarıyor");
@@ -284,7 +314,8 @@ public sealed partial class FarmEngine
                                 $"(deneme {i + 1}/2, {acqSw.ElapsedMilliseconds}ms) — bl YOK");
                     return false;
                 }
-                lastLiveCenter = liveTarget.Center;
+                lastLiveCenter  = liveTarget.Center;
+                lastLiveTrackId = liveTarget.TrackId;
                 // Faz B: tıklanacak tespitin yaşı (capture→şimdi) — objektif "bayat kutu" ölçümü.
                 if (clickSnap is not null) Telemetry.FrameAgeAtClickMs = (int)(NowMs() - clickSnap.CapturedAtMs);
 
@@ -344,8 +375,8 @@ public sealed partial class FarmEngine
                     // ardışık denemeler farklı noktalara düşüp escalation'ı atlıyordu.
                     long missBlMs = EscalatedBlacklistMs(liveTarget.Center, MissReselectSkipMs, out int missRep);
                     _deadBlacklist.Add((liveTarget.Center, NowMs() + missBlMs));
-                    RecordAcqFailure(target.TrackId);   // 2026-07-04 (P2b): konumdan bağımsız tekrar-başarısızlık sayacı
-                    Program.Log($"[Farm] hedef-bırakıldı trk={target.TrackId}: tık-sonrası-kayıp " +
+                    RecordAcqFailure(liveTarget.TrackId);   // P2b sayacı — 9.tur: TIKLANAN ize yazılır (bayat scan-id değil)
+                    Program.Log($"[Farm] hedef-bırakıldı trk={liveTarget.TrackId}: tık-sonrası-kayıp " +
                                 $"@({(int)liveTarget.Center.X},{(int)liveTarget.Center.Y}) " +
                                 $"(denemeler=[{string.Join(",", attempts)}], {acqSw.ElapsedMilliseconds}ms) — " +
                                 $"bl {missBlMs}ms{(missRep > 1 ? $" (nokta tekrar #{missRep} → escalation)" : "")}");
@@ -353,7 +384,7 @@ public sealed partial class FarmEngine
                 }
 
                 StatusChanged?.Invoke(this,
-                    $"Tıklama ıskandı ({(i == 0 ? "isim" : "merkez")}) — tekrar…");
+                    $"Tıklama ıskandı ({(i == 0 ? "merkez" : "isim")}) — tekrar…");
             }
 
             // Tüm tıklamalar HP bar üretmedi ama mob hâlâ sahnede (yukarıda erken dönülmedi) →
@@ -369,7 +400,7 @@ public sealed partial class FarmEngine
                     // miras-DEAD "B-belirtisi" zinciri → canlı mob atlama). Yalnız KISA atla; iz damgalama YOK.
                     _deadBlacklist.Add((lastLiveCenter, NowMs() + MissReselectSkipMs));
                     StatusChanged?.Invoke(this, "Hedef doğrulanamadı (iz kayboldu) — kısa atlanıyor");
-                    Program.Log($"[Farm] hedef-bırakıldı trk={target.TrackId}: iz-titremesi " +
+                    Program.Log($"[Farm] hedef-bırakıldı trk={lastLiveTrackId}: iz-titremesi " +
                                 $"(denemeler=[{string.Join(",", attempts)}], {acqSw.ElapsedMilliseconds}ms) — " +
                                 $"bl {MissReselectSkipMs}ms, iz-damga YOK");
                 }
@@ -387,9 +418,11 @@ public sealed partial class FarmEngine
                     // Düşen ceset kutusunu da kapsa + izi "ölü" damgala (#3): bu track ve yakın doğan ceset
                     // track'leri (MobTracker.DeadInheritRadiusPx mirası) bir daha aday olmaz.
                     _deadBlacklist.Add((new PointF(lastLiveCenter.X, lastLiveCenter.Y + CorpseFallOffsetPx), corpseExpire));
-                    _tracker.MarkDead(target.TrackId, MobTracker.DeadSource.Assumed);
+                    // 9.tur: damga TIKLANAN ize (lastLiveTrackId) — eski target.TrackId, iz churn'ünde hiç
+                    // tıklanmamış izi damgalayıp gerçek cesedi "canlı aday" bırakıyordu.
+                    _tracker.MarkDead(lastLiveTrackId, MobTracker.DeadSource.Assumed);
                     StatusChanged?.Invoke(this, "Hedef seçilemedi (ölü/ceset?) — atlanıyor");
-                    Program.Log($"[Farm] hedef-bırakıldı trk={target.TrackId}: ceset-varsayımı (2 tık HP üretmedi, " +
+                    Program.Log($"[Farm] hedef-bırakıldı trk={lastLiveTrackId}: ceset-varsayımı (2 tık HP üretmedi, " +
                                 $"denemeler=[{string.Join(",", attempts)}], {acqSw.ElapsedMilliseconds}ms) — " +
                                 $"bl {corpseBlMs}ms ×2nokta + iz-damga(varsayım)" +
                                 $"{(corpseRep > 1 ? $" (nokta tekrar #{corpseRep} → escalation)" : "")}");
@@ -398,12 +431,12 @@ public sealed partial class FarmEngine
             else
             {
                 StatusChanged?.Invoke(this, "⚠ HP bar kalibrasyonu yok — hedef doğrulanamadı");
-                Program.Log($"[Farm] hedef-bırakıldı trk={target.TrackId}: HP-bar-kalibrasyonsuz " +
+                Program.Log($"[Farm] hedef-bırakıldı trk={lastLiveTrackId}: HP-bar-kalibrasyonsuz " +
                             $"(denemeler=[{string.Join(",", attempts)}], {acqSw.ElapsedMilliseconds}ms)");
             }
             // 2026-07-04 (P2b): iz-titremesi/ceset-varsayımı/HP-bar-kalibrasyonsuz — üçü de tıklama-SONRASI
             // başarısızlık (taze-karede-yok HARİÇ — o tıklama ÖNCESİ, ayrı bir yol, sayaca dahil değil).
-            RecordAcqFailure(target.TrackId);
+            RecordAcqFailure(lastLiveTrackId);   // 9.tur: tıklanan ize (bayat scan-id değil)
             return false;
         }
 
@@ -513,13 +546,15 @@ public sealed partial class FarmEngine
     private async Task<(bool alive, int barOffsetY, bool yoloLost)> PollHpBarAsync(Detection target, CancellationToken ct)
     {
         // Dev 1 — acquire-fazı çalıntı: tık sonrası HP barını beklerken hedef başkasınca kesilir/despawn
-        // olursa (YOLO izi hedef merkezi yakınında AcqYoloLossGraceMs kaybolursa) 480ms'yi doldurmadan çık →
+        // olursa (YOLO izi hedef merkezi yakınında AcqYoloLossGraceMs kaybolursa) bütçeyi doldurmadan çık →
         // hemen yeni hedefe geç. HP "canlı" okunursa yine anında döner (aşağıdaki IsTargetAliveNow).
         // V3: erken bırakış yoloLost=true ile işaretlenir — çağıran (TargetAsync) bu durumda 2×blacklist +
         // MarkDead uygulamaz (yoğun sürüde iz titremesi CANLI mobu ceset damgalatıp miras-DEAD zinciri
         // kuruyordu — 18:47 log "B-belirtisi" satırları).
         long lostSinceMs = -1;
-        for (int i = 0; i < 16; i++) // ~16×30ms = ~480ms: GDI siyah dönerse DXGI'nin yetişmesine yeterli pencere
+        // 9.tur: iterasyon sayacı → duvar-saati bütçe (bkz AcqHpPollBudgetMs — eski 16×30ms fiilen ~950ms idi).
+        var pollSw = System.Diagnostics.Stopwatch.StartNew();
+        while (pollSw.ElapsedMilliseconds < AcqHpPollBudgetMs)
         {
             if (IsTargetAliveNow(out int offsetY)) return (true, offsetY, false);
 
