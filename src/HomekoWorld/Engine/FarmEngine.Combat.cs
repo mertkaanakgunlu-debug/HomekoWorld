@@ -33,7 +33,10 @@ public sealed partial class FarmEngine
                     $"guardian-red={_switchGuardianBlocks} boş-tarama={_switchEmptyScans}sn " +
                     $"banka={(_bankRanSinceEngage ? "EVET" : "hayır")}) → {target.ClassName} trk={target.TrackId}");
         if (!_bankRanSinceEngage && Telemetry.SwitchTimesMs.Count < 2000)
+        {
             Telemetry.SwitchTimesMs.Add((int)Math.Min(switchMs, int.MaxValue));
+            Telemetry.SwitchAvgMs = (int)Telemetry.SwitchTimesMs.Average(); // HUD koşan ortalaması
+        }
         _switchAcqAttempts = 0; _switchGuardianBlocks = 0; _switchEmptyScans = 0; _bankRanSinceEngage = false;
 
         // Archer: ayrı, UI'dan ayarlanabilir yaklaşma mesafesi (per-mob'u geçersiz kılar).

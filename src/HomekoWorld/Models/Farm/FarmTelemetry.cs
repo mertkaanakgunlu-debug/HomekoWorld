@@ -53,6 +53,9 @@ public sealed class FarmTelemetry
     public int BankItemsMoved { get; set; }
     /// <summary>Kill→sonraki-angajman geçiş süreleri (ms; banka içeren geçişler hariç, 2000 kayıt sınırı).</summary>
     public System.Collections.Generic.List<int> SwitchTimesMs { get; } = new();
+    /// <summary>Geçiş sürelerinin koşan ortalaması (ms). HUD bunu okur — SwitchTimesMs listesi motor
+    /// thread'inde büyürken UI'nın listeye dokunması yarış olur; tek int okuma güvenli.</summary>
+    public int SwitchAvgMs   { get; set; }
 
     /// <summary>Sıfırlar (yeni oturum başında çağır).</summary>
     public void Reset()
@@ -67,5 +70,6 @@ public sealed class FarmTelemetry
         AcqAttempts = AcqSuccesses = GuardianBlocks = Resurrections = 0;
         BankRuns = BankItemsMoved = 0;
         SwitchTimesMs.Clear();
+        SwitchAvgMs = 0;
     }
 }

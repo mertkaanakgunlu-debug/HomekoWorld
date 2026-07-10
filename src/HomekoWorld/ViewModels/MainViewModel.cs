@@ -138,6 +138,13 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private int    _farmGpuMs;                 // P0: GPU Run (saf inference) ms
     [ObservableProperty] private int    _farmPostMs;                // P0: postprocess (CPU) ms
     [ObservableProperty] private int    _farmFrameAgeMs;            // B1: son tıklamada tespit yaşı (stale-box)
+    // ---- HUD canlı oturum metrikleri (2026-07-10): ürün metriği = hedef-alma başarı oranı.
+    //      Oturum-özeti satırı yalnız kapanışta loglanıyordu; test sırasında HUD'dan izlenebilsin. ----
+    [ObservableProperty] private int    _farmAcqPct;                // hedef-alma başarı yüzdesi (başarı/deneme)
+    [ObservableProperty] private string _farmAcqRatio = "0/0";      // "başarı/deneme" ham sayılar
+    [ObservableProperty] private int    _farmGuardianRed;           // guardian nedeniyle reddedilen hedef
+    [ObservableProperty] private int    _farmLostTotal;             // angajman kaybı (lost+lostfast+timeout)
+    [ObservableProperty] private string _farmSwitchAvg = "—";       // ort. hedef-geçiş (sn, koşan ortalama)
     [ObservableProperty] private bool   _farmPaused;                // engine duraklatıldı mı
     [ObservableProperty] private bool   _hudExpanded;               // HUD genişletildi mi
     [ObservableProperty] private bool   _logHudVisible;             // Log HUD görünür mü

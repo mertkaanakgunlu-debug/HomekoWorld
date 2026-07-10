@@ -58,8 +58,9 @@ public partial class MainViewModel
         _pendingFarmStatus = null;
         _lastEventText = "";
         StartSessionTimer();
-        _farmEngine.Start();
+        _farmEngine.Start();   // Telemetry.Reset() burada — flush sıfırları çeker
         FarmRunning = true;
+        System.Threading.Interlocked.Exchange(ref _telemetryDirty, 1); // HUD eski oturum değeri göstermesin
     }
 
     private void StopFarm()
@@ -69,6 +70,9 @@ public partial class MainViewModel
         FarmRunning = false;
         FarmPaused  = false;
         FarmStatus  = "Durduruldu";
+        // Son bir flush zorla: perf alanları 0'a iner (donuk "YOLO 60 FPS" kalmaz),
+        // oturum sayaçları (kill/başarı/geçiş) son haliyle HUD'da okunur kalır.
+        System.Threading.Interlocked.Exchange(ref _telemetryDirty, 1);
     }
 
     [RelayCommand]
@@ -86,6 +90,9 @@ public partial class MainViewModel
         if (!FarmRunning) return;
         _farmEngine.TogglePause();
         FarmPaused = _farmEngine.IsPaused;
+        // Duraklatma süresi oturum süresine/kill-sa paydasına sayılmasın (HUD doğruluğu).
+        if (FarmPaused) _pauseStartedAt = DateTime.Now;
+        else            _pausedAccum   += DateTime.Now - _pauseStartedAt;
     }
 
     // ── Log HUD aktivite akışı (A3: thread-safe kuyruk + UI timer flush) ────────
@@ -146,7 +153,7 @@ public partial class MainViewModel
             if (st != FarmStatus) FarmStatus = st;
         }
 
-        // Telemetri (5 alan) — yalnız değiştiyse tek seferde
+        // Telemetri — yalnız değiştiyse tek seferde
         if (System.Threading.Interlocked.Exchange(ref _telemetryDirty, 0) == 1)
         {
             var t = _farmEngine.Telemetry;
@@ -155,13 +162,27 @@ public partial class MainViewModel
             FarmMpPotsUsed = t.MpPotsUsed;
             FarmCurrentKey = t.LastKeyTapped;
             FarmCurrentMob = t.CurrentMob;
-            FarmInferenceFps = t.InferenceFps;
-            FarmCaptureMs    = t.CaptureMs;   // A3: gecikme bütçesi HUD
-            FarmInferenceMs  = t.InferenceMs;
-            FarmPrepMs       = t.PreprocessMs;   // P0: darboğaz breakdown
-            FarmGpuMs        = t.GpuRunMs;
-            FarmPostMs       = t.PostprocessMs;
-            FarmFrameAgeMs   = t.FrameAgeAtClickMs;   // B1: stale-box ölçümü
+
+            // Perf anlık değerleri: motor durunca TelemetryUpdated kesilir ve HUD son değerde DONUYORDU
+            // ("Durduruldu" yazarken YOLO 60 FPS görünmesi) → farm koşmuyorsa 0 göster.
+            bool live = FarmRunning;
+            FarmInferenceFps = live ? t.InferenceFps : 0;
+            FarmCaptureMs    = live ? t.CaptureMs    : 0;   // A3: gecikme bütçesi HUD
+            FarmInferenceMs  = live ? t.InferenceMs  : 0;
+            FarmPrepMs       = live ? t.PreprocessMs : 0;   // P0: darboğaz breakdown
+            FarmGpuMs        = live ? t.GpuRunMs     : 0;
+            FarmPostMs       = live ? t.PostprocessMs : 0;
+            FarmFrameAgeMs   = live ? t.FrameAgeAtClickMs : 0;   // B1: stale-box ölçümü
+
+            // Canlı oturum metrikleri (ürün metriği: başarısız tıklama olmasın) — oturum-özeti
+            // beklemeden HUD'dan izlenir. Sayaçlar stop sonrası da kalır (son testin sonucu okunur).
+            FarmAcqRatio    = $"{t.AcqSuccesses}/{t.AcqAttempts}";
+            FarmAcqPct      = t.AcqAttempts > 0 ? (int)(100.0 * t.AcqSuccesses / t.AcqAttempts) : 0;
+            FarmGuardianRed = t.GuardianBlocks;
+            FarmLostTotal   = t.Losts + t.LostFasts + t.Timeouts;
+            FarmSwitchAvg   = t.SwitchAvgMs > 0
+                ? (t.SwitchAvgMs / 1000.0).ToString("0.0", CultureInfo.InvariantCulture) + "sn"
+                : "—";
         }
 
         // Aktivite log — tick başına sınırlı sayıda (UI'yı tıkamadan boşalt)
@@ -173,10 +194,13 @@ public partial class MainViewModel
     // ── Oturum süresi + kill/saat ─────────────────────────────────────────────
     private System.Windows.Threading.DispatcherTimer? _farmSessionTimer;
     private DateTime _farmSessionStart;
+    private DateTime _pauseStartedAt;          // aktif duraklatmanın başlangıcı
+    private TimeSpan _pausedAccum;             // biten duraklatmaların toplamı
 
     private void StartSessionTimer()
     {
         _farmSessionStart = DateTime.Now;
+        _pausedAccum = TimeSpan.Zero;
         FarmElapsed = "00:00";
         FarmKillsPerHour = 0;
         _farmSessionTimer ??= new System.Windows.Threading.DispatcherTimer
@@ -190,7 +214,10 @@ public partial class MainViewModel
 
     private void OnSessionTimerTick(object? sender, EventArgs e)
     {
-        var span = DateTime.Now - _farmSessionStart;
+        // Efektif süre = duvar saati − duraklatmalar (biten + sürmekte olan).
+        var paused = _pausedAccum + (FarmPaused ? DateTime.Now - _pauseStartedAt : TimeSpan.Zero);
+        var span = DateTime.Now - _farmSessionStart - paused;
+        if (span < TimeSpan.Zero) span = TimeSpan.Zero;
         FarmElapsed = span.TotalHours >= 1
             ? $"{(int)span.TotalHours}:{span.Minutes:00}:{span.Seconds:00}"
             : $"{span.Minutes:00}:{span.Seconds:00}";
