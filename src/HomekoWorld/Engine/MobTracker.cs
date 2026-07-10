@@ -62,8 +62,13 @@ public sealed class MobTracker
 
     /// <summary>Eşleme IoU eşiği (kare-kare aynı moba kalıcı kimlik).</summary>
     public float IouThreshold { get; set; } = 0.3f;
-    /// <summary>Bir iz kaç kare eşleşmezse düşürülür (ceset/kayıp izlerin ömrü).</summary>
-    public int   MaxAgeFrames { get; set; } = 15;
+    /// <summary>Bir iz bu kadar ms görülmezse düşürülür (ceset/kayıp izlerin ömrü). 12.tur (2026-07-10):
+    /// KARE-bazlı MaxAgeFrames(15) SÜRE-bazlıya çevrildi — kare-bazlı ömür tespit FPS'ine bağlıydı
+    /// (15 kare @20fps=750ms ama @40fps=375ms): FPS'i artıran her iyileştirme izlerin/cesetlerin ömrünü
+    /// yarıya indirip tık-sonrası-kayıp ve ceset-tekrar-tıklamayı KÖTÜLEŞTİRİRDİ. FarmEngine mevcut
+    /// kullanıcı ayarını (kare) ~50ms/kare varsayımıyla ms'ye çevirip yazar → bugünkü davranış birebir
+    /// korunur, FPS değişse de iz ömrü sabit kalır.</summary>
+    public int   MaxAgeMs { get; set; } = 750;
     /// <summary>İki-geçiş eşiği: ≥ bu güven = "yüksek-güven" (ilk geçişte eşlenir).</summary>
     public float HighConf     { get; set; } = 0.5f;
     /// <summary>IoU başarısız olunca MERKEZ-mesafesiyle eşle: izin verilen kayma = bu × kutu-boyutu. Kamera/karakter
@@ -357,7 +362,7 @@ public sealed class MobTracker
             // bulamayıp) canlı aday olarak DİRİLİYOR, tekrar tıklanıyordu. Artık yalnız bu karede EŞLEŞMEDİĞİNDE
             // (ceset gerçekten kayboldu/despawn oldu) düşürülür; hâlâ görünen ceset ömür sınırı olmadan ölü
             // kalır. Respawn'ı yanlışlıkla ölü sayma riski hâlâ sınırlı: eşleşme kesilir kesilmez (despawn/oklüzyon)
-            // birkaç kare içinde (MaxAgeFrames) düşer, aynı yerdeki yeni doğum o zaman miras alacak ölü iz bulamaz.
+            // kısa sürede (MaxAgeMs) düşer, aynı yerdeki yeni doğum o zaman miras alacak ölü iz bulamaz.
             for (int k = _tracks.Count - 1; k >= 0; k--)
             {
                 var t = _tracks[k];
@@ -368,8 +373,8 @@ public sealed class MobTracker
                 }
                 if (!matchedNow)
                 {
-                    t.Missed++;
-                    if (t.Missed > MaxAgeFrames) _tracks.RemoveAt(k);
+                    t.Missed++; // salt teşhis (kaç kare kaçtı) — düşürme kriteri artık süre
+                    if (nowMs - t.LastSeenMs > MaxAgeMs) _tracks.RemoveAt(k);
                 }
             }
 

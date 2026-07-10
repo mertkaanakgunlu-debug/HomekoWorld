@@ -398,7 +398,9 @@ public sealed partial class FarmEngine
         // Object tracker'ı sıfırla + ayarlardan eşikleri uygula (yeni oturum = temiz izler).
         _tracker.Reset();
         _tracker.IouThreshold = _appState.Farm.TrackIouThreshold;
-        _tracker.MaxAgeFrames = _appState.Farm.TrackMaxAgeFrames;
+        // 12.tur: kare-bazlı kullanıcı ayarı süre-bazlıya çevrilir (~50ms/kare ≈ tarihi ~20fps tabanı;
+        // 15 kare → 750ms). İz/ceset ömrü artık tespit FPS'inden bağımsız — FPS artışı ömrü kısaltmaz.
+        _tracker.MaxAgeMs     = Math.Max(200, _appState.Farm.TrackMaxAgeFrames * 50);
         _tracker.Log          = Program.Log;   // teşhis: seyrek tracker olayları (miras-DEAD / sicrama-yoksay)
 
         // Hedef-geçiş telemetri sıfırlama + oturum-başlangıç konfigürasyon özeti (2026-07-03):
