@@ -4,33 +4,36 @@
 > güncellenir. Amaç: memory dosyalarındaki tarihçeyi tekrar tekrar okumadan bağlamı tek dosyadan almak.
 > Kısa tut (~150 satır tavan): burası GÜNCEL DURUM özetidir, tarihçe memory'de/git log'da.
 
-**Son güncelleme:** 2026-07-10 (12.tur sonu — 60fps-cap + prep-paralel + installer tazeleme)
+**Son güncelleme:** 2026-07-10 (12.tur sonu — hedef KULLANICI ONAYLI; installer 1.0.2 hazır;
+sonraki session: adım-bazlı ms telemetrisi)
 
 ---
 
-## 1. PROJE HEDEFİ (goal)
-
-> ⚠ Bu bölüm Claude'un anlayışıdır; kullanıcı onayı/düzeltmesi bekliyor (2026-07-10'da soruldu).
+## 1. PROJE HEDEFİ (goal) — ✅ KULLANICI ONAYLADI (2026-07-10)
 
 **Ürün:** Knight Online için "FujiMacro" markalı, müşteriye satılan/kiralanan oyun otomasyon aracı
 (WPF/.NET 8, YOLO tabanlı görü). Freelance/ticari iş — kullanıcı geliştirici, müşteriler son kullanıcı.
 
 **Ne yapması bekleniyor (kademeli):**
 1. **Kombo/Oto Pot** (ÇALIŞIYOR): tuş kombinasyonları + otomatik pot — temel değer.
-2. **Oto-Farm** (ANA ODAK, %90+): gözetimsiz saatlerce mob farm — doğru hedef seçimi (guardian'a
-   saldırma, cesede tıklama, başka oyuncunun mobunu kapma), hızlı mob-geçişi, envanter dolunca klan
-   bankasına boşaltma. "İnsan gibi" akıcı olmalı; müşteri izlerken bot bariz aptallık yapmamalı.
-3. **Tam Otonom** (SONRAKİ BÜYÜK HEDEF): farm→envanter dolu→şehre TP→NPC'ye satış+tamir→portal→farm
-   noktasına dönüş döngüsü, sıfır müdahale. Kod zinciri tam ama: 2-sınıf NPC/portal YOLO modeli
-   EĞİTİLMEDİ + kalibrasyon zinciri müşteri makinesinde kurulmalı.
+2. **Oto-Farm = KUSURSUZLUK HEDEFİ (mutlak öncelik):** gözetimsiz saatlerce mob farm. Başarı metriği
+   FPS SAYISI DEĞİL: **hiçbir mob track'ten çıkmasın + başarısız tıklama olmasın** (hedef-alma başarı
+   oranı maksimum). Maksimum **tutarlılık-hız-verim** asıl önceliktir.
+3. **Tam Otonom:** ACELESİ YOK — Oto-Farm kusursuzlaşana dek beklemede. (Kod zinciri tam; NPC/portal
+   modeli eğitilmedi.)
 
-**"Yeterli" tanımı (Claude'un varsayımı):** Oto-Farm bir müşteri makinesinde 2560×1600 dışı
-çözünürlükte de kurulum+kalibrasyonla saatlerce takılmadan çalışıyor ve müşteri şikayet etmiyorsa
-v1 yeterli. Otonom şehir döngüsü v2.
+**Dağıtım hedefi:** HERHANGİ bir PC'de sorunsuz çalışacak; sabit-GUI kalibreleri (HP-bar, nameplate vs)
+müşteriye HAZIR gidecek (kalibrasyon yükü müşteriden alınacak). Müşteriler FARKLI sunucu/istemciler
+kullanıyor → ileride sunucu-başına kalibre-profil sistemi gerekecek (şimdilik kullanıcının sunucusu
+baked gider, ilk müşteri testleri gösterecek).
 
-**İleri taşıma yolları:** model kalitesi (FP16/TensorRT/daha iyi eğitim seti), tam otonom zincirin
-kalibrasyonsuz/robust hale gelmesi (görsel doğrulamalı her adım), çoklu-müşteri dağıtım kolaylığı,
-insan-benzerlik (rastgelelik/tempo), RP2040 donanım girdisiyle tespit edilmezlik.
+**Anti-tespit:** bu aşamada öncelik DEĞİL. İleride ±10ms rastgele humanize eklenecek — bunun altyapısı
+adım-bazlı ms telemetrisidir (sonraki session'ın işi).
+
+**İleri taşıma yolları (öncelik sırasıyla):** (1) adım-bazlı ms telemetri → veri-güdümlü optimizasyon +
+kayıp-nedeni ayrımı, (2) başarı oranını maksimuma çekme (ceset-sınıfı model kararı VERİYLE verilecek —
+kullanıcı kararsız, önce telemetri), (3) çoklu-PC/sunucu dağıtım robustluğu, (4) model kalitesi
+(FP16/TensorRT izin verilirse), (5) otonom v2, (6) humanize.
 
 ## 2. MİMARİ HARİTA (dosya → sorumluluk)
 
@@ -63,14 +66,19 @@ insan-benzerlik (rastgelelik/tempo), RP2040 donanım girdisiyle tespit edilmezli
 
 ## 4. AÇIK KONULAR / SIRADAKİ ADIMLAR (öncelik sırasıyla)
 
-1. **Prep-paralel canlı doğrulama** + isteğe bağlı oyun cap=90 testi (90fps hedefi hâlâ isteniyorsa).
-2. **Müşteri dağıtım testi:** installer'lar müşteriye gidecek — farklı çözünürlük/DPI'da kalibrasyon
-   akışının sorunsuzluğu kritik (ResolutionMapper master 2560×1600'den ölçekler; koordinat glyph'leri
-   müşteri yeniden öğretmeli — DigitGlyphsVersion=2).
-3. Guardian-yoğun bölge geçiş süreleri (boş-tarama+bl dolaşımı) — davranış iyileştirme adayı.
-4. Kalan ~3/dk tık-sonrası-kayıp: gerçek-despawn vs iz-churn ayrımı yapılmadı.
-5. FP16 (izin verilirse; ~1.5-2× GPU) → TensorRT (Faz E, büyük iş).
-6. Otonom v2: 2-sınıf NPC/portal modeli eğitimi (kullanıcıda) + uçtan-uca kademeli test
+1. **SONRAKİ SESSION ANA GÜNDEMİ — adım-bazlı ms telemetrisi (KULLANICI TALEBİ):** botun yaptığı HER
+   adımın süresi loglanacak. Format KARARI VERİLDİ: **ikisi birden** — kritik özetler insan-okur loga,
+   ham ms'ler ayrı JSONL dosyasına ({ts, adım, hedef, süre_ms, sonuç}). Amaçlar: (a) veri-güdümlü
+   optimizasyon, (b) kalan ~3/dk kaybın ayrımı (gerçek-despawn vs ceset vs iz-churn) → ceset-sınıfı
+   model kararı bu veriyle verilecek (kullanıcı kararsız), (c) ±10ms humanize altyapısı.
+2. **Prep-paralel duman testi** (müşteriye gitmeden 2dk: tespit çalışıyor + perf'te prep 2-3ms mi).
+3. **Müşteri dağıtım testi:** installer'lar hazır (Output\, 1.0.2) — farklı çözünürlük/DPI + FARKLI
+   sunucu/istemci gerçeği: hazır-kalibre başka sunucuda tutmayabilir → ilk testte görülecek; gerekirse
+   sunucu-başına kalibre-profil sistemi tasarlanacak. Koordinat glyph'leri müşteri öğretmeli (V2).
+4. Guardian-yoğun bölge geçiş süreleri (boş-tarama+bl dolaşımı) — davranış iyileştirme adayı.
+5. FP16 (izin verilirse; ~1.5-2× GPU) → TensorRT (Faz E, büyük iş). Oyun cap=90 denemesi isteğe bağlı
+   (fps sayısı artık hedef değil — başarı oranı hedef).
+6. Otonom v2 (BEKLEMEDE — kullanıcı: acelesi yok): NPC/portal modeli + kademeli test
    ([[autonomous-readiness-plan]] memory'de 9-aşama analizi).
 
 ## 5. KRİTİK KOMUTLAR / KURALLAR
