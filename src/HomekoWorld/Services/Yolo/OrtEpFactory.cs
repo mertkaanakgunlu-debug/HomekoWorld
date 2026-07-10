@@ -78,7 +78,28 @@ public static class OrtEpFactory
         // ── NVIDIA performans build'i: CUDA → CPU (TensorRT ertelendi — planlanan Faz E sidecar) ──
         if (backend != InferenceBackend.Cpu)
         {
-            try { opts.AppendExecutionProvider_CUDA(0); epUsed = "CUDA"; return opts; }
+            try
+            {
+                // P3: çıplak AppendExecutionProvider_CUDA(0) yerine AYARLI sağlayıcı. Sabit 640×640 girdide
+                // model şekli değişmediğinden en hızlı cuDNN conv algoritmasını bir kez arayıp sabitlemek
+                // (EXHAUSTIVE) + max workspace + varsayılan stream'de kopya → GPU Run süresini kısaltır.
+                // EXHAUSTIVE'in tek-seferlik arama maliyeti WarmUpAsync (idle) tarafından soğurulur.
+                // NOT (2026-07-10): arena_extend_strategy=kSameAsRequested KALDIRILDI — headless A/B'de
+                // (RTX 4070 Laptop, ORT 1.20.1) kazancı yok (p50 8.7 vs 8.4ms, gürültü içinde) ve
+                // EnableMemoryPattern=false ile birlikte oyun-dolu VRAM'de arena parçalanması/tekrarlanan
+                // cudaMalloc riski taşır. Varsayılan kNextPowerOfTwo kalsın.
+                using var cudaOpts = new OrtCUDAProviderOptions();
+                cudaOpts.UpdateOptions(new Dictionary<string, string>
+                {
+                    ["device_id"]                    = "0",
+                    ["cudnn_conv_algo_search"]       = "EXHAUSTIVE",     // sabit şekil → en hızlı conv (warmup soğurur)
+                    ["cudnn_conv_use_max_workspace"] = "1",             // cuDNN daha hızlı algoritma seçebilsin
+                    ["do_copy_in_default_stream"]    = "1",             // H2D/D2H kopyaları compute stream'inde → senkron
+                });
+                opts.AppendExecutionProvider_CUDA(cudaOpts); // ayarlar append'te kopyalanır → cudaOpts dispose edilebilir
+                epUsed = "CUDA";
+                return opts;
+            }
             catch (Exception ex) { HomekoWorld.Program.Log($"[EP] CUDA yok: {ex.Message}"); }
         }
 #else

@@ -275,16 +275,27 @@ public static class WtmVision
     /// dolu kırmızı blok, sızıntı/metin = düşük sayı). LastBarScan'e yalnız SEÇİLEN konum yazılır.</summary>
     private static bool RedAtAreas(int x, int y, int w, int h, int threshold, WtmSettings s, out int offsetY)
     {
-        int  red1 = CountRedHsv(x, y, w, h, s, out int d1, out int t1);
-        bool p1   = BarWouldPass(red1, d1, t1, threshold, s);
         int  dy   = s.AnnounceShiftY > 0 ? ResolutionMapper.ScaleLen(s.AnnounceShiftY) : 0;
-        int  red2 = 0, d2 = 0, t2 = 0;
-        bool p2   = false;
+        int  red1, d1, t1, red2 = 0, d2 = 0, t2 = 0;
         if (dy > 0)
         {
-            red2 = CountRedHsv(x, y + dy, w, h, s, out d2, out t2);
-            p2   = BarWouldPass(red2, d2, t2, threshold, s);
+            // 11.tur: iki konum (temel + duyuru-kaydırılmış) AYNI (x,w,h)'a sahip, yalnız Y'de dy kadar
+            // kayık — TEK bir CaptureRegion bu ikisini birden kapsayan bir dikdörtgen olarak yakalar, ardından
+            // zaten var olan CountRedHsvFromFrame (yeni yakalama YOK) o TEK bitmap üzerinde iki kez çağrılır.
+            // HP-poll döngüsü bu fonksiyonu ~30ms'de bir çağırdığından (450ms bütçe → ~15 yineleme) bu, her
+            // yinelemede senkron GDI CopyFromScreen sayısını 2'den 1'e indirir. Karar mantığı (p1/p2/useShift)
+            // DEĞİŞMEZ — yalnız capture stratejisi değişir.
+            int rx = Math.Max(0, x), ry = Math.Max(0, y), hh = Math.Max(1, h);
+            using var merged = CaptureRegion(rx, ry, Math.Max(1, w), hh + dy);
+            red1 = CountRedHsvFromFrame(merged, 0, 0,  w, h, s, out d1, out t1);
+            red2 = CountRedHsvFromFrame(merged, 0, dy, w, h, s, out d2, out t2);
         }
+        else
+        {
+            red1 = CountRedHsv(x, y, w, h, s, out d1, out t1);
+        }
+        bool p1 = BarWouldPass(red1, d1, t1, threshold, s);
+        bool p2 = dy > 0 && BarWouldPass(red2, d2, t2, threshold, s);
         if (p1 || p2)
         {
             bool useShift = p2 && (!p1 || red2 > red1);
@@ -555,7 +566,9 @@ public static class WtmVision
     /// kalibre değilse HpColorScanY + NameplateOffsetY ofsetinden türetilen bant.
     /// Her pikseli HSV'ye çevirir; siyah çerçeve/gölge (düşük V) ve beyaz/gri
     /// (düşük S) pikselleri eler. Kalan "renkli yazı" pikselleri içinde kırmızı
-    /// hue oranı eşiği geçerse Guardian döner — aksi halde Normal/Unknown (saldır).
+    /// hue oranı eşiği geçerse Guardian döner — aksi halde Normal (saldır); oyunda
+    /// üçüncü bir isim rengi yok, ikili karar. Unknown yalnızca kalibrasyon eksik/
+    /// geometri geçersizken görülür (bkz ReadNameplateClass), renk-belirsizliği DEĞİL.
     /// Hue ışıktan bağımsız olduğu için RGB mesafesine göre çok daha kararlıdır.
     /// </summary>
     public enum NameplateClass { Unknown, Normal, Guardian }
@@ -569,7 +582,15 @@ public static class WtmVision
     /// FARKLI (daha yeni/daha eski) bir tick'in offset'ini okuyabiliyordu — duyuru açılır/kapanır anında isim
     /// YANLIŞ konumda aranıp koruma mobu "normal" sanılıyordu (atlanmıyor, vuruluyordu).</summary>
     public static NameplateClass ReadNameplateClass(WtmSettings s, int barOffsetY)
+        => ReadNameplateClass(s, barOffsetY, out _, out _, out _);
+
+    /// <summary>Tanılamalı sürüm — <paramref name="textPixels"/>/<paramref name="guardianVotes"/>/
+    /// <paramref name="usedRefHue"/> loglanabilsin diye (10.tur: bir sonraki yanlış-Normal/yanlış-Guardian
+    /// vak'asında kanıt tahmin etmek yerine ölçülsün).</summary>
+    public static NameplateClass ReadNameplateClass(WtmSettings s, int barOffsetY,
+        out int textPixels, out int guardianVotes, out bool usedRefHue)
     {
+        textPixels = 0; guardianVotes = 0; usedRefHue = false;
         // Tarama dikdörtgenini seç (master px): önce çizilen bant, yoksa ofset fallback.
         int rx, ry, rw, rh;
         if (s.IsNameBandCalibrated)
@@ -596,7 +617,7 @@ public static class WtmVision
         // isim=guardian") HER mobu koruma sanıyor, engage HİÇ olmuyordu. DÜZELTME: ismi, barın GERÇEKTE bulunduğu
         // offset'te (barOffsetY: 0=duyuru yok, +Δy=duyuru var) TEK konumda sınıflandır → HP barıyla çakışma biter,
         // guardian hem duyuru açık hem kapalıyken doğru çalışır.
-        return ClassifyNameRect(r.X, r.Y + barOffsetY, r.Width, r.Height, s);
+        return ClassifyNameRect(r.X, r.Y + barOffsetY, r.Width, r.Height, s, out textPixels, out guardianVotes, out usedRefHue);
     }
 
     /// <summary>Verilen ekran dikdörtgenini yakalar ve HSV ile nameplate sınıfı döndürür.</summary>
@@ -609,8 +630,10 @@ public static class WtmVision
     ///      için sabit "kırmızı=koruma" mantığı her mobu koruma sanıyordu — KÖK NEDEN buydu).
     ///  (B) Fallback (referanslar yoksa/doygun değilse): eski sabit kırmızı-hue bandı.
     /// </remarks>
-    private static NameplateClass ClassifyNameRect(int rx, int ry, int rw, int rh, WtmSettings s)
+    private static NameplateClass ClassifyNameRect(int rx, int ry, int rw, int rh, WtmSettings s,
+        out int textPixels, out int guardianVotes, out bool usedRefHue)
     {
+        textPixels = 0; guardianVotes = 0; usedRefHue = false;
         if (rw <= 0 || rh <= 0 || ry < 0) return NameplateClass.Unknown;
 
         // Referans hue'ları hesapla — her iki referans da YETERİNCE DOYGUN olmalı (gri ref → anlamsız hue).
@@ -618,13 +641,11 @@ public static class WtmVision
         RgbToHsv(s.GuardianNameR, s.GuardianNameG, s.GuardianNameB, out float guardianHue, out float guardianSat, out _);
         bool useRefHue = normalSat >= s.NameplateMinSat && guardianSat >= s.NameplateMinSat
                          && HueDist(normalHue, guardianHue) >= 15f; // ayırt edilebilir iki renk
+        usedRefHue = useRefHue;
 
         using var bmp  = CaptureRegion(rx, ry, rw, rh);
         var       rect = new Rectangle(0, 0, rw, rh);
         var       data = bmp.LockBits(rect, ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
-
-        int textPixels    = 0; // parlak + doygun (renkli yazı) piksel
-        int guardianVotes = 0; // referans-renk modunda korumaya daha yakın; fallback'te kırmızı
 
         try
         {
@@ -646,17 +667,24 @@ public static class WtmVision
                     RgbToHsv(r, g, b, out float hue, out float sat, out float val);
                     if (val < s.NameplateMinVal) continue; // siyah çerçeve/gölge/koyu arka plan
                     if (sat < s.NameplateMinSat) continue; // beyaz/gri → renkli yazı değil
-                    textPixels++;
 
                     if (useRefHue)
                     {
-                        // Hangi referans renge (hue) daha yakın? Koruma'ya yakınsa koruma oyu.
-                        if (HueDist(hue, guardianHue) < HueDist(hue, normalHue))
-                            guardianVotes++;
+                        // 10.tur-c: piksel ikisinin EN YAKININA göre bile makul mesafede değilse
+                        // (arka-plan/parıltı/efekt — isim rengi DEĞİL) hiç sayma; payda gürültüyle şişip
+                        // guardian oranını sulandırmasın (canlı-log kanıtı: piksel sabit ~%86 dolu ama
+                        // guardian-oy 0↔2512 sıçrıyordu — bant isim-dışı büyük bir öğeyi de kapsıyordu).
+                        float dNormal   = HueDist(hue, normalHue);
+                        float dGuardian = HueDist(hue, guardianHue);
+                        if (Math.Min(dNormal, dGuardian) > s.NameplateRefHueMaxDist) continue;
+                        textPixels++;
+                        if (dGuardian < dNormal) guardianVotes++;
                     }
-                    else if (hue <= s.NameplateRedHueLo || hue >= s.NameplateRedHueHi)
+                    else
                     {
-                        guardianVotes++;   // fallback: sabit kırmızı bandı
+                        textPixels++;
+                        if (hue <= s.NameplateRedHueLo || hue >= s.NameplateRedHueHi)
+                            guardianVotes++;   // fallback: sabit kırmızı bandı
                     }
                 }
             }
@@ -667,9 +695,10 @@ public static class WtmVision
         if (guardianVotes >= s.NameplateRedMinPx && textPixels > 0 &&
             (float)guardianVotes / textPixels >= s.NameplateRedFrac)
             return NameplateClass.Guardian;
-        if (textPixels >= s.NameplateRedMinPx)
-            return NameplateClass.Normal;
-        return NameplateClass.Unknown;
+        // 10.tur: oyunda ismin ÜÇÜNCÜ bir rengi yok — ya guardian'a yetecek kanıt var ya da yok.
+        // Yetersiz textPixels artık Unknown/atlama DEĞİL, Normal (saldır); "okunamadı" güvenli bir
+        // orta hâl değil, kanıt yokluğuydu (bkz NameplateMinVal/MinSat 10.tur notu).
+        return NameplateClass.Normal;
     }
 
     /// <summary>İki hue (0-360) arasındaki dairesel mesafe (0-180).</summary>

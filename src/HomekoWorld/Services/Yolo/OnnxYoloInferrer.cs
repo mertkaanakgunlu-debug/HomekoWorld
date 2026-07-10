@@ -4,14 +4,13 @@ using System.Drawing.Imaging;
 using System.Threading;
 using HomekoWorld.Models.Farm;
 using Microsoft.ML.OnnxRuntime;
-using Microsoft.ML.OnnxRuntime.Tensors;
 
 namespace HomekoWorld.Services.Yolo;
 
 /// <summary>
 /// YOLOv8/YOLO11 ONNX modelini GPU (CUDA/DirectML) veya CPU ile çalıştıran inferrer.
 /// Output shape: (1, 4+nc, numAnchors) — raw YOLO export formatı. numAnchors imgsz'e göre
-/// değişir (640 → 8400, 960 → 18900); kod bunu output.Dimensions[2]'den DİNAMİK okur.
+/// değişir (640 → 8400, 960 → 18900); kod bunu warmup Run'ının gerçek çıktı şeklinden DİNAMİK okur.
 /// IYoloInferrer implement eder; FarmEngine.Inferrer property'sine atanır.
 /// </summary>
 public sealed class OnnxYoloInferrer : IYoloInferrer, IDisposable
@@ -73,17 +72,43 @@ public sealed class OnnxYoloInferrer : IYoloInferrer, IDisposable
     }
 
     // ── P2: çok-slot tensor havuzu (pipelining) ───────────────────────────────
-    // Eskiden tek _tensorBuf/_tensor (seri). Pipeline'da üretici (PreprocessInto) ve tüketici (InferSlot)
+    // Eskiden tek _tensorBuf (seri). Pipeline'da üretici (PreprocessInto) ve tüketici (InferSlot)
     // FARKLI slotlarda eşzamanlı çalışır → çakışma yok. Slot sahipliğini FarmEngine yönetir (free-pool +
-    // latest-wins mailbox). Load() tüm slotları _inputSize'a göre kurar.
+    // latest-wins mailbox). Load() tüm slotları _inputSize'a göre kurar. PreprocessSlot bu ham float[]
+    // buffer'a NCHW yazar; her buffer bir OrtValue (_inputValues) ile SARILIR → GPU'ya kopyalanır.
     public const int SlotCount = 3; // triple-buffer: üretici-yazan + mailbox + tüketici-okuyan
-    private float[][]            _tensorBufs = Array.Empty<float[]>();
-    private DenseTensor<float>[] _tensors    = Array.Empty<DenseTensor<float>>();
+    private float[][] _tensorBufs = Array.Empty<float[]>();
+
+    // ── P3: sıfır-kopya / önceden-ayrılmış I/O (ORT OrtValue) ─────────────────
+    // Eskiden her karede `new[]{ NamedOnnxValue.CreateFromTensor(...) }` + InputMetadata.Keys.First()
+    // LINQ + TAZE çıktı koleksiyonu ayrılıyordu. Artık: girdi OrtValue'ları slot başına bir kez kurulur
+    // (_tensorBufs[i]'yi sarar), çıktı için yeniden-kullanılan _outputBuf + _outputValue önceden ayrılır,
+    // void Run(...outputValues) overload'u ile GPU sonucu doğrudan _outputBuf'a yazılır (kare-başı alloc yok).
+    private string   _inputName = "", _outputName = "";
+    private string[] _inNames  = Array.Empty<string>();
+    private string[] _outNames = Array.Empty<string>();
+    private readonly RunOptions _runOpts = new();
+    private OrtValue[] _inputValues = Array.Empty<OrtValue>(); // slot başına — _tensorBufs[i]'yi sarar
+    private readonly OrtValue[] _inHolder  = new OrtValue[1];  // InferSlot'ta yeniden-kullanılan tek-eleman girdi listesi
+    private readonly OrtValue[] _outHolder = new OrtValue[1];  // "" — çıktı
+    private float[]  _outputBuf = Array.Empty<float>();        // yeniden-kullanılan CPU çıktı buffer'ı (GPU buraya yazar)
+    private OrtValue? _outputValue;                            // _outputBuf üstünde CPU OrtValue
+    private int      _numChannels, _numAnchors;               // warmup Run'dan keşfedilir (numAnchors dinamik)
+    private volatile bool _ioReady;                           // I/O OrtValue'ları kuruldu mu (warmup/kurtarma sonrası)
+    private readonly object _ioInitLock = new();              // PrepareIo'yu warmup-vs-InferSlot yarışına karşı seri kılar
+
+    // ── P3: postprocess scratch (alloc-free) ──────────────────────────────────
+    private readonly List<Detection> _raw = new(64);          // ham tespitler (NMS öncesi); InferSlot'a özel, .Clear() ile
+    private int[]  _order      = Array.Empty<int>();          // NMS güven-sıralaması (indeks)
+    private bool[] _suppressed = Array.Empty<bool>();         // NMS bastırma işareti
+    private readonly ConfIndexComparer _confCmp = new();      // yeniden-kullanılan comparer (kapanış-alloc yok)
 
     // ── Thread-safety (A1c → P2): ReaderWriterLockSlim ────────────────────────
     // PreprocessInto/InferSlot/WarmUp = READ (eşzamanlı OK; üretici+tüketici farklı slot). Load/Dispose =
     // WRITE (exclusive: session dispose + buffer realloc). Load nadir (model değişimi). Read kilidi
     // recursive DEĞİL → metotlar iç içe kilit almaz (serial Infer ardışık çağırır, nested değil).
+    // NOT: kare-başı scratch (_inHolder/_outHolder/_outputBuf/_raw/_order/_suppressed) YALNIZ InferSlot'ta
+    // kullanılır; InferSlot upgradeable-read kilidini tutar (aynı anda tek tutucu) → ayrı kilit gerekmez.
     private readonly ReaderWriterLockSlim _rwLock = new();
 
     // ── Yükleme ───────────────────────────────────────────────────────────────
@@ -106,15 +131,23 @@ public sealed class OnnxYoloInferrer : IYoloInferrer, IDisposable
             _forcedCpu  = false;
             _failStreak = 0;
 
+            // P3: eski girdi/çıktı OrtValue'larını YENİDEN-ATAMADAN önce serbest bırak → _tensorBufs
+            // yeniden ayrıldığında eski pinler sızmaz.
+            DisposeIoValues();
+            _ioReady = false;
+
             // Model giriş boyutu (imgsz) — eğitim/export ile eşleşmeli. Tüm slot buffer'ları bu boyuta göre kurulur.
             _inputSize  = Math.Clamp(inputSize, 320, 1920);
             int len     = 1 * 3 * _inputSize * _inputSize;
-            _tensorBufs = new float[SlotCount][];
-            _tensors    = new DenseTensor<float>[SlotCount];
+            long[] inShape = { 1, 3, _inputSize, _inputSize };
+            _tensorBufs  = new float[SlotCount][];
+            _inputValues = new OrtValue[SlotCount];
             for (int i = 0; i < SlotCount; i++)
             {
-                _tensorBufs[i] = new float[len];
-                _tensors[i]    = new DenseTensor<float>(_tensorBufs[i], new[] { 1, 3, _inputSize, _inputSize });
+                _tensorBufs[i]  = new float[len];
+                // CPU OrtValue: _tensorBufs[i] bellek bloğunu OrtValue ömrü boyunca pinler (zero-copy sarma).
+                _inputValues[i] = OrtValue.CreateTensorValueFromMemory(
+                    OrtMemoryInfo.DefaultInstance, _tensorBufs[i].AsMemory(), inShape);
             }
 
             BuildSession();
@@ -127,6 +160,7 @@ public sealed class OnnxYoloInferrer : IYoloInferrer, IDisposable
     {
         _session?.Dispose();
         _session = null;
+        _ioReady = false; // yeni session → I/O isimleri/çıktı OrtValue'su yeniden keşfedilmeli (PrepareIo)
 
         // GPU üst üste hata verdiyse (_forcedCpu) tercih ne olursa olsun CPU.
         var backend = _forcedCpu ? InferenceBackend.Cpu : _backend;
@@ -150,6 +184,53 @@ public sealed class OnnxYoloInferrer : IYoloInferrer, IDisposable
             HomekoWorld.Program.Log($"[YOLO] Execution provider: {_epUsed}");
             LogModelDiag();
         }
+    }
+
+    /// <summary>
+    /// P3: I/O OrtValue'larını hazırlar — girdi isimlerini cache'ler ve TEK bir warmup Run ile gerçek çıktı
+    /// şeklini (1,C,A) keşfeder (numAnchors nominal DİNAMİK → metadata'dan değil, gerçek run'dan okunur),
+    /// yeniden-kullanılan CPU çıktı buffer'ı + OrtValue'yu kurar. Warmup (idle) VE lazy (kurtarma sonrası ilk
+    /// InferSlot) yollarından çağrılabildiği için _ioInitLock ile seri + double-check yapılır. Çağıran RW read
+    /// veya upgradeable-read kilidini tutmalı (session sabit kalsın diye).
+    /// </summary>
+    private void PrepareIo(InferenceSession session)
+    {
+        lock (_ioInitLock)
+        {
+            if (_ioReady) return; // başka bir çağıran çoktan kurmuş
+
+            _inputName  = session.InputNames[0];
+            _outputName = session.OutputNames[0];
+            _inNames  = new[] { _inputName };
+            _outNames = new[] { _outputName };
+
+            // Gerçek çıktı şeklini bir warmup Run'dan al (ORT'un ayırdığı çıktıyı oku).
+            using var res = session.Run(_runOpts, _inNames, new[] { _inputValues[0] }, _outNames);
+            long[] shape = res[0].GetTensorTypeAndShape().Shape; // [1, C, A]
+            long total = 1;
+            foreach (var d in shape) total *= d;
+            _numChannels = shape.Length >= 2 ? (int)shape[1] : 0;
+            _numAnchors  = shape.Length >= 3 ? (int)shape[2] : 0;
+
+            int outLen = (int)total;
+            if (_outputBuf.Length != outLen) _outputBuf = new float[outLen];
+            // Çıktı OrtValue'yu _outputBuf üstünde her seferinde yeniden kur (şekil model değişince farklı olabilir).
+            _outputValue?.Dispose();
+            _outputValue  = OrtValue.CreateTensorValueFromMemory(
+                OrtMemoryInfo.DefaultInstance, _outputBuf.AsMemory(), shape);
+            _outHolder[0] = _outputValue;
+
+            _ioReady = true;
+        }
+    }
+
+    /// <summary>Girdi/çıktı OrtValue'larını serbest bırakır (pin'leri çözer). Write kilidi altında çağrılmalı.</summary>
+    private void DisposeIoValues()
+    {
+        foreach (var v in _inputValues) v?.Dispose();
+        _inputValues = Array.Empty<OrtValue>();
+        _outputValue?.Dispose();
+        _outputValue = null;
     }
 
     /// <summary>Model yükleme teşhisi (9.tur): FPS kıyasları oturumlar arası atfedilebilir olsun diye
@@ -243,7 +324,7 @@ public sealed class OnnxYoloInferrer : IYoloInferrer, IDisposable
     /// <summary>
     /// P2 TÜKETİCİ aşaması: slot'un (önce PreprocessInto edilmiş) tensor'ını GPU'da çalıştırır + parse + NMS.
     /// _lastRunMs/_lastPostMs set. origW/origH = kaynak kare boyutu (kutu clamp). Upgradeable kilit: GPU
-    /// hatasında write'a yükselip session'ı kurtarır (A4).
+    /// hatasında write'a yükselip session'ı kurtarır (A4). P3: önceden-ayrılmış OrtValue I/O (kare-başı alloc yok).
     /// </summary>
     public IReadOnlyList<Detection> InferSlot(int slot, float padX, float padY, float scale, int origW, int origH)
     {
@@ -251,15 +332,28 @@ public sealed class OnnxYoloInferrer : IYoloInferrer, IDisposable
         try
         {
             var session = _session;
-            if (session is null || (uint)slot >= (uint)_tensors.Length) return Array.Empty<Detection>();
-            var tensor = _tensors[slot];
+            if (session is null || (uint)slot >= (uint)_inputValues.Length) return Array.Empty<Detection>();
+
+            // P3: I/O henüz hazır değilse (warmup atlandı ya da kurtarma sonrası) burada lazy kur.
+            if (!_ioReady)
+            {
+                try { PrepareIo(session); }
+                catch (Exception ex)
+                {
+                    HomekoWorld.Program.Log($"[YOLO] I/O hazırlama hatası (EP={_epUsed}): {ex.Message}");
+                    _rwLock.EnterWriteLock();
+                    try { RecoverAfterFailure(); } finally { _rwLock.ExitWriteLock(); }
+                    _lastRunMs = _lastPostMs = 0;
+                    return Array.Empty<Detection>();
+                }
+            }
 
             long tRunStart = Stopwatch.GetTimestamp();
-            string inputName = session.InputMetadata.Keys.First();
-            IDisposableReadOnlyCollection<DisposableNamedOnnxValue> results;
+            _inHolder[0] = _inputValues[slot];
             try
             {
-                results = session.Run(new[] { NamedOnnxValue.CreateFromTensor(inputName, tensor) });
+                // Önceden-ayrılmış çıktı overload'u: GPU sonucu doğrudan _outputBuf'a yazılır (taze koleksiyon YOK).
+                session.Run(_runOpts, _inNames, _inHolder, _outNames, _outHolder);
             }
             catch (Exception ex)
             {
@@ -273,8 +367,8 @@ public sealed class OnnxYoloInferrer : IYoloInferrer, IDisposable
             long tRunEnd = Stopwatch.GetTimestamp();
             _lastRunMs = Ms(tRunStart, tRunEnd);   // P0: GPU Run (TensorRT/FP16 yalnız BUNU hızlandırır)
 
-            using var _resultsScope = results;
-            var result = ParseAndNms(results, padX, padY, scale, origW, origH);
+            // GPU çıktısı _outputBuf'ta — DenseTensor indexer'ı yerine düz span + manuel stride (alloc-free).
+            var result = ParseAndNms(_outputBuf, _numChannels, _numAnchors, padX, padY, scale, origW, origH);
             _lastPostMs = Ms(tRunEnd, Stopwatch.GetTimestamp());   // P0: postprocess (CPU parse+NMS)
             return result;
         }
@@ -283,15 +377,12 @@ public sealed class OnnxYoloInferrer : IYoloInferrer, IDisposable
 
     // ── Output parse + NMS ────────────────────────────────────────────────────
     //    BBox modeli: (1, 4+nc, numAnchors)   numAnchors imgsz'e göre: 640→8400, 960→18900
-    private List<Detection> ParseAndNms(IDisposableReadOnlyCollection<DisposableNamedOnnxValue> results,
+    //    Bellek düzeni row-major (1,C,A) → eleman [0,ch,a] = ch*A + a (düz float span, indexer yok).
+    private List<Detection> ParseAndNms(ReadOnlySpan<float> o, int numChannels, int numAnchors,
         float padX, float padY, float scale, int origW, int origH)
     {
-        var output      = results.First().AsTensor<float>();
-        int numAnchors  = output.Dimensions[2];
-        int numChannels = output.Dimensions[1];
-
         // A1a: _classNames modelin kanal sayısından FAZLA olabilir ("tek↔çok sınıf taşması") → nc'yi
-        // (numChannels-4) ile KISITLA, yoksa output[0, 4+c, a] aralık-dışı → çökme.
+        // (numChannels-4) ile KISITLA, yoksa (4+c)*A+a aralık-dışı → çökme.
         int maxClasses = Math.Max(0, numChannels - 4);
         int nc, nKpts;
         if (_classNames.Length > 0)
@@ -303,19 +394,22 @@ public sealed class OnnxYoloInferrer : IYoloInferrer, IDisposable
         else { nc = maxClasses; nKpts = 0; }
         if (nc <= 0) return new List<Detection>(); // dejenere/uyumsuz model çıkışı
 
-        var raw = new List<Detection>(64);
-        for (int a = 0; a < numAnchors; a++)
+        int A = numAnchors;
+        if (A <= 0 || o.Length < numChannels * A) return new List<Detection>();
+
+        _raw.Clear();
+        for (int a = 0; a < A; a++)
         {
             float maxScore = 0f; int bestCls = 0;
             for (int c = 0; c < nc; c++)
             {
-                float s = output[0, 4 + c, a];
+                float s = o[(4 + c) * A + a];
                 if (s > maxScore) { maxScore = s; bestCls = c; }
             }
             if (maxScore < _confThresh) continue;
 
-            float cx = output[0, 0, a]; float cy = output[0, 1, a];
-            float bw = output[0, 2, a]; float bh = output[0, 3, a];
+            float cx = o[a]; float cy = o[A + a];
+            float bw = o[2 * A + a]; float bh = o[3 * A + a];
 
             float x1 = Math.Clamp((cx - bw * 0.5f - padX) / scale, 0, origW);
             float y1 = Math.Clamp((cy - bh * 0.5f - padY) / scale, 0, origH);
@@ -331,8 +425,8 @@ public sealed class OnnxYoloInferrer : IYoloInferrer, IDisposable
             if (nKpts > 0) // yalnız pose modeli
             {
                 int kpBase = 4 + nc;
-                float kpx = output[0, kpBase, a]; float kpy = output[0, kpBase + 1, a];
-                float kpConf = output[0, kpBase + 2, a];
+                float kpx = o[kpBase * A + a]; float kpy = o[(kpBase + 1) * A + a];
+                float kpConf = o[(kpBase + 2) * A + a];
                 if (kpConf > 0.3f)
                 {
                     float kpxOrig = Math.Clamp((kpx - padX) / scale, 0, origW);
@@ -341,11 +435,11 @@ public sealed class OnnxYoloInferrer : IYoloInferrer, IDisposable
                 }
             }
 
-            raw.Add(new Detection(bestCls, className,
+            _raw.Add(new Detection(bestCls, className,
                 new RectangleF(x1, y1, x2 - x1, y2 - y1), maxScore, kp));
         }
 
-        return ApplyNms(raw, _iouThresh);
+        return ApplyNms(_raw, _iouThresh);
     }
 
     // ── Preprocess (P1): tek-geçiş doğrudan bilinear → slot'un NCHW tensor buffer'ı ─────────────
@@ -426,27 +520,48 @@ public sealed class OnnxYoloInferrer : IYoloInferrer, IDisposable
     }
 
     // ── Non-Maximum Suppression ───────────────────────────────────────────────
-
-    private static List<Detection> ApplyNms(List<Detection> dets, float iouThresh)
+    // P3: LINQ GroupBy/OrderByDescending/ToList/RemoveAll (kare-başı alloc) yerine yeniden-kullanılan
+    // scratch (_order/_suppressed) ile TEK sıralı geçiş. Sınıf-başı semantik korunur: yalnız aynı ClassId
+    // birbirini bastırır → farklı mob türleri elenmez. Tracker kareler-arası referans tuttuğu için TAZE
+    // List döner (yeniden-kullanılan buffer retained referans altında değişmesin).
+    private List<Detection> ApplyNms(List<Detection> dets, float iouThresh)
     {
-        if (dets.Count <= 1) return dets;
+        int n = dets.Count;
+        if (n == 0) return new List<Detection>();
+        if (n == 1) return new List<Detection>(dets);
 
-        var result = new List<Detection>(dets.Count);
+        if (_order.Length < n) { _order = new int[n]; _suppressed = new bool[n]; }
+        for (int i = 0; i < n; i++) { _order[i] = i; _suppressed[i] = false; }
 
-        // Class başına ayrı NMS — farklı mob türleri birbirini elemez
-        foreach (var group in dets.GroupBy(d => d.ClassId))
+        // Güvene göre AZALAN sırala (indeks bazlı; comparer yeniden-kullanılır → kapanış-alloc yok).
+        _confCmp.Dets = dets;
+        Array.Sort(_order, 0, n, _confCmp);
+        _confCmp.Dets = null;
+
+        var result = new List<Detection>(n);
+        for (int ii = 0; ii < n; ii++)
         {
-            var sorted = group.OrderByDescending(d => d.Confidence).ToList();
-            while (sorted.Count > 0)
+            int i = _order[ii];
+            if (_suppressed[i]) continue;
+            var bi = dets[i];
+            result.Add(bi);
+            for (int jj = ii + 1; jj < n; jj++)
             {
-                var best = sorted[0];
-                result.Add(best);
-                sorted.RemoveAt(0);
-                sorted.RemoveAll(d => Iou(best.BBox, d.BBox) >= iouThresh);
+                int j = _order[jj];
+                if (_suppressed[j]) continue;
+                var dj = dets[j];
+                if (bi.ClassId == dj.ClassId && Iou(bi.BBox, dj.BBox) >= iouThresh)
+                    _suppressed[j] = true;
             }
         }
-
         return result;
+    }
+
+    /// <summary>NMS güven-azalan indeks sıralaması için yeniden-kullanılan comparer (kapanış-alloc'undan kaçınır).</summary>
+    private sealed class ConfIndexComparer : IComparer<int>
+    {
+        public List<Detection>? Dets;
+        public int Compare(int x, int y) => Dets![y].Confidence.CompareTo(Dets![x].Confidence); // desc
     }
 
     private static float Iou(RectangleF a, RectangleF b)
@@ -470,8 +585,8 @@ public sealed class OnnxYoloInferrer : IYoloInferrer, IDisposable
     // ── Warmup ────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// TensorRT motorunun ilk açılışta (uygulama boşta iken) derlenmesini sağlar.
-    /// Böylece kullanıcı Başlat'a bastığında FPS 0'da donmaz.
+    /// TensorRT motorunun / CUDA conv-algo aramasının ilk açılışta (uygulama boşta iken) tamamlanmasını
+    /// sağlar + P3 I/O OrtValue'larını kurar (PrepareIo). Böylece kullanıcı Başlat'a bastığında FPS 0'da donmaz.
     /// </summary>
     public async Task WarmUpAsync(Action<string>? onStatusChanged = null)
     {
@@ -486,14 +601,28 @@ public sealed class OnnxYoloInferrer : IYoloInferrer, IDisposable
                     onStatusChanged?.Invoke("⚙️ Yapay Zeka Optimize Ediliyor (İlk Kullanıma Özel, Lütfen Bekleyin...)");
                 }
 
-                // Boş bir tensor ile ilk inference'ı tetikle — P2: read kilidi (Load/Dispose write ile yarışmaz).
+                // İlk inference + I/O kurulumu — P2: read kilidi (Load/Dispose write ile yarışmaz).
                 _rwLock.EnterReadLock();
                 try
                 {
                     var session = _session;
-                    if (session is null || _tensors.Length == 0) return;
-                    string inputName = session.InputMetadata.Keys.First();
-                    using var results = session.Run(new[] { NamedOnnxValue.CreateFromTensor(inputName, _tensors[0]) });
+                    if (session is null || _inputValues.Length == 0) return;
+                    PrepareIo(session); // warmup Run + çıktı OrtValue keşfi/ayrımı
+
+                    // Taban ölçümü (2026-07-10): ısınma SONRASI 5 Run'ın medyanı = bu makinede saf GPU süresi
+                    // (uygulama boşta, oyun yüküne bağımsız). Canlı "perf: gpu=" bunun katına çıkıyorsa sorun
+                    // çıkarımda değil GPU doygunluğunda/paylaşımında demektir — teşhis logdan yapılır.
+                    // Dönen-Run overload'u: paylaşılan _outHolder'a dokunmaz (InferSlot ile yarış yok).
+                    var runMs = new double[5];
+                    for (int i = 0; i < runMs.Length; i++)
+                    {
+                        long t0 = Stopwatch.GetTimestamp();
+                        using var res = session.Run(_runOpts, _inNames, new[] { _inputValues[0] }, _outNames);
+                        runMs[i] = Ms(t0, Stopwatch.GetTimestamp());
+                    }
+                    Array.Sort(runMs);
+                    HomekoWorld.Program.Log(
+                        $"[YOLO] warmup taban: run p50={runMs[2]:F1}ms (min={runMs[0]:F1} max={runMs[^1]:F1}, n=5) ep={_epUsed}");
                 }
                 finally { _rwLock.ExitReadLock(); }
 
@@ -519,8 +648,10 @@ public sealed class OnnxYoloInferrer : IYoloInferrer, IDisposable
         {
             _session?.Dispose();
             _session    = null;
+            DisposeIoValues();
             _tensorBufs = Array.Empty<float[]>();
-            _tensors    = Array.Empty<DenseTensor<float>>();
+            _runOpts.Dispose();
+            _ioReady = false;
         }
         finally { _rwLock.ExitWriteLock(); }
         _rwLock.Dispose();

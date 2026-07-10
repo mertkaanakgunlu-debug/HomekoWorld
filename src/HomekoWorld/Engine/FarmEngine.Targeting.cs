@@ -506,13 +506,17 @@ public sealed partial class FarmEngine
             (_appState.Wtm.IsNameBandCalibrated || _appState.Wtm.IsTargetHpColorCalibrated))
         {
             var gSw = System.Diagnostics.Stopwatch.StartNew();
-            var nameClass = WtmVision.ReadNameplateClass(_appState.Wtm, barOffsetY);
+            // 10.tur: tanılamalı overload — textPixels/guardianVotes/usedRefHue HER dalda loglanır, bir
+            // sonraki yanlış-Normal/yanlış-Guardian vak'asında kanıt tahmin etmek yerine ölçülsün.
+            var nameClass = WtmVision.ReadNameplateClass(_appState.Wtm, barOffsetY,
+                out int gTextPx, out int gVotes, out bool gUsedRefHue);
+            string gDiag = $"piksel={gTextPx} oy={gVotes} mod={(gUsedRefHue ? "ref-hue" : "fallback-kirmizi")}";
             if (nameClass == WtmVision.NameplateClass.Guardian)
             {
                 // 2026-07-03: verdict artık İZE de damgalanır (MarkGuardian) — yalnız-konumsal blacklist
                 // yürüyen guardian'ı 60px dışında kaçırıp aynı izi 4× arka arkaya kontrol ettiriyordu
                 // (canlı log trk=98). İz-damga mob ekranda kaldıkça kalıcı; konumsal liste churn yedeği.
-                Program.Log($"[Farm] Guardian kontrol: offset={barOffsetY} sonuç={nameClass} süre={gSw.ElapsedMilliseconds}ms " +
+                Program.Log($"[Farm] Guardian kontrol: offset={barOffsetY} sonuç={nameClass} {gDiag} süre={gSw.ElapsedMilliseconds}ms " +
                             $"→ iz-damga trk={target.TrackId} + konum-bl {GuardianBlacklistDurationMs / 1000}sn" +
                             $"@({(int)target.Center.X},{(int)target.Center.Y})");
                 _switchGuardianBlocks++;
@@ -533,9 +537,15 @@ public sealed partial class FarmEngine
             // aynı mob geri alınır. RecordAcqFailure: HP-canlı krediti az önce seriyi sıfırladı — hareketli
             // Unknown mob bl-muafiyetiyle anında geri seçilip tık-döngüsü kurmasın; 3 ardışıkta trk-throttle
             // (4sn) döngüyü kırar.
+            // 10.tur (2026-07-09): bu 54× katlanıp 105 kontrolde 104'e çıktı (canlı log) — sebep Unknown'ın
+            // kendisi değil, ClassifyNameRect'in eşiklerinin kullanıcının kalibre ettiği renklerin altında
+            // kalmasıydı (bkz WtmSettings NameplateMinVal/MinSat notu). O eşikler düzeltilip Unknown'ın
+            // "yetersiz kanıt" dalı Normal'e bağlandı (oyunda üçüncü isim rengi yok) — bu dal artık yalnız
+            // kalibrasyon/geometri bozukken tetiklenir, pratikte dorman kaldı. GuardianUnknownStrict silinmedi
+            // (zararsız güvenlik ağı) ama artık akıcılığı BELİRLEMİYOR.
             if (nameClass == WtmVision.NameplateClass.Unknown && _appState.Wtm.GuardianUnknownStrict)
             {
-                Program.Log($"[Farm] Guardian kontrol: offset={barOffsetY} sonuç={nameClass} süre={gSw.ElapsedMilliseconds}ms " +
+                Program.Log($"[Farm] Guardian kontrol: offset={barOffsetY} sonuç={nameClass} {gDiag} süre={gSw.ElapsedMilliseconds}ms " +
                             $"→ strict-skip konum-bl {MissReselectSkipMs}ms@({(int)target.Center.X},{(int)target.Center.Y})");
                 StatusChanged?.Invoke(this, "İsim okunamadı (Unknown) — güvenli atlama");
                 await CancelClickMovementAsync(ct);
@@ -545,7 +555,7 @@ public sealed partial class FarmEngine
             }
             // Tanılama: HER kontrolde logla (yalnız Guardian'da değil) — "normal sanılıp vuruldu" senaryosunda
             // da iz kalsın (duyuru açık/kapalı + kullanılan offset görünür olsun, sonraki tune için).
-            Program.Log($"[Farm] Guardian kontrol: offset={barOffsetY} sonuç={nameClass} süre={gSw.ElapsedMilliseconds}ms");
+            Program.Log($"[Farm] Guardian kontrol: offset={barOffsetY} sonuç={nameClass} {gDiag} süre={gSw.ElapsedMilliseconds}ms");
         }
         return true;
     }

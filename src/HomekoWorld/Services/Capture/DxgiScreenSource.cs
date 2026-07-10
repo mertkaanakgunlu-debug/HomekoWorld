@@ -35,12 +35,15 @@ public sealed class DxgiScreenSource : IScreenSource
     private readonly bool _useRoi;
     private bool _needReinit;
     private int  _reinitFails;   // ardışık AcquireNextFrame başarısızlığı (device-removed/TDR); tavanda GDI'ye düş
+    private bool _lastFrameWasNew = true; // (d) son Capture yeni masaüstü görüntüsü mü getirdi
+    private bool _everCopied;             // ilk gerçek kare kopyalanana kadar "yeni" say (siyah _buffer'a takılma)
 
     public string BackendName => _useRoi ? "DXGI-ROI" : "DXGI";
     public int CaptureX    => _capX;
     public int CaptureY    => _capY;
     public int FullScreenW => _fullW;
     public int FullScreenH => _fullH;
+    public bool LastFrameWasNew => _lastFrameWasNew;
 
     /// <param name="roi">
     /// Yakalanacak bölge (ekran pikseli). <c>Rectangle.Empty</c> veya sıfır-boyutlu → tam ekran.
@@ -143,12 +146,16 @@ public sealed class DxgiScreenSource : IScreenSource
     {
         if (_needReinit) Reinit();
 
-        Result r = _dupl.AcquireNextFrame(100, out OutduplFrameInfo _, out var desktop);
+        Result r = _dupl.AcquireNextFrame(100, out OutduplFrameInfo fi, out var desktop);
 
         if (r == Vortice.DXGI.ResultCode.WaitTimeout)
-            return _buffer;                       // yeni kare yok → son kareyi ver
+        {
+            _lastFrameWasNew = false;             // yeni kare yok → son kareyi ver (çıkarım atlanmalı)
+            return _buffer;
+        }
         if (r == Vortice.DXGI.ResultCode.AccessLost)
         {
+            _lastFrameWasNew = false;
             _needReinit = true;                   // mod değişimi/UAC → bir sonraki çağrıda yeniden kur
             return _buffer;
         }
@@ -158,6 +165,7 @@ public sealed class DxgiScreenSource : IScreenSource
             // KOŞULSUZ fırlatıp DXGI'yi KALICI GDI'ye (~15-30ms vs ~1-2ms) düşürüyordu — geçici bir TDR sonrası bile
             // oturum boyunca yavaş yakalama. Artık sınırlı reinit dene; üst üste başarısızsa fırlat → FarmEngine
             // GDI'ye düşer (mevcut güvenli son çare). Cihaz gerçekten gittiyse Reinit→DuplicateOutput zaten fırlatır.
+            _lastFrameWasNew = false;
             if (++_reinitFails > 3)
             {
                 Program.Log($"[DXGI] {_reinitFails} ardışık başarısız kare (0x{r.Code:X8}) — GDI'ye düşülüyor");
@@ -169,7 +177,18 @@ public sealed class DxgiScreenSource : IScreenSource
         }
         _reinitFails = 0;                         // başarılı kare → sayaç sıfırla
 
-        if (desktop is null) { SafeReleaseFrame(); return _buffer; }
+        if (desktop is null) { _lastFrameWasNew = false; SafeReleaseFrame(); return _buffer; }
+
+        // (d) LastPresentTime == 0 → yalnız imleç güncellendi, masaüstü GÖRÜNTÜSÜ değişmedi. İlk gerçek kare
+        // kopyalanana kadar (siyah _buffer'a takılmamak için) "yeni" say. Değişmediyse: kopyayı ATLA (GPU DMA +
+        // CPU readback tasarrufu), önceki buffer'ı ver → üretici çıkarımı atlar (boşa GPU yok, FPS şişmez).
+        if (fi.LastPresentTime == 0 && _everCopied)
+        {
+            _lastFrameWasNew = false;
+            desktop.Dispose();
+            SafeReleaseFrame();
+            return _buffer;
+        }
 
         try
         {
@@ -192,6 +211,8 @@ public sealed class DxgiScreenSource : IScreenSource
         finally { SafeReleaseFrame(); }
 
         CopyStagingToBuffer();
+        _lastFrameWasNew = true;
+        _everCopied = true;
         return _buffer;
     }
 

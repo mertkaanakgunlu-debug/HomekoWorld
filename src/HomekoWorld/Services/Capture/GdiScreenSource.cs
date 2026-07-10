@@ -25,6 +25,7 @@ public sealed class GdiScreenSource : IScreenSource
     public int CaptureY     => 0;
     public int FullScreenW  => GetSystemMetrics(0);
     public int FullScreenH  => GetSystemMetrics(1);
+    public bool LastFrameWasNew => true;   // GDI BitBlt daima güncel ekranı kopyalar → her kare "yeni"
 
     public Bitmap Capture()
     {

@@ -61,7 +61,8 @@ public sealed partial class FarmEngine
     // eşiğe düşüyordu) ve kullanıcının "her N kill'de kontrol etsin" beklentisini belirsizleştiriyordu.
     // Tetik artık YALIN: her CheckEveryKills kill'de bir kontrol; tetiklenince "banka-tetik" satırı loglanır.
     private long       _lastScanDiagMs; // tarama teşhis log'u throttle damgası (ceset-eleme ayrımı)
-    private long       _lastPerfLogMs;  // perf satırı throttle damgası (1/dk — Detection FPS bloğundan)
+    private long       _lastPerfLogMs;  // perf satırı throttle damgası (Detection FPS bloğundan)
+    private int        _staleSkips;     // (d) bayat-kare atlaması sayacı (perf satırında raporlanır; Interlocked)
 
     // ── Hedef-geçiş telemetrisi (2026-07-03): kill → sonraki angajman arası süre + neden sayaçları ──
     // Kullanıcının "bazen direkt bazen duraksıyor" şikâyetinin doğrudan ölçümü. Sayaçlar YALNIZ FarmLoop
@@ -404,6 +405,7 @@ public sealed partial class FarmEngine
         // fine-tuning için o oturumda geçerli eşikler tek satırda; sınıf+hareket modu da yazılır ki
         // archer-yaklaşmasının devrede olup olmadığı (sınıf-gate) logdan tek bakışta okunsun.
         _lastPerfLogMs        = 0;
+        _staleSkips           = 0;
         _lastEngageEndMs      = NowMs();
         _switchAcqAttempts    = 0;
         _switchGuardianBlocks = 0;

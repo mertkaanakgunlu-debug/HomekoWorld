@@ -81,12 +81,36 @@ public class WtmSettings
     // Bant pikselleri HSV'ye çevrilir; siyah çerçeve/gölge (düşük V) ve beyaz/gri
     // (düşük S) elenir. Kalan "renkli yazı" pikselleri içinde kırmızı oranı eşiği
     // geçerse koruma mobu. Kırmızı bandı dar tutulur (magenta ~300-330 dışarıda).
-    public float NameplateMinVal   { get; set; } = 0.35f; // < bu = siyah çerçeve/gölge → ele
-    public float NameplateMinSat   { get; set; } = 0.50f; // < bu = beyaz/gri → renkli yazı sayma
+    // 10.tur (2026-07-09): eski 0,35/0,50 kullanıcının KENDİ kalibre ettiği Normal referansının
+    // (S≈0,32) ALTINDAydı → "renkli yazı" filtresi neredeyse hiç piksel geçirmiyordu (canlı log:
+    // 105 kontrolden 104'ü Unknown). İlk düzeltmede İKİSİ de (0,12/0,20) fazla gevşetildi — eski
+    // koyu Guardian örneği (V≈0,17) yüzünden V'yi de indirmiştim, ama asıl sorun yalnız S'ydi.
+    // Sonuç: gevşek V karanlık arka-plan/gölge pikselini de "yazı" sayıp guardian oy-oranını
+    // sulandırdı → canlı testte guardian 2× YANLIŞ Normal sayılıp vuruldu (0 guardian hiç
+    // yakalanmadı). 10.tur-b: V neredeyse eski değerine (0,30) geri çekildi — ne Normal (V≈0,78)
+    // ne yeni kalibre Guardian (V≈0,86, kullanıcı parlak kırmızı yeniden seçti) düşük V gerektirmiyor,
+    // düşük V'nin TEK amacı zaten sağlam-parlak iki referansın arasına giren gölge/panel pikselini
+    // elemekti. S 0,25'te bırakıldı (Normal'in 0,32'sinin altında, ama 0,20'den daha az gürültü alır).
+    public float NameplateMinVal   { get; set; } = 0.30f; // < bu = siyah çerçeve/gölge → ele
+    public float NameplateMinSat   { get; set; } = 0.25f; // < bu = beyaz/gri → renkli yazı sayma
     public int   NameplateRedHueLo { get; set; } = 12;    // hue <= bu → kırmızı (alt uç)
     public int   NameplateRedHueHi { get; set; } = 348;   // hue >= bu → kırmızı (360° sarması)
-    public float NameplateRedFrac  { get; set; } = 0.45f; // kırmızı / renkli-yazı oranı eşiği
-    public int   NameplateRedMinPx { get; set; } = 12;    // mutlak min kırmızı piksel
+    // 10.tur-d (2026-07-09): iki TEMİZ canlı ölçüm (10.tur-c telemetrisiyle) — guardian hedefte
+    // guardianVotes=**2512** (2 bağımsız oturumda AYNI sayı), normal mobda guardianVotes=**0**. Hue-band
+    // filtresi (10.tur-c) bu sayıyı HİÇ değiştirmedi → mesele "alakasız renk" değil: isim "[Random] Wild
+    // Tyon" gibi uzun bir string + HER nameplate'te bulunan sabit bir arka-plan paneli var, panelin rengi
+    // Normal referansına (270°) yakın okunuyor (30° filtreyi GEÇİYOR, o yüzden elenmiyor) → payda (~6900)
+    // panel+metin karışımı oluyor, oran (2512/6900=%36) %45 eşiğinin altında kalıyor — bu UI'da oran testi
+    // YAPISAL olarak kırık (panel her zaman birkaç bin "normal-renkli" piksel katıyor). 2512 vs 0 arasında
+    // devasa bir boşluk var → mutlak eşiğe güvenmek yeterli ve sağlam: RedMinPx 12→200 (2512'nin çok altı,
+    // gürültüden çok üstü), RedFrac 0,45→0,15 (artık pratik sınırlayıcı DEĞİL, yalnız ek güvenlik).
+    public float NameplateRedFrac  { get; set; } = 0.15f; // kırmızı / renkli-yazı oranı eşiği (ikincil)
+    public int   NameplateRedMinPx { get; set; } = 200;   // mutlak min kırmızı piksel (asıl ayırt edici)
+    // 10.tur-c: ref-hue modunda bir piksel NE normale NE guardian'a (ikisinin en yakınına göre) yeterince
+    // benzemiyorsa (dünya-uzayı/tamamen alakasız renk) textPixels'e HİÇ girmesin. NOT (10.tur-d): bu ölçülen
+    // vak'ada aktif sınırlayıcı değildi (panel zaten Normal'e yakın okunuyordu) ama gelecekte gerçekten
+    // alakasız bir renk sızarsa hâlâ zararsız bir koruma.
+    public float NameplateRefHueMaxDist { get; set; } = 30f; // en yakın referanstan bu dereceden uzak piksel ele
 
     // ── Mob HP bar ROI (iki-köşe dikdörtgen) ─────────────────────────────────
     // (HpBarRoiX, HpBarRoiY, W, H) bölgesi HSV kırmızı-oran tespiti için kullanılır.

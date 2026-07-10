@@ -51,6 +51,7 @@ public sealed class MobTracker
         // güncellenir — ardışık kareler arası tekil-sıçrama tespiti için.
         public float      LastMatchedCx, LastMatchedCy;
         public bool       HasLastMatched; // ilk eşleşmede önceki-kare yok — sıçrama kontrolünü atla
+        public long       BornAtMs;       // doğuş anı — yeni-doğan "yerleşme payı" penceresi için (aşağıda)
     }
 
     private readonly object      _lock   = new();
@@ -106,6 +107,20 @@ public sealed class MobTracker
     /// Kanıt (2026-07-04): tek karede 220-1331px "sıçramalar" gözlendi (biri 591px/210ms ≈ 2955px/sn,
     /// imkânsız). 220px/kare ≈ 33fps'te ~7260px/sn tavan — gerçek yürüyüşü asla tetiklemez.</summary>
     public const float MaxPerFrameJumpPx = 220f;
+
+    // 2026-07-09 (11.tur): YENİ-DOĞAN yerleşme payı. Ölen mobun cesedi çoğu zaman YENİ bir TrackId alır
+    // (düşme animasyonu/poz değişimi IoU'yu koparır — bkz Update() "ti&lt;0" dalı). Bu yeni iz, ölü izin
+    // DeadInheritRadiusPx yarıçapı DIŞINDA doğarsa "canlı" (Dead=false) sayılır; TEK koruma FarmEngine'in
+    // konumsal _deadBlacklist eşleşmesidir — ama o eşleşme MovingAliveExemptPx muafiyetiyle ŞARTLIDIR
+    // (gerçekten hareket eden canlı mobu kurtarmak için var). Çöküş animasyonu birkaç karede kutu merkezini
+    // GERÇEKTEN kaydırabilir (ayakta→yerde poz değişimi) — MaxPerFrameJumpPx'in çok altında kalan ama
+    // birkaç karede toplamda 45px'i (MovingAliveExemptPx) kolayca geçen bir kayma. Sonuç: taze ceset sırf
+    // çöküş animasyonu yüzünden "hareketli=canlı" muafiyetini kazanıp konumsal kara listeden kaçar, tekrar
+    // tıklanır (~1,5sn ceset-varsayımı döngüsü). Bu pencere boyunca (camQuiet ile AYNI mekanizma: çapa bu
+    // kareye resync, RelDispPx=0) yeni izin MovedPx'i büyümez — yalnız kara listede olan adaylar etkilenir
+    // (muafiyet zaten yalnız NearAny(_deadBlacklist,...) true iken anlamlı), kara liste dışı taze canlı
+    // mob HİÇ etkilenmez.
+    public const long NewbornSettleMs = 600;
 
     /// <summary>Oturum içi diriliş sayısı. 7.tur'dan itibaren diriliş mekanizması KALDIRILDI — bu sayaç hep 0
     /// kalır; oturum-özeti log formatı bozulmasın diye tutuluyor (diriliş=0 = mekanizmanın kapalı olduğunun
@@ -252,7 +267,7 @@ public sealed class MobTracker
                     tr.Missed     = 0;
                     tr.LastSeenMs = nowMs;
 
-                    if (camQuiet)
+                    if (camQuiet || nowMs - tr.BornAtMs < NewbornSettleMs)
                     {
                         // 9.tur: bot KENDİ kamerasını oynatıyor (SuppressMotionCredit penceresi) — bu karedeki
                         // ekran-uzayı kayması izin "kendi hareketi" DEĞİL: çapa bu kareye resync edilir, birikim
@@ -261,6 +276,8 @@ public sealed class MobTracker
                         // yakalayAMIYORDU; medyan-kompanzasyon da <2 eşleşen izde/rotasyonel paralaksta yetersiz →
                         // ceset sahte MovedPx toplayıp "hareketli=canlı" muafiyetiyle 90sn blacklist'i deliyordu.
                         // Dead bayrağına dokunmaz ("ölü kalıcıdır") — yalnız muafiyet metriği kesilir.
+                        // 11.tur: AYNI korumayı yeni-doğan izler için de uygular (bkz NewbornSettleMs) — taze
+                        // ceset çöküş animasyonu sırasında sahte MovedPx toplayıp konumsal kara listeden kaçmasın.
                         tr.AnchorCx = ncx; tr.AnchorCy = ncy;
                         tr.RelDispPx = 0f;
                     }
@@ -320,6 +337,7 @@ public sealed class MobTracker
                         Dead = inheritDead, DeadAtMs = inheritAt, LastSeenMs = nowMs,
                         Source   = inheritDead ? DeadSource.Inherited : DeadSource.None,
                         AnchorCx = ncx, AnchorCy = ncy, RelDispPx = 0f, // çapa = doğum merkezi
+                        BornAtMs = nowMs, // 11.tur: NewbornSettleMs penceresinin başlangıcı
                     };
                     _tracks.Add(tr);
                     // Teşhis (seyrek): cesedin DeadInheritRadiusPx'i içinde doğan kutu "ölü" devraldı. Ceset

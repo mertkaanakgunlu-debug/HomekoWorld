@@ -29,4 +29,12 @@ public interface IScreenSource : IDisposable
     int FullScreenW { get; }
     /// <summary>Fiziksel ekranın tam yüksekliği (piksel). DetectionSnapshot boyutu için.</summary>
     int FullScreenH { get; }
+
+    /// <summary>
+    /// Son <see cref="Capture"/> YENİ bir masaüstü görüntüsü mü getirdi (yoksa yalnız imleç oynadı /
+    /// zaman-aşımı ile bayat kare mi döndü)? DXGI: <c>OutduplFrameInfo.LastPresentTime != 0</c>.
+    /// GDI: her zaman true (BitBlt daima güncel ekranı kopyalar). Üretici bayat karede YOLO çıkarımını
+    /// atlar → boşa GPU harcanmaz + gerçek işlenen kare sayısı (FPS) şişmez.
+    /// </summary>
+    bool LastFrameWasNew { get; }
 }

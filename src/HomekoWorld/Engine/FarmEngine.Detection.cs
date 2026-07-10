@@ -84,6 +84,19 @@ public sealed partial class FarmEngine
                         frame  = screen.Capture();
                     }
                     long capEnd = NowMs();
+
+                    // (d) Yeni masaüstü görüntüsü yoksa (yalnız imleç oynadı / DXGI zaman-aşımı) çıkarımı ATLA:
+                    // bayat kareye GPU harcanmaz + gerçek FPS şişmez. Son snapshot geçerli kalır (sahnede değişen yok).
+                    if (!screen.LastFrameWasNew)
+                    {
+                        Interlocked.Increment(ref _staleSkips); // perf satırında raporlanır (fps=az'ın nedeni ayrışsın)
+                        int spentSkip = (int)frameSw.ElapsedMilliseconds;
+                        int minMsSkip = Math.Max(10, s.DetectionMinIntervalMs);
+                        if (s.RecordingMode) minMsSkip = Math.Max(minMsSkip, s.RecordingModeMinIntervalMs);
+                        if (spentSkip < minMsSkip) Thread.Sleep(minMsSkip - spentSkip);
+                        continue;
+                    }
+
                     var rawDets = inferrer.Infer(frame);
                     long infEnd = NowMs();
 
@@ -254,6 +267,16 @@ public sealed partial class FarmEngine
                     }
                     long capEnd = NowMs();
 
+                    // (d) Yeni masaüstü görüntüsü yoksa üretme: slotu iade et → tüketici son taze kareyi
+                    // işlemeye devam eder; bayat kareye preprocess/GPU harcanmaz + gerçek FPS şişmez.
+                    if (!screen.LastFrameWasNew)
+                    {
+                        Interlocked.Increment(ref _staleSkips); // perf satırında raporlanır (fps=az'ın nedeni ayrışsın)
+                        lock (_pipeLock) { _freeSlots.Push(slot); }
+                        Thread.Sleep(1);
+                        continue;
+                    }
+
                     var (padX, padY, scale) = inferrer.PreprocessInto(frame, slot);
                     double prepMs = inferrer.LastTimings.Preprocess;
                     frameId++;
@@ -299,15 +322,19 @@ public sealed partial class FarmEngine
         finally { try { screen.Dispose(); } catch { } }
     }
 
-    /// <summary>Dakikada 1 perf satırı loglar (2026-07-03 telemetri): Telemetry perf alanları zaten 1/sn
-    /// ölçülüyor ama yalnız UI HUD'a gidiyordu — fine-tuning için kalıcı kayıt gerek. Hangi tespit döngüsü
-    /// (seri/pipelined) aktifse yalnız o çağırır → tek throttle alanı yeter.</summary>
+    /// <summary>15 sn'de 1 perf satırı loglar (2026-07-03 telemetri; 2026-07-10 60sn→15sn): Telemetry perf
+    /// alanları zaten 1/sn ölçülüyor ama yalnız UI HUD'a gidiyordu — fine-tuning için kalıcı kayıt gerek.
+    /// 60 sn kısa oturumda TEK satır bırakıyordu (o da farm-başlangıç ısınma penceresi) → steady-state hiç
+    /// görünmüyordu. skip = o aralıkta atlanan bayat kare (d): fps düşükse nedeni ayrışır — skip yüksekse
+    /// ekran az kare sunuyor (oyun FPS'i düşük), skip düşük + gpu yüksekse çıkarımın kendisi yavaş.
+    /// Hangi tespit döngüsü (seri/pipelined) aktifse yalnız o çağırır → tek throttle alanı yeter.</summary>
     private void MaybeLogPerfLine()
     {
         long now = NowMs();
-        if (now - _lastPerfLogMs < 60_000) return;
+        if (now - _lastPerfLogMs < 15_000) return;
         _lastPerfLogMs = now;
-        Program.Log($"[Farm] perf: fps={Telemetry.InferenceFps} yakalama={Telemetry.CaptureMs}ms " +
+        int skips = Interlocked.Exchange(ref _staleSkips, 0);
+        Program.Log($"[Farm] perf: fps={Telemetry.InferenceFps} skip={skips} yakalama={Telemetry.CaptureMs}ms " +
                     $"çıkarım={Telemetry.InferenceMs}ms (prep={Telemetry.PreprocessMs} gpu={Telemetry.GpuRunMs} " +
                     $"post={Telemetry.PostprocessMs}) bekleme={Telemetry.WaitMs}ms");
     }
