@@ -446,17 +446,23 @@ public sealed class OnnxYoloInferrer : IYoloInferrer, IDisposable
     // GDI+ DrawImage (full-screen bilinear ~34ms) KALDIRILDI; yakalanan 32bpp BGRA kareyi DOĞRUDAN
     // bilinear örnekle+letterbox+normalize. Bilinear → model eğitim dağılımıyla uyumlu (accuracy korunur).
     // P2: slot parametresi → çok-slot havuza yazar (üretici/tüketici eşzamanlılığı).
+    // P4 (2026-07-10): satır-bazlı PARALEL — çıktı satırları tamamen bağımsız (her satır yalnız kendi
+    // kaynak satırlarını okur, yalnız kendi hücrelerine yazar → yarış yok, çıktı bit-eşit deterministik).
+    // Gerekçe: 60fps-cap sonrası darboğaz üreticiye geçti (yakalama 7 + prep 6 = 13ms → ~77fps tavanı,
+    // canlı 71-75 bu tavana dayalıydı); 90fps bütçesi (≤11.1ms) tek-thread prep ile kapanmıyor.
+    // Yarı çekirdek sınırı: oyun+bot ile CPU yarışını sınırlar (prep ~6ms → ~2-3ms'ye yeter).
     private (float padX, float padY, float scale) PreprocessSlot(Bitmap src, int slot)
     {
-        float scale   = Math.Min((float)_inputSize / src.Width, (float)_inputSize / src.Height);
+        int   inputSize = _inputSize;             // lambda'lar için yerel kopya (mid-run Load'a karşı tutarlı)
+        float scale   = Math.Min((float)inputSize / src.Width, (float)inputSize / src.Height);
         int   scaledW = (int)Math.Round(src.Width  * scale);
         int   scaledH = (int)Math.Round(src.Height * scale);
-        float padX    = (_inputSize - scaledW) * 0.5f;
-        float padY    = (_inputSize - scaledH) * 0.5f;
+        float padX    = (inputSize - scaledW) * 0.5f;
+        float padY    = (inputSize - scaledH) * 0.5f;
 
         const float inv255 = 1f / 255f;
         const float padVal = 114f * inv255;      // letterbox dolgu (gri)
-        int   plane = _inputSize * _inputSize;    // R:0, G:plane, B:2*plane
+        int   plane = inputSize * inputSize;      // R:0, G:plane, B:2*plane
         int   sw = src.Width, sh = src.Height;
         int   maxX = sw - 1, maxY = sh - 1;
         float[] buf = _tensorBufs[slot];
@@ -465,51 +471,56 @@ public sealed class OnnxYoloInferrer : IYoloInferrer, IDisposable
             ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
         try
         {
-            unsafe
+            IntPtr spBase  = srcData.Scan0;       // pointer lambda'da capture edilemez → IntPtr taşı
+            int    stride  = srcData.Stride;
+            var po = new ParallelOptions { MaxDegreeOfParallelism = Math.Max(2, Environment.ProcessorCount / 2) };
+            Parallel.ForEach(System.Collections.Concurrent.Partitioner.Create(0, inputSize), po, range =>
             {
-                byte* sp     = (byte*)srcData.Scan0;
-                int   stride = srcData.Stride;
-                fixed (float* tb = buf)
+                unsafe
                 {
-                    for (int oy = 0; oy < _inputSize; oy++)
+                    byte* sp = (byte*)spBase;
+                    fixed (float* tb = buf)
                     {
-                        int   o   = oy * _inputSize;
-                        float syf = (oy - padY) / scale;            // kaynak y (float)
-                        bool  yIn = syf >= 0f && syf <= maxY;
-                        int   y0 = 0; float fy = 0f, fy1 = 1f;
-                        byte* rowY0 = sp, rowY1 = sp;
-                        if (yIn)
+                        for (int oy = range.Item1; oy < range.Item2; oy++)
                         {
-                            y0  = (int)syf;
-                            int y1 = y0 < maxY ? y0 + 1 : y0;
-                            fy  = syf - y0; fy1 = 1f - fy;
-                            rowY0 = sp + (long)y0 * stride;
-                            rowY1 = sp + (long)y1 * stride;
-                        }
-                        for (int ox = 0; ox < _inputSize; ox++)
-                        {
-                            float sxf = (ox - padX) / scale;        // kaynak x (float)
-                            if (!yIn || sxf < 0f || sxf > maxX)
+                            int   o   = oy * inputSize;
+                            float syf = (oy - padY) / scale;            // kaynak y (float)
+                            bool  yIn = syf >= 0f && syf <= maxY;
+                            int   y0 = 0; float fy = 0f, fy1 = 1f;
+                            byte* rowY0 = sp, rowY1 = sp;
+                            if (yIn)
                             {
-                                tb[o + ox] = tb[plane + o + ox] = tb[2 * plane + o + ox] = padVal;
-                                continue;
+                                y0  = (int)syf;
+                                int y1 = y0 < maxY ? y0 + 1 : y0;
+                                fy  = syf - y0; fy1 = 1f - fy;
+                                rowY0 = sp + (long)y0 * stride;
+                                rowY1 = sp + (long)y1 * stride;
                             }
-                            int   x0 = (int)sxf; int x1 = x0 < maxX ? x0 + 1 : x0;
-                            float fx = sxf - x0; float fx1 = 1f - fx;
-                            byte* pa = rowY0 + (long)x0 * 4; byte* pb = rowY0 + (long)x1 * 4;
-                            byte* pc = rowY1 + (long)x0 * 4; byte* pd = rowY1 + (long)x1 * 4;
-                            float w00 = fx1 * fy1, w01 = fx * fy1, w10 = fx1 * fy, w11 = fx * fy;
-                            // 32bpp BGRA: [0]=B [1]=G [2]=R
-                            float rr = pa[2] * w00 + pb[2] * w01 + pc[2] * w10 + pd[2] * w11;
-                            float gg = pa[1] * w00 + pb[1] * w01 + pc[1] * w10 + pd[1] * w11;
-                            float bb = pa[0] * w00 + pb[0] * w01 + pc[0] * w10 + pd[0] * w11;
-                            tb[o + ox]             = rr * inv255; // R
-                            tb[plane + o + ox]     = gg * inv255; // G
-                            tb[2 * plane + o + ox] = bb * inv255; // B
+                            for (int ox = 0; ox < inputSize; ox++)
+                            {
+                                float sxf = (ox - padX) / scale;        // kaynak x (float)
+                                if (!yIn || sxf < 0f || sxf > maxX)
+                                {
+                                    tb[o + ox] = tb[plane + o + ox] = tb[2 * plane + o + ox] = padVal;
+                                    continue;
+                                }
+                                int   x0 = (int)sxf; int x1 = x0 < maxX ? x0 + 1 : x0;
+                                float fx = sxf - x0; float fx1 = 1f - fx;
+                                byte* pa = rowY0 + (long)x0 * 4; byte* pb = rowY0 + (long)x1 * 4;
+                                byte* pc = rowY1 + (long)x0 * 4; byte* pd = rowY1 + (long)x1 * 4;
+                                float w00 = fx1 * fy1, w01 = fx * fy1, w10 = fx1 * fy, w11 = fx * fy;
+                                // 32bpp BGRA: [0]=B [1]=G [2]=R
+                                float rr = pa[2] * w00 + pb[2] * w01 + pc[2] * w10 + pd[2] * w11;
+                                float gg = pa[1] * w00 + pb[1] * w01 + pc[1] * w10 + pd[1] * w11;
+                                float bb = pa[0] * w00 + pb[0] * w01 + pc[0] * w10 + pd[0] * w11;
+                                tb[o + ox]             = rr * inv255; // R
+                                tb[plane + o + ox]     = gg * inv255; // G
+                                tb[2 * plane + o + ox] = bb * inv255; // B
+                            }
                         }
                     }
                 }
-            }
+            });
         }
         finally
         {
