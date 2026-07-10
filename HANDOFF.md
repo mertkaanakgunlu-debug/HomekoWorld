@@ -9,31 +9,12 @@ sonraki session: adım-bazlı ms telemetrisi)
 
 ---
 
-## 1. PROJE HEDEFİ (goal) — ✅ KULLANICI ONAYLADI (2026-07-10)
+## 1. PROJE HEDEFİ (goal)
 
-**Ürün:** Knight Online için "FujiMacro" markalı, müşteriye satılan/kiralanan oyun otomasyon aracı
-(WPF/.NET 8, YOLO tabanlı görü). Freelance/ticari iş — kullanıcı geliştirici, müşteriler son kullanıcı.
-
-**Ne yapması bekleniyor (kademeli):**
-1. **Kombo/Oto Pot** (ÇALIŞIYOR): tuş kombinasyonları + otomatik pot — temel değer.
-2. **Oto-Farm = KUSURSUZLUK HEDEFİ (mutlak öncelik):** gözetimsiz saatlerce mob farm. Başarı metriği
-   FPS SAYISI DEĞİL: **hiçbir mob track'ten çıkmasın + başarısız tıklama olmasın** (hedef-alma başarı
-   oranı maksimum). Maksimum **tutarlılık-hız-verim** asıl önceliktir.
-3. **Tam Otonom:** ACELESİ YOK — Oto-Farm kusursuzlaşana dek beklemede. (Kod zinciri tam; NPC/portal
-   modeli eğitilmedi.)
-
-**Dağıtım hedefi:** HERHANGİ bir PC'de sorunsuz çalışacak; sabit-GUI kalibreleri (HP-bar, nameplate vs)
-müşteriye HAZIR gidecek (kalibrasyon yükü müşteriden alınacak). Müşteriler FARKLI sunucu/istemciler
-kullanıyor → ileride sunucu-başına kalibre-profil sistemi gerekecek (şimdilik kullanıcının sunucusu
-baked gider, ilk müşteri testleri gösterecek).
-
-**Anti-tespit:** bu aşamada öncelik DEĞİL. İleride ±10ms rastgele humanize eklenecek — bunun altyapısı
-adım-bazlı ms telemetrisidir (sonraki session'ın işi).
-
-**İleri taşıma yolları (öncelik sırasıyla):** (1) adım-bazlı ms telemetri → veri-güdümlü optimizasyon +
-kayıp-nedeni ayrımı, (2) başarı oranını maksimuma çekme (ceset-sınıfı model kararı VERİYLE verilecek —
-kullanıcı kararsız, önce telemetri), (3) çoklu-PC/sunucu dağıtım robustluğu, (4) model kalitesi
-(FP16/TensorRT izin verilirse), (5) otonom v2, (6) humanize.
+**→ `CLAUDE.md`'de** ("🎯 Ürün Hedefi" bölümü, her session otomatik yüklenir, ✅ kullanıcı onaylı
+2026-07-10). Bu dosyada tekrar edilmez — nadiren değişen hedef orada, sık değişen durum burada.
+Özet tek cümle: **Oto-Farm'da kusursuzluk (track-kaybı=0, başarısız-tıklama=0) mutlak öncelik, fps
+sayısı değil.**
 
 ## 2. MİMARİ HARİTA (dosya → sorumluluk)
 
