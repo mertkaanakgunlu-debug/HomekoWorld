@@ -4,8 +4,8 @@
 > güncellenir. Amaç: memory dosyalarındaki tarihçeyi tekrar tekrar okumadan bağlamı tek dosyadan almak.
 > Kısa tut (~150 satır tavan): burası GÜNCEL DURUM özetidir, tarihçe memory'de/git log'da.
 
-**Son güncelleme:** 2026-07-10 (12.tur sonu — hedef KULLANICI ONAYLI; installer 1.0.2 hazır;
-sonraki session: adım-bazlı ms telemetrisi)
+**Son güncelleme:** 2026-07-10 akşam (13.tur — prep-paralel duman testi GEÇTİ prep=1ms; HUD'a canlı
+başarı metrikleri eklendi `b96c7e5`, PUBLISH BEKLİYOR; ana gündem hâlâ ms-telemetri)
 
 ---
 
@@ -33,11 +33,15 @@ sayısı değil.**
 
 ## 3. GÜNCEL DURUM (2026-07-10 itibarıyla)
 
-- **Performans zinciri ÇÖZÜLDÜ:** kök=oyun-GPU contention. Oyuna 60fps cap → gpu 47→10ms,
-  YOLO 21→71-75fps. Prep paralelleştirildi (`cde935f`, canlı test edilmedi) → üretici ~9-10ms bekleniyor.
-  90fps için oyun cap'i ≥90 olmalı (bayat-kare atlama fps'i ekran sunumuna kilitler) — trade-off ölçülecek.
-- **İz stabilitesi BÜYÜK ÖLÇÜDE ÇÖZÜLDÜ:** tık-sonrası-kayıp 18.8→3.2/dk, hedef-alma %38 (rekor).
-  İz ömrü süre-bazlı (750ms, fps-bağımsız).
+- **Performans zinciri ÇÖZÜLDÜ + prep-paralel DOĞRULANDI (17:03 testi):** perf'te prep 4→1ms,
+  gpu 9-19ms, fps 51-63 (ekran sunumuna kilitli, normal). Duman testi kapandı.
+- **İz stabilitesi bölgeye DUYARLI:** önceki testte 3.2/dk kayıp + %38 başarıydı; 17:03 testi
+  guardian/ceset-YOĞUN bölgede %17'ye düştü (2:16'da 19 guardian-red, 36 tık-kayıp, 21 ceset-varsayım;
+  alınan 17 hedefin 17'si öldürüldü — angajman kusursuz, kayıp hedef-ALMA aşamasında). Kayıp-nedeni
+  ayrımı (gerçek-despawn vs churn) ms-telemetri verisiyle yapılacak. İz ömrü süre-bazlı (750ms).
+- **HUD canlı metrikleri eklendi (`b96c7e5`):** Ana HUD genişletilmiş bölümde 🎯 başarı %/oran,
+  🛡 guardian-red, ort. geçiş, kayıp; stop-donması (durunca FPS asılı kalıyordu) + pause-süresi
+  düzeltildi. **Build-Cuda publish ALINAMADI (exe açıktı) — müşteri exe'sinde henüz YOK.**
 - **Guardian yanlış-saldırı KAPANDI** (mutlak piksel eşiği 200). Guardian-yoğun bölgede uzun geçişler
   hâlâ olabiliyor (bl-30sn dolaşımı) — açık konu.
 - **Klan bankası:** kod tam, şablon kalibrasyonu kullanıcıda; canlı 0 çalışma henüz.
@@ -52,8 +56,10 @@ sayısı değil.**
    ham ms'ler ayrı JSONL dosyasına ({ts, adım, hedef, süre_ms, sonuç}). Amaçlar: (a) veri-güdümlü
    optimizasyon, (b) kalan ~3/dk kaybın ayrımı (gerçek-despawn vs ceset vs iz-churn) → ceset-sınıfı
    model kararı bu veriyle verilecek (kullanıcı kararsız), (c) ±10ms humanize altyapısı.
-2. **Prep-paralel duman testi** (müşteriye gitmeden 2dk: tespit çalışıyor + perf'te prep 2-3ms mi).
-3. **Müşteri dağıtım testi:** installer'lar hazır (Output\, 1.0.2) — farklı çözünürlük/DPI + FARKLI
+2. **Publish (Build-Cuda) — HUD değişikliği müşteri exe'sine girsin** (exe kapalıyken; sonra
+   installer yeniden derlenirse Output\ da tazelenir).
+3. **Müşteri dağıtım testi:** installer'lar hazır (Output\, 1.0.2 — ama HUD commit'i İÇERMİYOR,
+   publish sonrası yeniden derle) — farklı çözünürlük/DPI + FARKLI
    sunucu/istemci gerçeği: hazır-kalibre başka sunucuda tutmayabilir → ilk testte görülecek; gerekirse
    sunucu-başına kalibre-profil sistemi tasarlanacak. Koordinat glyph'leri müşteri öğretmeli (V2).
 4. Guardian-yoğun bölge geçiş süreleri (boş-tarama+bl dolaşımı) — davranış iyileştirme adayı.
