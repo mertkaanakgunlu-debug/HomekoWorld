@@ -4,8 +4,11 @@
 > güncellenir. Amaç: memory dosyalarındaki tarihçeyi tekrar tekrar okumadan bağlamı tek dosyadan almak.
 > Kısa tut (~150 satır tavan): burası GÜNCEL DURUM özetidir, tarihçe memory'de/git log'da.
 
-**Son güncelleme:** 2026-07-10 akşam (13.tur — prep-paralel duman testi GEÇTİ prep=1ms; HUD'a canlı
-başarı metrikleri eklendi `b96c7e5`, PUBLISH BEKLİYOR; ana gündem hâlâ ms-telemetri)
+**Son güncelleme:** 2026-07-11 (beyin-fırtınası session'ı — ceset/tıklama KÖK NEDENİ kullanıcı
+gözlemi + kod analiziyle KESİNLEŞTİ, çözüm menüsü hazır; plan SONRAKİ session'da kurulacak.
+Ayrıca dış araştırma raporu değerlendirildi: zero-copy/NMS-free/SIMD önerileri REDDEDİLDİ —
+bizde eşdeğerleri zaten var/metriğe etkisiz; tek alınan fikir: ms-telemetri JSONL yazıcısında
+System.Threading.Channels kullanmak. NOT: YOLOv12 NMS-free DEĞİLDİR, rapor hatalı.)
 
 ---
 
@@ -51,11 +54,33 @@ sayısı değil.**
 
 ## 4. AÇIK KONULAR / SIRADAKİ ADIMLAR (öncelik sırasıyla)
 
-1. **SONRAKİ SESSION ANA GÜNDEMİ — adım-bazlı ms telemetrisi (KULLANICI TALEBİ):** botun yaptığı HER
-   adımın süresi loglanacak. Format KARARI VERİLDİ: **ikisi birden** — kritik özetler insan-okur loga,
-   ham ms'ler ayrı JSONL dosyasına ({ts, adım, hedef, süre_ms, sonuç}). Amaçlar: (a) veri-güdümlü
-   optimizasyon, (b) kalan ~3/dk kaybın ayrımı (gerçek-despawn vs ceset vs iz-churn) → ceset-sınıfı
-   model kararı bu veriyle verilecek (kullanıcı kararsız), (c) ±10ms humanize altyapısı.
+1. **SONRAKİ SESSION ANA GÜNDEMİ — ceset/guardian tekrar-tıklaması + ms-telemetri (2026-07-11
+   beyin fırtınasıyla birleşti).** KÖK NEDEN KESİN (kullanıcı gözlemi 9. cevap + kod): kill-hemen-ardı
+   tekrar-tık YOK (miras-DEAD çalışıyor); sorun **kamera dönüşü sonrası** — TÜM ceset/guardian hafızası
+   ekran-uzaylı: iz-damgaları flip'te >750ms görünmezlikle düşüyor (MobTracker MaxAgeMs ölü izleri
+   AYIRMIYOR, satır ~374), konum kara listeleri (dead/guardian-bl) flip'te yanlış ekran-noktalarını
+   koruyor → cesetler taze "canlı aday" olarak teker teker 2-tık yeniden deneniyor.
+   **Oyun gerçekleri (kullanıcıdan, 2026-07-11):** ceset despawn=18sn; respawn ~25sn RASTGELE konumda
+   (→ ölü-iz ömrünü uzatmak GÜVENLİ); ceset görseli = aynı mob YERDE YATIK (→ bbox en-boy oranı sinyal
+   adayı); hover/Z-target sinyali YOK (tıklama-öncesi oyun-doğrulaması İMKÂNSIZ); bölge SABİT 7 normal
+   + 1 guardian; loot otomatik/anlık. DeadBlacklistMs=20sn ≥ despawn — kamera sabitken koruma yeterli.
+   **Çözüm menüsü (plan sonraki session'da):**
+   - S1 (küçük): ölü izleri MaxAgeMs(750ms)'den MUAF tut — görünmezlikte DeadLingerMs(12sn→~20sn)
+     boyunca sabit konumda yaşasın (flicker/oklüzyon damga-kaybı biter; respawn rastgele → risk yok).
+   - S2a (ölçüm-önce): **yatıklık (bbox W/H oranı) ceset filtresi** — kamera-bağımsız tek sinyal.
+     ÖNCE ms-telemetriye kutu oranı eklenip canlı-vs-ceset dağılımı veriyle doğrulanacak, ayrışıyorsa filtre.
+   - S2b: ceset-sınıfı model (kullanıcı ŞÜPHELİ; S2a verisi ayrışma gösterirse ikna kanıtı olur).
+   - S3: nüfus muhasebesi — 7 normal mob sabit + kill-borcu(~25sn respawn) → "beklenen-canlı=0" iken
+     tıklama/scan İŞTAHINI kes (boşa-tık akıcılık şikâyetinin doğrudan ilacı; guardian hariç).
+   - S4: flip/nav/roam anında (SuppressMotionCredit çağrılan yerler) konum kara-listelerini temizle/askıya
+     al — flip sonrası yanlış noktaları koruyor (canlı mobu yanlış eleme riski).
+   - Guardian gerçeği: tıklama-öncesi ayırt etme sinyali YOK (görsel aynı) → flip-sonrası İLK dokunuş
+     kaçınılmaz; hedef tekrarları kesmek (S3 dolaylı azaltır; guardian-bl 30sn ekran-uzaylı, aynı dert).
+   **ms-telemetri (KULLANICI TALEBİ, format kararı verildi):** ikisi birden — insan-okur özet + JSONL
+   ({ts, adım, hedef, süre_ms, sonuç} + kutu W/H oranı + iz-doğum/ölüm olayları). JSONL yazıcısı
+   System.Threading.Channels (bounded, tek okuyucu) ile sıcak döngüden ayrılır. Amaçlar: (a) veri-güdümlü
+   optimizasyon, (b) kayıp-nedeni ayrımı, (c) S2a oran-dağılımı kanıtı, (d) ±10ms humanize altyapısı.
+   **Teşhis protokolü:** kullanıcı test oturumunda replay + log birlikte toplayacak (video yerine).
 2. **Publish (Build-Cuda) — HUD değişikliği müşteri exe'sine girsin** (exe kapalıyken; sonra
    installer yeniden derlenirse Output\ da tazelenir).
 3. **Müşteri dağıtım testi:** installer'lar hazır (Output\, 1.0.2 — ama HUD commit'i İÇERMİYOR,
