@@ -187,15 +187,17 @@ public class FarmSettings
 
     // ── Tıklama hız ayarları ───────────────────────────────────────────────────
     /// <summary>
-    /// Mouse move sonrası tıklamadan önceki bekleme (ms).
-    /// Çok düşük → oyun mouse pozisyonunu henüz işlememiş olabilir.
+    /// Mouse move sonrası tıklamadan önceki EK bekleme (ms). 13.tur (P4): 15→0 — ClickAsync
+    /// zaten içeride move + 25ms hover-oturması bekliyor, dıştaki bekleme saf tekrardı.
+    /// Oyun tıkı yutuyorsa (çok kötü ping/FPS) 15'e geri çıkarılabilir.
     /// </summary>
-    public int    ClickPreDelayMs          { get; set; } = 15;
+    public int    ClickPreDelayMs          { get; set; } = 0;
     /// <summary>
-    /// Tıklama sonrası HP bar görünmesi için bekleme (ms).
-    /// Ping yüksekse artır. Çok düşükse hedef alınamadı sayılır.
+    /// Tıklama sonrası EK bekleme (ms). 13.tur (P4): 80→0 — HP-poll ilk iterasyonda zaten bar'a
+    /// bakar (yoksa 30ms sonra tekrar, 450ms bütçe); bu bekleme yalnız ilk bakışı geciktiriyordu.
+    /// Ping yüksekse 80'e geri çıkarılabilir.
     /// </summary>
-    public int    ClickPostDelayMs         { get; set; } = 80;
+    public int    ClickPostDelayMs         { get; set; } = 0;
 
     // ── Kamera-hareket kapısı (13.tur / S5) ───────────────────────────────────
     /// <summary>

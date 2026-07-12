@@ -107,8 +107,8 @@
                  "EngageApproachTimeoutMs":  3000,
                  "EngageMovement":  1,
                  "ArcherApproachRangePx":  70,
-                 "ClickPreDelayMs":  15,
-                 "ClickPostDelayMs":  80,
+                 "ClickPreDelayMs":  0,
+                 "ClickPostDelayMs":  0,
                  "MotionGatePxPerMs":  0.20,
                  "MotionGateMaxWaitMs":  700,
                  "RegionMobCount":  7,
@@ -165,6 +165,7 @@
     "AggressiveTimingMigrated":  true,
     "DetectionFpsBoostMigrated":  true,
     "ConfidenceThresholdMigrated":  true,
+    "ClickDelayTrimMigrated":  true,
     "AutoPot":  {
                     "Enabled":  true,
                     "HpPotEnabled":  true,

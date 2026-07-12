@@ -79,6 +79,11 @@ public class AppState
     /// LootTapDelayMs 200→120) eski varsayılanda kalmış kullanıcıya bir kez taşındığı işareti.</summary>
     public bool FluidityDefaultsMigrated { get; set; }
 
+    /// <summary>13.tur (2026-07-11, P4): tık dış-gecikmelerinin (ClickPreDelayMs 15→0,
+    /// ClickPostDelayMs 80→0) bir kez taşındığı işareti — ClickAsync içi 25/80ms beklemeler yeterli;
+    /// kullanıcı sonradan bilerek 15/80'e dönerse bir daha ezilmez.</summary>
+    public bool ClickDelayTrimMigrated { get; set; }
+
     // ---- Faz 18: Global Auto-Pot & Settings ----
     public AutoPotSettings   AutoPot        { get; set; } = new();
     public SettingsHotkeys   Hotkeys        { get; set; } = new();

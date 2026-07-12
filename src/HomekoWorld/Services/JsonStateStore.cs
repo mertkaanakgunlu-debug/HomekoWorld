@@ -153,8 +153,11 @@ public sealed class JsonStateStore
             // Flag ile korunur → kullanıcı sonradan UI'dan elle ayarlarsa tekrar ezilmez.
             if (!state.AggressiveTimingMigrated)
             {
-                if (state.Farm.ClickPreDelayMs is 0 or 60)   state.Farm.ClickPreDelayMs  = 15;
-                if (state.Farm.ClickPostDelayMs is 0 or 200) state.Farm.ClickPostDelayMs = 80;
+                // 13.tur (P4) notu: Click alanlarında "0 = eski tanımsız" varsayımı KALDIRILDI —
+                // 0 artık ClickPre/Post'un MEŞRU yeni varsayılanı (aşağıdaki ClickDelayTrim bloğu);
+                // yalnız gerçek eski değerler (60/200) taşınır.
+                if (state.Farm.ClickPreDelayMs == 60)        state.Farm.ClickPreDelayMs  = 15;
+                if (state.Farm.ClickPostDelayMs == 200)      state.Farm.ClickPostDelayMs = 80;
                 if (state.Farm.FaceTargetRetapMs == 250)     state.Farm.FaceTargetRetapMs = 150;
                 if (state.Farm.WtmTickMs is 0 or 30)         state.Farm.WtmTickMs        = 15;
                 state.AggressiveTimingMigrated = true;
@@ -190,6 +193,19 @@ public sealed class JsonStateStore
                 if (state.Farm.ScanIdleMs == 2000)    state.Farm.ScanIdleMs     = 1000;
                 if (state.Farm.LootTapDelayMs == 200) state.Farm.LootTapDelayMs = 120;
                 state.FluidityDefaultsMigrated = true;
+            }
+
+            // 13.tur (2026-07-11, P4) — tık dış-gecikme inceltme: ClickAsync zaten İÇERİDE 25ms (hover
+            // oturması) + 80ms (DOWN→UP, KO tick ayrımı) bekliyor; dıştaki ClickPreDelayMs(15) saf
+            // tekrardı, ClickPostDelayMs(80) ise yalnız HP-poll'ün İLK bakışını geciktiriyordu (poll
+            // ilk iterasyonda zaten bar'a bakar, yoksa 30ms sonra tekrar — 450ms bütçede bol marj).
+            // Tık başına 95ms kazanç (ceset-probu 2-tık = 190ms). Yalnız eski varsayılanda kalmış
+            // kullanıcı taşınır; bayrak sayesinde bilinçli 15/80 dönüşü bir daha ezilmez.
+            if (!state.ClickDelayTrimMigrated)
+            {
+                if (state.Farm.ClickPreDelayMs  == 15) state.Farm.ClickPreDelayMs  = 0;
+                if (state.Farm.ClickPostDelayMs == 80) state.Farm.ClickPostDelayMs = 0;
+                state.ClickDelayTrimMigrated = true;
             }
 
             // WtmSettings guardian / ROI defaults — tolerans 0 ise set
