@@ -98,6 +98,12 @@ public sealed partial class FarmEngine
     // ScanWaitMsBetween(1000) altında kalır → oturma sonrası tarama normal muafiyet davranışı görür.
     private const int CameraFlipSuppressMs = 800;
 
+    // 13.tur (S5): kamera-hareket kapısı oturum sayaçları (oturum-özetinde raporlanır; eşik kalibrasyonu
+    // için — ertelenen çoksa/ort. bekleme uzunsa MotionGatePxPerMs gevşetilir). Tek yazar: FarmLoop task'i.
+    private int  _gateDeferrals;       // en az bir kez ertelenen TargetAsync sayısı
+    private long _gateDeferredMsTotal; // toplam erteleme süresi (ms)
+    private int  _gateGiveUps;         // bütçe dolup vazgeçilen hedef sayısı
+
     // ── Tekrar-suçlu escalation (2026-07-04) ─────────────────────────────────────
     // Canlı log (6.5sa): 156× "tık-sonrası-kayıp" + aynı 60px hücrede 8×'e kadar tekrar. Kök neden: statik
     // YOLO false-positive (kırmızı ağaç vb. — kodun eski yorumu "SONSUZ re-pick @(686,546) conf 0.94") ve
@@ -413,6 +419,9 @@ public sealed partial class FarmEngine
         _switchGuardianBlocks = 0;
         _switchEmptyScans     = 0;
         _bankRanSinceEngage   = false;
+        _gateDeferrals        = 0;
+        _gateDeferredMsTotal  = 0;
+        _gateGiveUps          = 0;
         var sCfg = _appState.Farm;
         // 2026-07-04 (7.tur-b): banka konfigürasyonu da yazılır — "banka neden tetiklenmedi" sorusunda
         // bellekteki GERÇEK değerler (Enabled/CheckEveryKills) logdan okunabilsin (canlı testte kill=20'ye
@@ -554,10 +563,13 @@ public sealed partial class FarmEngine
         }
         int successPct = t.AcqAttempts > 0 ? (int)(100.0 * t.AcqSuccesses / t.AcqAttempts) : 0;
         string dur = $"{t.SessionMs / 60000}:{(t.SessionMs / 1000) % 60:00}";
+        string gateStats = _gateDeferrals > 0
+            ? $"ertelenen={_gateDeferrals} ort={_gateDeferredMsTotal / _gateDeferrals}ms vazgeç={_gateGiveUps}"
+            : $"ertelenen=0 vazgeç={_gateGiveUps}";
         Program.Log($"[Farm] oturum-özeti: süre={dur} kill={t.Kills} lost={t.Losts} " +
                     $"lostfast={t.LostFasts} timeout={t.Timeouts} | hedef-alma: deneme={t.AcqAttempts} " +
                     $"başarı={t.AcqSuccesses} (%{successPct}) guardian-red={t.GuardianBlocks} " +
-                    $"diriliş={t.Resurrections} | geçiş: {switchStats} | " +
+                    $"diriliş={t.Resurrections} | geçiş: {switchStats} | kapı: {gateStats} | " +
                     $"banka: {t.BankRuns} çalışma, {t.BankItemsMoved} eşya");
     }
 

@@ -109,6 +109,8 @@
                  "ArcherApproachRangePx":  70,
                  "ClickPreDelayMs":  15,
                  "ClickPostDelayMs":  80,
+                 "MotionGatePxPerMs":  0.20,
+                 "MotionGateMaxWaitMs":  700,
                  "HpPotEnabled":  true,
                  "MpPotEnabled":  true,
                  "HpPotPercent":  50,

@@ -59,6 +59,10 @@ public sealed class MobTracker
     private int  _nextId = 1;
     private long _lastMs = -1;
     private long _quietUntilMs = -1; // 9.tur: SuppressMotionCredit penceresi (bot-kamera hareketi)
+    // 13.tur (S5): kare-arası global sahne-akışı örnekleri (medyan kayma px + kare-arası dt).
+    // Targeting'in tık-öncesi kamera-hareket kapısı MotionState() ile okur. Yalnız ≥2 eşleşen
+    // çiftli karelerde yazılır (medyan güvenilir); MotionState >300ms eskiyi budar.
+    private readonly List<(long atMs, float shiftPx, float dtMs)> _flowSamples = new(16);
 
     /// <summary>Eşleme IoU eşiği (kare-kare aynı moba kalıcı kimlik).</summary>
     public float IouThreshold { get; set; } = 0.3f;
@@ -180,10 +184,38 @@ public sealed class MobTracker
         lock (_lock) { if (untilMs > _quietUntilMs) _quietUntilMs = untilMs; }
     }
 
+    /// <summary>
+    /// 13.tur (S5): Tık-öncesi kamera-hareket kapısı için global sahne-akışı durumu.
+    /// pxPerMs = son ~150ms penceresindeki eşleşen-iz medyan kaymalarının toplamı / toplam süre —
+    /// flip animasyonu, karakter yürüyüşü ve kombo pathing'i hepsi bunu yükseltir; tekil bbox
+    /// jitter'ı medyan (iz-arası) + pencere toplamı (zaman) çifte filtresiyle sönümlenir.
+    /// known=false → pencerede yeterli örnek yok (&lt;2 iz sahnesi / tespit duraksadı): kapı akış
+    /// kanıtı yokken tıklamaya İZİN VERMELİ (bugünkü davranış korunur — bot-kaynaklı hareketleri
+    /// zaten quiet penceresi yakalar). quiet = SuppressMotionCredit penceresi aktif (flip/roam/nav
+    /// az önce oldu; akış ölçümü animasyona henüz yansımamış olabilir → koşulsuz blok).
+    /// Veri (2026-07-11 12:52 log+replay): başarılı tıklar ~0.1 px/ms, kayıplar 0.4-2.5 px/ms.
+    /// </summary>
+    public (float pxPerMs, bool known, bool quiet) MotionState(long nowMs)
+    {
+        const long WindowMs = 150, MinValidDtMs = 60;
+        lock (_lock)
+        {
+            _flowSamples.RemoveAll(s => nowMs - s.atMs > 300);
+            float sumShift = 0f, sumDt = 0f;
+            foreach (var s in _flowSamples)
+            {
+                if (nowMs - s.atMs > WindowMs) continue;
+                sumShift += s.shiftPx; sumDt += s.dtMs;
+            }
+            bool known = sumDt >= MinValidDtMs;
+            return (known ? sumShift / sumDt : 0f, known, nowMs <= _quietUntilMs);
+        }
+    }
+
     /// <summary>Yeni farm oturumunda tüm izleri sıfırla.</summary>
     public void Reset()
     {
-        lock (_lock) { _tracks.Clear(); _nextId = 1; _lastMs = -1; ResurrectionCount = 0; _quietUntilMs = -1; }
+        lock (_lock) { _tracks.Clear(); _nextId = 1; _lastMs = -1; ResurrectionCount = 0; _quietUntilMs = -1; _flowSamples.Clear(); }
     }
 
     /// <summary>Bu karenin tespitlerini izlere eşler; her tespite TrackId/Dead iliştirilmiş YENİ liste döner.</summary>
@@ -242,6 +274,14 @@ public sealed class MobTracker
                     // meşru bir kamera-kaymasında tekil-kare sıçrama koruması (aşağıda, adım 3) yanlışlıkla
                     // tetiklenir (kompanse-edilmiş Anchor'a karşı kompanse-EDİLMEMİŞ LastMatched karşılaştırılırdı).
                     foreach (var t in _tracks) { t.AnchorCx += medDx; t.AnchorCy += medDy; t.LastMatchedCx += medDx; t.LastMatchedCy += medDy; }
+
+                    // 13.tur (S5): global sahne-akışı örneği — medyan zaten kamera kayması ≈ bu kare.
+                    // Yalnız ardışık karede (dt bilinir) kaydedilir; ilk karede _lastMs=-1 → atlanır.
+                    if (_lastMs > 0 && nowMs > _lastMs)
+                    {
+                        _flowSamples.Add((nowMs, MathF.Sqrt(medDx * medDx + medDy * medDy), nowMs - _lastMs));
+                        if (_flowSamples.Count > 16) _flowSamples.RemoveAt(0);
+                    }
                 }
             }
 

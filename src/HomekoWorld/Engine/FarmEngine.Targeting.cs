@@ -279,11 +279,51 @@ public sealed partial class FarmEngine
             // tekrar tekrar seçiliyordu (başarı krediti zaten liveTarget.TrackId'ye gidiyordu — asimetri).
             int lastLiveTrackId = target.TrackId;
 
+            // 13.tur (S5): kamera-hareket kapısı — TargetAsync-geneli TEK bekleme bütçesi (2 deneme
+            // ayrı ayrı MaxWait'e şişmesin) + son akış ölçümü tüm loglara yazılır (eşik kalibrasyonu).
+            long  gateWaitedMs = 0;
+            float gateFlow     = -1f;
+            bool  gateCounted  = false;
+
             for (int i = 0; i < yoloOffsets.Length; i++)
             {
                 ct.ThrowIfCancellationRequested();
                 string offName  = i == 0 ? "merkez" : "isim";
                 long   attStart = acqSw.ElapsedMilliseconds;
+
+                // 13.tur (S5): tık-öncesi kamera-hareket kapısı. Veri (2026-07-11 12:52 log+replay):
+                // başarılı tıklarda tık-anı sahne-akışı ~0.1 px/ms, kayıplarda 0.4-2.5 px/ms (kayıpların
+                // %74'ü) — flip animasyonu / karakter hareketi sürerken atılan tık ıskalıyor, iz kopuyor,
+                // blacklist YANLIŞ ekran-noktasına yazılıyordu. Sahne akarken (veya quiet penceresi
+                // aktifken — flip komutu az önce gitti, animasyon karelere henüz yansımamış olabilir)
+                // tıklama ERTELENİR; bütçe dolarsa hedeften vazgeçilir (bl YOK, başarısızlık sayacı YOK —
+                // tıklama-ÖNCESİ çıkış, "taze-karede-yok" ile aynı sınıf). Ölçüm kapı kapalıyken de alınır
+                // (kayma= telemetrisi eşik kalibrasyonuna veri üretsin).
+                var flow = _tracker.MotionState(NowMs());
+                gateFlow = flow.pxPerMs;
+                if (s.MotionGatePxPerMs > 0f)
+                {
+                    while (flow.quiet || (flow.known && flow.pxPerMs > s.MotionGatePxPerMs))
+                    {
+                        if (gateWaitedMs >= s.MotionGateMaxWaitMs)
+                        {
+                            _gateGiveUps++;
+                            StatusChanged?.Invoke(this, "Kamera hareketli — tıklama ertelendi, yeniden taranıyor");
+                            Program.Log($"[Farm] hedef-bırakıldı trk={lastLiveTrackId}: kamera-akış " +
+                                        $"(kayma={gateFlow:0.00}px/ms{(flow.quiet ? "+quiet" : "")}, " +
+                                        $"bekleme={gateWaitedMs}ms) — bl YOK");
+                            return false;
+                        }
+                        if (!gateCounted) { gateCounted = true; _gateDeferrals++; }
+                        long w0 = NowMs();
+                        await Task.Delay(15, ct);
+                        long wd = Math.Max(1, NowMs() - w0);
+                        gateWaitedMs         += wd;
+                        _gateDeferredMsTotal += wd;
+                        flow     = _tracker.MotionState(NowMs());
+                        gateFlow = flow.pxPerMs;
+                    }
+                }
 
                 // KRİTİK: tıklamadan HEMEN ÖNCE hedefin EN TAZE tespit konumunu al. Mob/kamera hareketli
                 // olduğundan ScanningTick'te seçilen konum birkaç on-ms'de bayatlar → bayat yere tık = ıska
@@ -311,7 +351,7 @@ public sealed partial class FarmEngine
                 {
                     StatusChanged?.Invoke(this, "Hedef taze karede yok — tıklama atlandı, yeniden tarıyor");
                     Program.Log($"[Farm] hedef-bırakıldı trk={target.TrackId}: taze-karede-yok " +
-                                $"(deneme {i + 1}/2, {acqSw.ElapsedMilliseconds}ms) — bl YOK");
+                                $"(deneme {i + 1}/2, {acqSw.ElapsedMilliseconds}ms, kayma={gateFlow:0.00}px/ms) — bl YOK");
                     return false;
                 }
                 lastLiveCenter  = liveTarget.Center;
@@ -343,10 +383,12 @@ public sealed partial class FarmEngine
                     if (ok)
                         Program.Log($"[Farm] hedef-alındı trk={liveTarget.TrackId} offset={offName}({i + 1}/2) " +
                                     $"süre={acqSw.ElapsedMilliseconds}ms kare-yaşı={Telemetry.FrameAgeAtClickMs}ms " +
+                                    $"kayma={gateFlow:0.00}px/ms" +
+                                    $"{(gateWaitedMs > 0 ? $" kapı-bekleme={gateWaitedMs}ms" : "")} " +
                                     $"denemeler=[{string.Join(",", attempts)}]");
                     else
                         Program.Log($"[Farm] hedef-bırakıldı trk={liveTarget.TrackId}: guardian-kapısı " +
-                                    $"(süre={acqSw.ElapsedMilliseconds}ms)");
+                                    $"(süre={acqSw.ElapsedMilliseconds}ms, kayma={gateFlow:0.00}px/ms)");
                     return ok;
                 }
                 if (hpPoll.yoloLost) anyYoloLost = true;
@@ -378,7 +420,8 @@ public sealed partial class FarmEngine
                     RecordAcqFailure(liveTarget.TrackId);   // P2b sayacı — 9.tur: TIKLANAN ize yazılır (bayat scan-id değil)
                     Program.Log($"[Farm] hedef-bırakıldı trk={liveTarget.TrackId}: tık-sonrası-kayıp " +
                                 $"@({(int)liveTarget.Center.X},{(int)liveTarget.Center.Y}) " +
-                                $"(denemeler=[{string.Join(",", attempts)}], {acqSw.ElapsedMilliseconds}ms) — " +
+                                $"(denemeler=[{string.Join(",", attempts)}], {acqSw.ElapsedMilliseconds}ms, " +
+                                $"kayma={gateFlow:0.00}px/ms) — " +
                                 $"bl {missBlMs}ms{(missRep > 1 ? $" (nokta tekrar #{missRep} → escalation)" : "")}");
                     return false;
                 }
@@ -401,7 +444,8 @@ public sealed partial class FarmEngine
                     _deadBlacklist.Add((lastLiveCenter, NowMs() + MissReselectSkipMs));
                     StatusChanged?.Invoke(this, "Hedef doğrulanamadı (iz kayboldu) — kısa atlanıyor");
                     Program.Log($"[Farm] hedef-bırakıldı trk={lastLiveTrackId}: iz-titremesi " +
-                                $"(denemeler=[{string.Join(",", attempts)}], {acqSw.ElapsedMilliseconds}ms) — " +
+                                $"(denemeler=[{string.Join(",", attempts)}], {acqSw.ElapsedMilliseconds}ms, " +
+                                $"kayma={gateFlow:0.00}px/ms) — " +
                                 $"bl {MissReselectSkipMs}ms, iz-damga YOK");
                 }
                 else
@@ -423,7 +467,8 @@ public sealed partial class FarmEngine
                     _tracker.MarkDead(lastLiveTrackId, MobTracker.DeadSource.Assumed);
                     StatusChanged?.Invoke(this, "Hedef seçilemedi (ölü/ceset?) — atlanıyor");
                     Program.Log($"[Farm] hedef-bırakıldı trk={lastLiveTrackId}: ceset-varsayımı (2 tık HP üretmedi, " +
-                                $"denemeler=[{string.Join(",", attempts)}], {acqSw.ElapsedMilliseconds}ms) — " +
+                                $"denemeler=[{string.Join(",", attempts)}], {acqSw.ElapsedMilliseconds}ms, " +
+                                $"kayma={gateFlow:0.00}px/ms) — " +
                                 $"bl {corpseBlMs}ms ×2nokta + iz-damga(varsayım)" +
                                 $"{(corpseRep > 1 ? $" (nokta tekrar #{corpseRep} → escalation)" : "")}");
                 }

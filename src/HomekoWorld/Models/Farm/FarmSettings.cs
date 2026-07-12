@@ -197,6 +197,21 @@ public class FarmSettings
     /// </summary>
     public int    ClickPostDelayMs         { get; set; } = 80;
 
+    // ── Kamera-hareket kapısı (13.tur / S5) ───────────────────────────────────
+    /// <summary>
+    /// Global sahne-akışı (px/ms) bu eşiğin ÜSTÜNDEyken tıklama ertelenir. Veri (2026-07-11
+    /// log+replay): başarılı tıklarda tık-anı akış ~0.1 px/ms, kayıplarda 0.4-2.5 px/ms —
+    /// kamera dönerken atılan tık hem ıskalıyor hem izi koparıyor, blacklist yanlış noktaya
+    /// yazılıyordu (kayıpların ~%74'ü). 0 = kapı tamamen KAPALI (geri-alma anahtarı).
+    /// </summary>
+    public float  MotionGatePxPerMs        { get; set; } = 0.20f;
+    /// <summary>
+    /// Kamera-hareket kapısının hedef başına en fazla bekletme süresi (ms). Dolarsa hedeften
+    /// vazgeçilir (blacklist'siz) ve yeniden taranır. Flip quiet penceresi 800ms ile uyumlu;
+    /// ScanWaitMsBetween(1000) altında kalmalı.
+    /// </summary>
+    public int    MotionGateMaxWaitMs      { get; set; } = 700;
+
     // ── Pot ───────────────────────────────────────────────────────────────────
     public bool   HpPotEnabled    { get; set; } = true;
     public bool   MpPotEnabled    { get; set; } = true;
