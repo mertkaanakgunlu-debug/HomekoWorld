@@ -427,23 +427,31 @@
               <StackPanel>
                 <TextBlock Text="⚙ Farm Davranışı" FontSize="10"
                            Foreground="{StaticResource TextMuted}" Margin="0,0,0,6"/>
-                <!-- Archer Modu (sadece Okçu seçiliyken görünür) -->
+                <!-- Archer Modu — 13.tur (P5): her sınıfta GÖRÜNÜR (eskiden yalnız archer'da görünüyordu;
+                     ayar takılı kalınca kullanıcı kapatamıyor, log kafa karıştırıyordu). Archer-dışı
+                     sınıfta ayar zaten ETKİSİZDİR (sınıf-gate) — aşağıdaki uyarı bunu açıkça söyler. -->
                 <StackPanel>
-                  <StackPanel.Style>
-                    <Style TargetType="StackPanel">
-                      <Setter Property="Visibility" Value="Collapsed"/>
-                      <Style.Triggers>
-                        <DataTrigger Binding="{Binding CurrentClass}" Value="archer">
-                          <Setter Property="Visibility" Value="Visible"/>
-                        </DataTrigger>
-                      </Style.Triggers>
-                    </Style>
-                  </StackPanel.Style>
                   <CheckBox IsChecked="{Binding FarmArcherMode}"
                             Foreground="{StaticResource TextMuted}" FontSize="10"
                             Margin="0,0,0,2"
                             Content="🏹 Archer modu (yaklaş + yönelerek vur)"
-                            ToolTip="KAPALI (önerilen, archer dışı tüm sınıflar): hedef seçilince kombo hemen ateşlenir, oyun karakteri hedefe götürür. AÇIK (archer): AoE oklarının değmesi için moba yaklaşır (W sürekli basılı akıcı koşu) — hedef etrafında dönmeden menzile girince vurur."/>
+                            ToolTip="KAPALI (önerilen, archer dışı tüm sınıflar): hedef seçilince kombo hemen ateşlenir, oyun karakteri hedefe götürür. AÇIK (archer): AoE oklarının değmesi için moba yaklaşır (W sürekli basılı akıcı koşu) — hedef etrafında dönmeden menzile girince vurur. Yalnız sınıf ARCHER iken etkilidir; diğer sınıflarda yok sayılır."/>
+                  <TextBlock FontSize="10" Foreground="#E8B14A" TextWrapping="Wrap" Margin="18,0,0,2"
+                             Text="⚠ Sınıf archer değil — bu ayar şu an ETKİSİZ (kombo, yaklaşmayı oyun içinde kendisi yapar).">
+                    <TextBlock.Style>
+                      <Style TargetType="TextBlock">
+                        <Setter Property="Visibility" Value="Visible"/>
+                        <Style.Triggers>
+                          <DataTrigger Binding="{Binding CurrentClass}" Value="archer">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                          </DataTrigger>
+                          <DataTrigger Binding="{Binding FarmArcherMode}" Value="False">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                          </DataTrigger>
+                        </Style.Triggers>
+                      </Style>
+                    </TextBlock.Style>
+                  </TextBlock>
                   <StackPanel Margin="18,2,0,4" IsEnabled="{Binding FarmArcherMode}">
                     <TextBlock FontSize="10" Foreground="{StaticResource TextMuted}">
                       <Run Text="Yaklaşma mesafesi: "/><Run Text="{Binding FarmArcherRangePx}"/><Run Text=" px (küçük = daha yakın)"/>

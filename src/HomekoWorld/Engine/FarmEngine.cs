@@ -448,8 +448,11 @@ public sealed partial class FarmEngine
         // 2026-07-04 (7.tur-b): banka konfigürasyonu da yazılır — "banka neden tetiklenmedi" sorusunda
         // bellekteki GERÇEK değerler (Enabled/CheckEveryKills) logdan okunabilsin (canlı testte kill=20'ye
         // rağmen 0 banka çalışması görüldü; eşiğin o an bellekte 10 mu 30 mu olduğu ispatlanamadı).
-        Program.Log($"[Farm] oturum-başlangıç: sınıf={_appState.ClassId} hareket={sCfg.EngageMovement}" +
-                    $"(archer-gate: {(ArcherApproachActive(sCfg) ? "AKTİF" : "PASİF")}) " +
+        // 13.tur (P5): EFEKTİF hareket modu açıkça yazılır — EngageMovement=ArcherWalkAndFace ayarda
+        // takılı kalsa bile archer-dışı sınıfta fiilen ComboHandlesApproach uygulanır (sınıf-gate);
+        // "ben archer oynamıyordum, bu mod ne?" karışıklığı logdan tek bakışta çözülsün.
+        Program.Log($"[Farm] oturum-başlangıç: sınıf={_appState.ClassId} hareket={sCfg.EngageMovement} " +
+                    $"efektif={(ArcherApproachActive(sCfg) ? "ArcherWalkAndFace" : "ComboHandlesApproach")} " +
                     $"model={System.IO.Path.GetFileName(sCfg.ModelPath)} imgsz={sCfg.ModelInputSize} " +
                     $"ep={(Inferrer as OnnxYoloInferrer)?.ActiveEp ?? "?"} " +
                     $"conf={sCfg.ConfidenceThreshold:F2} iou={sCfg.IouThreshold:F2} " +
