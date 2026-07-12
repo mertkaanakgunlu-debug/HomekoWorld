@@ -115,6 +115,10 @@ public sealed partial class FarmEngine
         if (snap is null) return false;
         var selectedIds = _mobLibrary.GetSelectedIds(s.SelectedMobNames);
         long now = NowMs();
+        // 13.tur (S3): nüfus muhasebesi — tarama filtresiyle AYNI kural (aynalanmazsa idle-bekleme
+        // cesede erken-çıkar, ScanningTick bastırır → boş dönüş churn'ü).
+        bool popSuppressed = s.RegionMobCount > 0 &&
+                             s.RegionMobCount - KillDebtCount(s, now) <= 0;
         foreach (var d in snap.Dets)
         {
             if (d.Dead) continue;
@@ -124,6 +128,7 @@ public sealed partial class FarmEngine
             // Hareketli aday muaf (cesetler yürümez) — tarama filtresiyle aynı kural.
             if (NearAnyActive(d.Center, _deadBlacklist, DeadBlacklistRadiusPx, now) &&
                 d.MovedPx < MobTracker.MovingAliveExemptPx) continue;
+            if (popSuppressed && d.MovedPx < MobTracker.MovingAliveExemptPx) continue;
             return true;
         }
         return false;

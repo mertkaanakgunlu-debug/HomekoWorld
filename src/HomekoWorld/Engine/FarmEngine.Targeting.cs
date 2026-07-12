@@ -58,6 +58,29 @@ public sealed partial class FarmEngine
               d.MovedPx < MobTracker.MovingAliveExemptPx) &&
             !IsTrackFailThrottled(d.TrackId)).ToList();
 
+        // 13.tur (S3): nüfus muhasebesi — beklenen-canlı ≤ 0 iken (bölgedeki tüm normal moblar
+        // kill-borçlu, respawn henüz gelmedi) ekrandaki hareketsiz adaylar büyük olasılıkla cesettir
+        // → tıklama iştahı kesilir. BELİRGİN hareketli iz (kesin-canlı kanıtı) muaf: sayım yanılsa
+        // bile yürüyen gerçek mob asla bastırılmaz. RegionMobCount=0 → özellik tamamen kapalı.
+        int popDebt = 0, popExpected = -1;
+        if (s.RegionMobCount > 0)
+        {
+            popDebt     = KillDebtCount(s, now);
+            popExpected = s.RegionMobCount - popDebt;
+            if (popExpected <= 0 && filteredCandidates.Count > 0)
+            {
+                int before = filteredCandidates.Count;
+                filteredCandidates = filteredCandidates
+                    .Where(d => d.MovedPx >= MobTracker.MovingAliveExemptPx).ToList();
+                if (before > filteredCandidates.Count && now - _lastPopGateLogMs >= 1000)
+                {
+                    _lastPopGateLogMs = now;
+                    Program.Log($"[Farm] nüfus-kapısı: beklenen-canlı=0 (borç={popDebt}/{s.RegionMobCount}) — " +
+                                $"{before - filteredCandidates.Count} hareketsiz aday bastırıldı (hareketli muaf)");
+                }
+            }
+        }
+
         // ── Teşhis (throttle ~1s): adaylar NEDEN elendi? (alanlar ayrık — toplamları ≈ elenen sayısı) ──
         // B-belirtisi imzası: aday>0 ama canlı=0 iken spatial-bl>0 (90px konum) veya ölü-track>0 (miras) →
         // canlı mob konumla/mirasla eleniyor. hareket-muaf>0 = muafiyet canlı mob kurtardı (fix çalışıyor).
@@ -86,7 +109,8 @@ public sealed partial class FarmEngine
                                 !IsTrackFailThrottled(d.TrackId));
             Program.Log($"[Farm] tarama teshis: aday={candidates.Count} olu-track={deadTrackN} " +
                         $"guard-track={guardTrackN} spatial-bl={spatialN} hareket-muaf={movedExemptN} " +
-                        $"trk-throttle={trkThrottleN} guardian={guardianN} canli={filteredCandidates.Count}");
+                        $"trk-throttle={trkThrottleN} guardian={guardianN} canli={filteredCandidates.Count}" +
+                        $"{(s.RegionMobCount > 0 ? $" beklenen-canli={popExpected} borc={popDebt}" : "")}");
         }
 
         // Görünürde CANLI (blacklist dışı) hedef YOK — ya hiç aday yok ya da hepsi ceset/koruma.

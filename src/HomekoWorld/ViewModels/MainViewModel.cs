@@ -155,6 +155,8 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private bool   _farmRecordingMode;         // A4: kayıt/performans modu (GPU'ya nefes ver)
     [ObservableProperty] private bool   _farmArcherMode;            // B1: archer (yaklaş+yönel) vs archer dışı (kombo hemen)
     [ObservableProperty] private int    _farmArcherRangePx;         // B2: archer yaklaşma mesafesi (px) — UI kaydırıcı
+    [ObservableProperty] private int    _farmRegionMobCount;        // 13.tur S3: bölgedeki normal mob sayısı (0=kapalı)
+    [ObservableProperty] private int    _farmMobRespawnSec;         // 13.tur S3: respawn süresi (sn) — state'te ms tutulur
     [ObservableProperty] private Models.HpBarDetectionMode _farmHpBarMode; // HP bar tespit yöntemi (Hsv/ColorScan)
     [ObservableProperty] private double _farmConfidence;            // T1: YOLO güven eşiği (0-1) — UI kaydırıcı
     [ObservableProperty] private double _farmIou;                   // A6: NMS IoU eşiği (0.20-0.80) — UI kaydırıcı
@@ -333,6 +335,8 @@ public partial class MainViewModel : ObservableObject
         _farmRecordingMode   = _state.Farm.RecordingMode;
         _farmArcherMode      = _state.Farm.EngageMovement == Models.Farm.EngageMovement.ArcherWalkAndFace;
         _farmArcherRangePx   = _state.Farm.ArcherApproachRangePx;
+        _farmRegionMobCount  = _state.Farm.RegionMobCount;
+        _farmMobRespawnSec   = Math.Max(1, _state.Farm.MobRespawnMs / 1000);
         _farmHpBarMode       = _state.Wtm.HpBarMode;
         _farmConfidence      = _state.Farm.ConfidenceThreshold;
         _farmIou             = _state.Farm.IouThreshold;

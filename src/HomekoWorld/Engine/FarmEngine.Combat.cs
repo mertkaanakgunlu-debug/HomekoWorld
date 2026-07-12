@@ -110,6 +110,13 @@ public sealed partial class FarmEngine
             Telemetry.Kills++;
             EmitTelemetry();
             _tracker.MarkDead(_lastEngagedTrackId);   // kill hasar-kapılı → Confirmed (varsayılan); damga kalıcı
+            // 13.tur (S3): onaylı kill → nüfus borcu (MobRespawnMs sonra düşer). Tavan RegionMobCount:
+            // tek-vuruş yanlış-pozitifi / çift sayım borcu şişirse bile bastırma üst sınırı aşamaz.
+            if (s.RegionMobCount > 0)
+            {
+                _killDebt.Add(NowMs());
+                while (_killDebt.Count > s.RegionMobCount) _killDebt.RemoveAt(0);
+            }
             if (s.LootEnabled)
             {
                 SetState(FarmState.Looting, "Loot toplanıyor…");

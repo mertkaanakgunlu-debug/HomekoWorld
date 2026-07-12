@@ -104,6 +104,26 @@ public sealed partial class FarmEngine
     private long _gateDeferredMsTotal; // toplam erteleme süresi (ms)
     private int  _gateGiveUps;         // bütçe dolup vazgeçilen hedef sayısı
 
+    // ── 13.tur (S3): nüfus muhasebesi ─────────────────────────────────────────
+    // Bölgedeki normal mob sayısı SABİT (kullanıcı bilgisi: 7 normal + 1 guardian; respawn ~25sn
+    // RASTGELE konumda; ceset despawn 18sn). Her ONAYLI kill "borç" yazar (MobRespawnMs sonra düşer);
+    // beklenen-canlı = RegionMobCount − borç. 0'a inince ekranda görünen hareketsiz adaylar büyük
+    // olasılıkla CESETTİR (model ceset/canlı ayrımı yapamıyor — 2026-07-11 replay görsel kanıtı:
+    // yatık cesetlere 0.74-0.91 conf kutu) → tıklama iştahı kesilir; yalnız BELİRGİN hareketli iz
+    // (MovedPx ≥ MovingAliveExemptPx = kesin-canlı kanıtı) muaf. Emniyet katmanları: borç tavanı
+    // RegionMobCount (tek-vuruş yanlış-pozitifi borcu sonsuz şişirmesin), decay ≤ gerçek respawn
+    // (bastırma respawn'ı asla maskeleyemez), çalıntı kill (Lost) borca yazılmaz (hata her zaman
+    // "az bastırma" yönünde = güvenli). Tek yazar/okur: FarmLoop task zinciri — kilit gerekmez.
+    private readonly List<long> _killDebt = new();
+    private long _lastPopGateLogMs;
+
+    /// <summary>Süresi dolan kill-borçlarını düşürüp güncel borç sayısını döndürür (S3).</summary>
+    private int KillDebtCount(FarmSettings s, long now)
+    {
+        _killDebt.RemoveAll(t => now - t >= s.MobRespawnMs);
+        return _killDebt.Count;
+    }
+
     // ── Tekrar-suçlu escalation (2026-07-04) ─────────────────────────────────────
     // Canlı log (6.5sa): 156× "tık-sonrası-kayıp" + aynı 60px hücrede 8×'e kadar tekrar. Kök neden: statik
     // YOLO false-positive (kırmızı ağaç vb. — kodun eski yorumu "SONSUZ re-pick @(686,546) conf 0.94") ve
@@ -422,6 +442,8 @@ public sealed partial class FarmEngine
         _gateDeferrals        = 0;
         _gateDeferredMsTotal  = 0;
         _gateGiveUps          = 0;
+        _killDebt.Clear();
+        _lastPopGateLogMs     = 0;
         var sCfg = _appState.Farm;
         // 2026-07-04 (7.tur-b): banka konfigürasyonu da yazılır — "banka neden tetiklenmedi" sorusunda
         // bellekteki GERÇEK değerler (Enabled/CheckEveryKills) logdan okunabilsin (canlı testte kill=20'ye

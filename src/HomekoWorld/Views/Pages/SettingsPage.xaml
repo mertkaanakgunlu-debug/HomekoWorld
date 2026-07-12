@@ -453,6 +453,20 @@
                             ToolTip="Archer komboya başlamadan önce moba ne kadar yaklaşsın (ekran px). 'Yeterince yaklaşmıyor' diyorsan KÜÇÜLT; 'çok dibine giriyor' diyorsan BÜYÜT. Çözünürlük/zoom'a göre test ederek ayarla."/>
                   </StackPanel>
                 </StackPanel>
+                <!-- 13.tur (S3): nüfus muhasebesi — tüm moblar kill-borçluyken hareketsiz kutular ceset sayılır, tıklanmaz -->
+                <TextBlock FontSize="10" Foreground="{StaticResource TextMuted}" Margin="0,6,0,0">
+                  <Run Text="👥 Bölge mob sayısı: "/><Run Text="{Binding FarmRegionMobCount}"/><Run Text="  (0 = kapalı)"/>
+                </TextBlock>
+                <Slider Minimum="0" Maximum="15" Value="{Binding FarmRegionMobCount}"
+                        IsSnapToTickEnabled="True" TickFrequency="1" SmallChange="1" LargeChange="1"
+                        ToolTip="Farm bölgesindeki normal (avlanan) mob sayısı; koruma mobu SAYILMAZ. Tüm moblar kesilmişken (respawn bekleniyor) ekranda kalan hareketsiz kutular ceset sayılır ve tıklanmaz — boşa tıklama/takılma azalır. Farklı spota geçince güncelle. 0 = özellik kapalı."/>
+                <TextBlock FontSize="10" Foreground="{StaticResource TextMuted}" Margin="0,4,0,0">
+                  <Run Text="⏱ Mob respawn süresi: "/><Run Text="{Binding FarmMobRespawnSec}"/><Run Text=" sn"/>
+                </TextBlock>
+                <Slider Minimum="5" Maximum="90" Value="{Binding FarmMobRespawnSec}"
+                        IsSnapToTickEnabled="True" TickFrequency="1" SmallChange="1" LargeChange="5"
+                        ToolTip="Kesilen mobun yeniden doğma süresi. Gerçek sürenin 1-2 sn ALTINA ayarla (erken düşmek zararsızdır, geç düşmek canlı mobu bekletir). Bu spotta ~25 sn ölçüldü → 24 önerilir."/>
+
                 <CheckBox IsChecked="{Binding FarmShowDetectionOverlay}"
                           Foreground="{StaticResource TextMuted}" FontSize="10"
                           Margin="0,6,0,0"

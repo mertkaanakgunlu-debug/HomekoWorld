@@ -381,6 +381,11 @@ public partial class MainViewModel
     }
     partial void OnFarmArcherRangePxChanged(int value) { _state.Farm.ArcherApproachRangePx = value; _store.Save(_state); }
 
+    // 13.tur (S3): nüfus muhasebesi — spot'a özgü değerler; FarmEngine ayarları her taramada canlı
+    // okuduğundan değişiklik anında geçerli (yeniden Start gerekmez). UI saniye, state ms tutar.
+    partial void OnFarmRegionMobCountChanged(int value) { _state.Farm.RegionMobCount = Math.Max(0, value); _store.Save(_state); }
+    partial void OnFarmMobRespawnSecChanged(int value)  { _state.Farm.MobRespawnMs = Math.Max(1, value) * 1000; _store.Save(_state); }
+
     // T1: Güven eşiği kaydırıcısı — ayara yaz + çalışan inferrer'a CANLI uygula (yeniden model yüklemeye gerek yok).
     partial void OnFarmConfidenceChanged(double value)
     {

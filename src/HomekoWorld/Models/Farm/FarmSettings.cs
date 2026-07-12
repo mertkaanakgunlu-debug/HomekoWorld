@@ -212,6 +212,21 @@ public class FarmSettings
     /// </summary>
     public int    MotionGateMaxWaitMs      { get; set; } = 700;
 
+    // ── Nüfus muhasebesi (13.tur / S3) ────────────────────────────────────────
+    /// <summary>
+    /// Farm bölgesindeki normal (avlanan) mob sayısı; guardian SAYILMAZ. Her onaylı kill "borç"
+    /// yazar (MobRespawnMs sonra düşer); beklenen-canlı = bu sayı − borç ≤ 0 olunca ekrandaki
+    /// hareketsiz adaylar (büyük olasılıkla ceset — model ceset/canlı ayrımı yapamıyor) tıklanmaz.
+    /// Spot'a özgüdür — farklı bölgede güncellenmeli. 0 = özellik tamamen KAPALI.
+    /// </summary>
+    public int    RegionMobCount           { get; set; } = 7;
+    /// <summary>
+    /// Kill-borcunun düştüğü süre (ms) ≈ mob respawn süresi. Ölçülen ~25sn'nin hafif ALTI tutulur:
+    /// bastırma gerçek respawn'ı asla maskeleyemesin (erken düşmenin maliyeti tek ceset-probu,
+    /// geç düşmeninki canlı mobu bekletmek).
+    /// </summary>
+    public int    MobRespawnMs             { get; set; } = 24000;
+
     // ── Pot ───────────────────────────────────────────────────────────────────
     public bool   HpPotEnabled    { get; set; } = true;
     public bool   MpPotEnabled    { get; set; } = true;
