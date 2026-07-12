@@ -67,11 +67,15 @@ public partial class DetectionOverlayWindow : Window
             {
                 _dpiScaleX = 1.0 / src.CompositionTarget.TransformToDevice.M11;
                 _dpiScaleY = 1.0 / src.CompositionTarget.TransformToDevice.M22;
-                
+
                 // Pencere boyutunu DIP olarak tekrar ayarla
                 Width = w * _dpiScaleX;
                 Height = h * _dpiScaleY;
             }
+
+            // Kutular DXGI/GDI yakalamasına girmesin: model kendi çizimini girdi olarak
+            // görüyordu, replay kareleri kirleniyordu (2026-07-11 replay analizi).
+            CaptureExclusion.TryExclude(this, "DetectionOverlay");
         };
     }
 
@@ -92,16 +96,59 @@ public partial class DetectionOverlayWindow : Window
             _engine.DetectionsUpdated -= OnDetectionsUpdated;
             _isSubscribed = false;
         }
+        System.Threading.Interlocked.Exchange(ref _pendingFrame, null); // bekleyen kare çizilmesin
         Hide();
         // Temizle
         foreach (var v in _visualPool) v.Hide();
         _targetVisual?.Hide();
     }
 
+    // ── Çizim seyreltme (latest-wins, ~30Hz) ────────────────────────────────
+    // Her inference karesi (~60-75Hz) ayrı UI işi kuyruklamak, tam-ekran layered window'da
+    // her seferinde DWM'e büyük yüzey pushlatıyordu (GPU'da CUDA ile çekişme = overlay-açık
+    // FPS düşüşü). Yalnız SON kare saklanır ve en çok ~30Hz çizilir; ara kareler atlanır.
+    // Tespit thread'i hiç bloklanmaz (Exchange + CAS). Stop'un yolladığı boş kare de
+    // latest-wins'te en son pending kalır → kutular ekranda asılı kalmaz.
+    private DetectionFrame? _pendingFrame;
+    private int  _drawScheduled;
+    private long _lastDrawMs;
+    private const int MinDrawIntervalMs = 33;
+
     private void OnDetectionsUpdated(object? sender, DetectionFrame frame)
     {
-        // UI thread'inde Canvas'ı güncelle
-        Dispatcher.InvokeAsync(() => UpdateVisuals(frame), System.Windows.Threading.DispatcherPriority.Render);
+        System.Threading.Interlocked.Exchange(ref _pendingFrame, frame);
+        if (System.Threading.Interlocked.CompareExchange(ref _drawScheduled, 1, 0) == 0)
+            Dispatcher.InvokeAsync(DrawPendingLoopAsync, System.Windows.Threading.DispatcherPriority.Render);
+    }
+
+    private async void DrawPendingLoopAsync()
+    {
+        // UI thread'inde koşar (Task.Delay continuation'ı da dispatcher'a döner). Çizim bitince
+        // yeni pending birikmişse döngü sürer; bayrak bırakıldıktan sonra gelen kare üreticinin
+        // CAS'ıyla yeni döngü başlatır — kare kaçmaz, kuyruk birikmez.
+        try
+        {
+            while (true)
+            {
+                long wait = MinDrawIntervalMs - (Environment.TickCount64 - _lastDrawMs);
+                if (wait > 0) await System.Threading.Tasks.Task.Delay((int)wait);
+
+                var frame = System.Threading.Interlocked.Exchange(ref _pendingFrame, null);
+                if (frame is not null)
+                {
+                    UpdateVisuals(frame);
+                    _lastDrawMs = Environment.TickCount64;
+                }
+
+                System.Threading.Volatile.Write(ref _drawScheduled, 0);
+                if (System.Threading.Volatile.Read(ref _pendingFrame) is null) return;
+                if (System.Threading.Interlocked.CompareExchange(ref _drawScheduled, 1, 0) != 0) return;
+            }
+        }
+        catch
+        {
+            System.Threading.Volatile.Write(ref _drawScheduled, 0);
+        }
     }
 
     private void UpdateVisuals(DetectionFrame frame)

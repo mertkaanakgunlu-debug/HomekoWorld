@@ -1,6 +1,7 @@
 using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Windows;
+using HomekoWorld.Services.Capture;
 using HomekoWorld.ViewModels;
 
 namespace HomekoWorld.Views;
@@ -23,6 +24,9 @@ public partial class LogHudWindow : Window
 
         // Yeni kayıt geldikçe en alta kaydır
         _vm.FarmActivityLog.CollectionChanged += OnLogChanged;
+
+        // HUD, DXGI/GDI yakalamasına girmesin (tespit alanına denk gelirse modele sızıyordu).
+        Loaded += (_, __) => CaptureExclusion.TryExclude(this, "LogHud");
     }
 
     private bool _scrollQueued;
