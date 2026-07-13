@@ -1,7 +1,6 @@
 using System.ComponentModel;
 using System.Windows;
 using System.Windows.Input;
-using HomekoWorld.Services.Capture;
 using HomekoWorld.ViewModels;
 
 namespace HomekoWorld.Views;
@@ -22,8 +21,14 @@ public partial class FarmHudWindow : Window
             try { DragMove(); } catch { /* ignore */ }
         };
 
-        // HUD, DXGI/GDI yakalamasına girmesin (tespit alanına denk gelirse modele sızıyordu).
-        Loaded += (_, __) => CaptureExclusion.TryExclude(this, "FarmHud");
+        // 2026-07-13: CaptureExclusion.TryExclude (WDA_EXCLUDEFROMCAPTURE) KALDIRILDI — canlı testte
+        // telefon üzerinden uzak masaüstüyle izlenirken HUD hiç görünmüyordu (kök neden: uzak
+        // masaüstü görüntülemesi Windows açısından da bir "yakalama"dır, bu bayrak onu da gizler;
+        // bilgisayarın başında doğrudan bakınca zaten normal görünüyordu — kod hatası değildi).
+        // Bu pencere için exclusion yalnızca kozmetikti (kullanıcının KENDİ ekran kaydında
+        // görünmesin) — DetectionOverlayWindow'daki gibi fonksiyonel bir amaç (YOLO'nun kendi
+        // kutularını girdi sanması) taşımıyor; kaldırılması artık uzak/telefon izlemede de HUD'un
+        // görünür olması gibi bir fayda sağlıyor, maliyeti yalnız kendi ekran kaydında da görünmesi.
     }
 
     // ── Kapatma koruması: Hide() ile sakla, Destroy() ile gerçekten kapat ──────
