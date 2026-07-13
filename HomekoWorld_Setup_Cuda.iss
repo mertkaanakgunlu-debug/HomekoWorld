@@ -13,12 +13,19 @@
 ; ║ onnxruntime_providers_tensorrt.dll (devasa, kullanılmıyor) hariç tutulur.  ║
 ; ╚══════════════════════════════════════════════════════════════════════════╝
 
+; 14.tur (Faz 7.2): sürüm artık ISCC /DAppVer=X.Y.Z ile DIŞARIDAN geçirilebilir (release.ps1
+; csproj <Version>'ı okuyup verir) — parametre verilmezse aşağıdaki varsayılan kullanılır, GUI'den
+; elle "Compile" ile de öncekiyle BİREBİR aynı davranır. Elle çalıştırmada hâlâ bu satırı csproj ile
+; eşitlemeniz gerekir (release.ps1 kullanmıyorsanız).
+#ifndef AppVer
+  #define AppVer "1.0.2"
+#endif
+
 [Setup]
 ; CUDA variant'i kendi AppId'sine sahip (DirectML variant'indan ayri urun olarak izlenir).
 AppId={{8B8B5E89-CD9D-4F7F-9F2D-A1B2C3D4E5F6}
 AppName=HomekoWorld
-; NOT: surum tek kaynagi csproj <Version> — release'te burayi da esitleyin.
-AppVersion=1.0.2
+AppVersion={#AppVer}
 AppPublisher=Mert Kaan
 AppPublisherURL=https://github.com/mertkaanakgunlu-debug/HomekoWorld
 AppSupportURL=https://github.com/mertkaanakgunlu-debug/HomekoWorld/issues

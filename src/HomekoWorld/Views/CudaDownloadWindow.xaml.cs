@@ -79,6 +79,10 @@ public partial class CudaDownloadWindow : Window
         string baseDir = AppContext.BaseDirectory;
         using var client = new HttpClient();
         var buffer = new byte[BufferSize];
+        // 14.tur (Faz 7.1): iki zip arasında AYNI dosya adı çakışması artık HATA (eskiden sessizce
+        // üzerine yazılıyordu — hangi zip'in "kazandığı" belirsizdi, kötü amaçlı bir asset diğerinin
+        // meşru DLL'ini sessizce değiştirebilirdi).
+        var extractedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         for (int i = 0; i < DownloadUrls.Length; i++)
         {
@@ -141,7 +145,7 @@ public partial class CudaDownloadWindow : Window
 
                 StatusText.Text = $"Dosya {i + 1}/{DownloadUrls.Length} arşivden çıkarılıyor...";
                 DownloadProgress.IsIndeterminate = true;
-                await Task.Run(() => ExtractZipSafe(tempZip, baseDir), ct);
+                await Task.Run(() => ExtractZipSafe(tempZip, baseDir, extractedNames), ct);
                 DownloadProgress.IsIndeterminate = false;
             }
             finally
@@ -161,20 +165,55 @@ public partial class CudaDownloadWindow : Window
     /// NEDEN düz: cuda_core.zip içinde "cuda_core/" öneki vardı → eskiden alt klasöre açılıyordu; ONNX CUDA
     /// provider bağımlılıklarını (cublas/cudart/cufft) exe-YANINDA aradığından bulamıyor, sessizce CPU'ya
     /// düşüyordu + CudaInstallerService.IsMissingLibraries (LoadLibrary, yalnız exe-yanı/PATH) onları
-    /// göremeyip HER AÇILIŞTA yeniden indiriyordu. Tüm DLL'ler exe'nin yanına inmeli.</summary>
-    private static void ExtractZipSafe(string zipPath, string destRoot)
+    /// göremeyip HER AÇILIŞTA yeniden indiriyordu. Tüm DLL'ler exe'nin yanına inmeli.
+    ///
+    /// 14.tur (Faz 7.1 — dış denetim P0-1): ek katmanlar (SHA-256/imzalı-manifest henüz YOK — gerçek
+    /// release asset'lerinin hash'i olmadan güvenle sabitlenemez, backlog):
+    ///  • Uzantı-allowlist: yalnız .dll — rastgele script/executable (.exe/.bat/.ps1) enjeksiyonunu
+    ///    engeller. İSİM-allowlist değil (CUDA/cuDNN dosya seti üretici sürümüne göre değişebilir;
+    ///    isim-sabitlemek kurulumu sessizce kırma riski taşırdı).
+    ///  • Önce GEÇİCİ klasöre çıkar, TÜM dosyalar doğrulandıktan SONRA hedefe kopyala — yarı-yolda
+    ///    hata (disk dolu/izin) eski+yeni DLL'leri karışık bırakmasın.
+    ///  • <paramref name="extractedNames"/>: iki zip'te AYNI ad görülürse hata (sessiz üzerine-yazma yok).</summary>
+    private static void ExtractZipSafe(string zipPath, string destRoot, HashSet<string> extractedNames)
     {
         string fullRoot = Path.GetFullPath(destRoot).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
         Directory.CreateDirectory(destRoot);
-        using var archive = ZipFile.OpenRead(zipPath);
-        foreach (var entry in archive.Entries)
+
+        string stagingDir = Path.Combine(Path.GetTempPath(), $"homeko_cuda_stage_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(stagingDir);
+        try
         {
-            if (string.IsNullOrEmpty(entry.Name)) continue; // dizin girişi → atla
-            // entry.Name = yalnız dosya adı (alt-dizin öneki olmadan) → düz çıkar.
-            string destPath = Path.GetFullPath(Path.Combine(destRoot, entry.Name));
-            if (!destPath.StartsWith(fullRoot, StringComparison.OrdinalIgnoreCase))
-                throw new IOException($"Güvenli olmayan arşiv girişi (kök dışı): {entry.FullName}");
-            entry.ExtractToFile(destPath, overwrite: true);
+            using var archive = ZipFile.OpenRead(zipPath);
+            var staged = new List<(string name, string stagedPath)>();
+            foreach (var entry in archive.Entries)
+            {
+                if (string.IsNullOrEmpty(entry.Name)) continue; // dizin girişi → atla
+
+                // entry.Name = yalnız dosya adı (alt-dizin öneki olmadan) → düz çıkar; Zip-Slip koruması.
+                string destPath = Path.GetFullPath(Path.Combine(destRoot, entry.Name));
+                if (!destPath.StartsWith(fullRoot, StringComparison.OrdinalIgnoreCase))
+                    throw new IOException($"Güvenli olmayan arşiv girişi (kök dışı): {entry.FullName}");
+
+                if (!string.Equals(Path.GetExtension(entry.Name), ".dll", StringComparison.OrdinalIgnoreCase))
+                    throw new IOException($"Beklenmeyen dosya türü arşivde (yalnız .dll izinli): {entry.FullName}");
+
+                if (!extractedNames.Add(entry.Name))
+                    throw new IOException($"Aynı dosya adı iki arşivde de bulundu: {entry.Name}");
+
+                string stagedPath = Path.Combine(stagingDir, entry.Name);
+                entry.ExtractToFile(stagedPath, overwrite: true);
+                staged.Add((entry.Name, stagedPath));
+            }
+
+            // Tüm girişler doğrulandı → şimdi hedefe kopyala (atomik-ye-yakın: staging'de zaten
+            // tamamlanmış dosyalar, burada yalnız hızlı bir Copy kalır).
+            foreach (var (name, stagedPath) in staged)
+                File.Copy(stagedPath, Path.Combine(destRoot, name), overwrite: true);
+        }
+        finally
+        {
+            try { Directory.Delete(stagingDir, recursive: true); } catch { }
         }
     }
 
