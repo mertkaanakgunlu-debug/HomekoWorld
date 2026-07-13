@@ -100,22 +100,31 @@ public sealed class ReplayRecorder : IDisposable
 
     private void WorkerProc()
     {
-        var sb = new StringBuilder(512);
-        foreach (var it in _queue.GetConsumingEnumerable())
+        // 14.tur (Faz 5.1 — dış denetim P1-11 bulgusu): foreach'in KENDİSİ eskiden dış try-catch
+        // dışındaydı. Stop() 3sn'de kapanmayan worker'ı beklerken çağıranın Dispose()'u _queue'yu
+        // dispose edebiliyordu (bkz Dispose() koşullu düzeltmesi) — eğer bu ARADA yine de olursa
+        // GetConsumingEnumerable() ObjectDisposedException fırlatabilir; arka-plan thread'inde
+        // yakalanmamış istisna .NET runtime'ında PROCESS'İ ÇÖKERTİR. Tüm gövde artık korunuyor.
+        try
         {
-            try
+            var sb = new StringBuilder(512);
+            foreach (var it in _queue.GetConsumingEnumerable())
             {
-                if (_written < _maxFrames)
+                try
                 {
-                    string jpg = Path.Combine(_framesDir, $"{it.FrameId:D6}.jpg");
-                    it.Frame.Save(jpg, _jpegCodec, _encParams);
-                    File.AppendAllText(_ndjsonPath, BuildNdjsonLine(sb, it), Encoding.UTF8);
-                    _written++;
+                    if (_written < _maxFrames)
+                    {
+                        string jpg = Path.Combine(_framesDir, $"{it.FrameId:D6}.jpg");
+                        it.Frame.Save(jpg, _jpegCodec, _encParams);
+                        File.AppendAllText(_ndjsonPath, BuildNdjsonLine(sb, it), Encoding.UTF8);
+                        _written++;
+                    }
                 }
+                catch { /* I/O hatası → bu kareyi atla, kaydı sürdür */ }
+                finally { it.Frame.Dispose(); }
             }
-            catch { /* I/O hatası → bu kareyi atla, kaydı sürdür */ }
-            finally { it.Frame.Dispose(); }
         }
+        catch { /* queue dispose yarışı / beklenmedik hata — worker'ı sessizce bitir, farm'ı etkileme */ }
     }
 
     private static string BuildNdjsonLine(StringBuilder sb, Item it)
@@ -144,19 +153,35 @@ public sealed class ReplayRecorder : IDisposable
     private static string F(float v) => v.ToString("0.###", CultureInfo.InvariantCulture);
     private static string Escape(string s) => s.Replace("\\", "\\\\").Replace("\"", "\\\"");
 
-    /// <summary>Kaydı bitirir: kuyruğu kapatır, worker'ı bekler, kalan klonları temizler.</summary>
+    // 14.tur (Faz 5.1): Join(3000) zaman aşımına uğradıysa worker HÂLÂ diske yazıyor olabilir
+    // (yavaş disk/AV). Bu durumda _queue/_encParams DISPOSE EDİLMEZ — worker'ın altındaki koleksiyonu
+    // çekmek ObjectDisposedException ile thread'i (ve process'i) çökertebilirdi (bkz WorkerProc notu).
+    // Sonuç: nadir zaman-aşımı vakasında bir miktar bellek/handle sızıntısı — çökmeden EVLA tercih.
+    private volatile bool _workerAbandoned;
+
+    /// <summary>Kaydı bitirir: kuyruğu kapatır, worker'ı bekler, kalan klonları temizler (worker
+    /// zamanında bittiyse). Zaman aşımında "abandoned" işaretlenir — Dispose() bu durumda queue'ya
+    /// dokunmaz.</summary>
     public void Stop()
     {
         if (_stopped) return;
         _stopped = true;
         try { _queue.CompleteAdding(); } catch { }
-        try { _worker.Join(3000); } catch { }
+        bool finished = false;
+        try { finished = _worker.Join(3000); } catch { }
+        if (!finished) { _workerAbandoned = true; return; }
         while (_queue.TryTake(out var it)) it.Frame.Dispose(); // worker erken çıktıysa sızıntı yok
     }
 
     public void Dispose()
     {
         Stop();
+        if (_workerAbandoned)
+        {
+            Program.Log("[Replay] worker 3sn içinde kapanmadı — kaynaklar bu oturum için terk edildi " +
+                        "(çökme riskinden kaçınmak için queue/encParams dispose edilmedi).");
+            return;
+        }
         try { _queue.Dispose(); }   catch { }
         try { _encParams.Dispose(); } catch { }
     }

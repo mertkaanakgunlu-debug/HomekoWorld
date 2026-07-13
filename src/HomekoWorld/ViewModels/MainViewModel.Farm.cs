@@ -300,6 +300,17 @@ public partial class MainViewModel
             return;
         }
 
+        // 14.tur (Faz 5.4 — dış denetim P1-7 bulgusu): farm ÇALIŞIRKEN model değiştirmek pipelined
+        // modda üretici (eski Inferrer'la preprocess edilmiş slot) ile tüketici (yeni Inferrer'ı
+        // okuyan InferSlot) arasında input-size/tensor uyuşmazlığı yaratabiliyordu (sessiz yanlış
+        // tespit/boş sonuç riski). Ayar diskte KALIR (sonraki oturumda kullanılır) — yalnız yükleme
+        // reddedilir; kullanıcı önce farm'ı durdurmalı.
+        if (_farmEngine.IsRunning)
+        {
+            FarmStatus = "⚠ Farm çalışırken model değiştirilemez — önce durdurun, sonra tekrar seçin";
+            return;
+        }
+
         try
         {
             FarmStatus = "Model yükleniyor…";

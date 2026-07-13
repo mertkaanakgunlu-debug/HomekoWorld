@@ -205,6 +205,13 @@ public sealed partial class FarmEngine
     private volatile DetectionSnapshot? _latestDetections;
     private volatile Detection?         _currentTargetForOverlay; // combat'te saldırılan hedef (overlay vurgusu)
     private Thread?                     _detThread;
+    // 14.tur (Faz 5.5 — dış denetim P0-4 bulgusu): eskiden Task.Run'ın dönüşü hiç tutulmuyordu ("_ =
+    // Task.Run(...)") — Stop() yalnız capture/detection THREAD'lerini Join ediyordu, FarmLoopAsync
+    // task'ını hiç beklemiyordu. Task token'ı defalarca okur (TickAsync/ScanningTick/TargetAsync
+    // await'leri) ve normalde Cancel sonrası hızla biter; yine de eski hâlde CTS.Dispose() task hâlâ
+    // token okurken gerçekleşebiliyordu (teorik yarış — tam session-generation mimarisi kapsam dışı
+    // bırakıldı, bu yalnız görünürlük+bekleme ekliyor).
+    private Task?                       _farmTask;
     private volatile ReplayRecorder?    _replay; // Faz B: açıkken kayıt; null = kapalı (DetectionLoop okur)
     // 14.tur (Faz 4.3): ms-telemetri JSONL — HER oturumda otomatik açık (Replay'in aksine kullanıcı
     // seçimine bağlı değil; kayıt boyutu küçük/düz-metin, disk maliyeti önemsiz). FarmLoop task
@@ -535,7 +542,7 @@ public sealed partial class FarmEngine
             _detThread.Start();
         }
 
-        _ = Task.Run(() => FarmLoopAsync(_cts.Token));
+        _farmTask = Task.Run(() => FarmLoopAsync(_cts.Token));
         SetState(FarmState.Scanning, "Taranıyor…");
     }
 
@@ -571,6 +578,20 @@ public sealed partial class FarmEngine
         if (_detThread is not null && _detThread.IsAlive && !_detThread.Join(1000))
             Program.Log("[Farm] Detection thread 1sn içinde kapanmadı.");
         _detThread = null;
+
+        // 14.tur (Faz 5.5): FarmLoopAsync task'ının bitmesini bekle — CTS dispose'undan ÖNCE (token'ı
+        // hâlâ okuyor olabilir). Normalde thread'ler durunca task da hızla biter; 2sn üst sınır.
+        var farmTask = _farmTask;
+        _farmTask = null;
+        if (farmTask is not null)
+        {
+            try
+            {
+                if (!farmTask.Wait(2000))
+                    Program.Log("[Farm] FarmLoopAsync 2sn içinde kapanmadı.");
+            }
+            catch (Exception ex) { Program.Log($"[Farm] FarmLoopAsync bekleme hatası: {ex.Message}"); }
+        }
 
         // P2: kalan pending klonu temizle (her iki thread durdu → güvenli).
         lock (_pipeLock) { if (_pending is { } p) p.ReplayClone?.Dispose(); _pending = null; _freeSlots.Clear(); }

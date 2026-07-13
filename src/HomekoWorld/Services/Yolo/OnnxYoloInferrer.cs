@@ -168,9 +168,14 @@ public sealed class OnnxYoloInferrer : IYoloInferrer, IDisposable
         // A1b: OrtEpFactory.Create EP eklemede fırlamaz, ama `new InferenceSession` GPU EP ile
         // KURULURKEN native fırlatabilir (sürücü/sürüm uyumsuzluğu). Bunu yakalayıp CPU'ya düşmezsek
         // model yüklemesi tamamen başarısız olur. → GPU kurulumu patlarsa kalıcı CPU'ya düş, yeniden kur.
+        // 14.tur (Faz 5.3 — dış denetim bulgusu): SessionOptions eskiden hiç dispose edilmiyordu.
+        // InferenceSession ctor'u ayarları native handle'a KOPYALAR (aynı ilke OrtEpFactory.Create'in
+        // cudaOpts yorumunda da var) — session kurulduktan sonra options güvenle dispose edilebilir.
+        // Recovery/model-reload BuildSession'ı tekrar tekrar çağırabildiğinden bu eskiden birikimli
+        // sızıntıydı.
         try
         {
-            var opts = OrtEpFactory.Create(backend, out _epUsed);
+            using var opts = OrtEpFactory.Create(backend, out _epUsed);
             _session = new InferenceSession(_onnxPath, opts);
             HomekoWorld.Program.Log($"[YOLO] Execution provider: {_epUsed}");
             LogModelDiag();
@@ -179,7 +184,7 @@ public sealed class OnnxYoloInferrer : IYoloInferrer, IDisposable
         {
             HomekoWorld.Program.Log($"[YOLO] GPU session kurulamadı ({_epUsed}): {ex.Message} — CPU'ya düşülüyor.");
             _forcedCpu = true;
-            var cpuOpts = OrtEpFactory.Create(InferenceBackend.Cpu, out _epUsed);
+            using var cpuOpts = OrtEpFactory.Create(InferenceBackend.Cpu, out _epUsed);
             _session = new InferenceSession(_onnxPath, cpuOpts);
             HomekoWorld.Program.Log($"[YOLO] Execution provider: {_epUsed}");
             LogModelDiag();

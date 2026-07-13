@@ -19,13 +19,20 @@ public sealed class GdiScreenSource : IScreenSource
     private const uint SRCCOPY = 0x00CC0020;
 
     private Bitmap? _buffer;
+    // 14.tur (Faz 5.2 — dış denetim bulgusu): eskiden GetDC/BitBlt dönüşleri hiç kontrol edilmiyordu
+    // ve LastFrameWasNew SABİT true idi. BitBlt başarısız olursa _buffer bir ÖNCEKİ (bayat) kareyi
+    // taşımaya devam eder ama true dönmesi DetectionLoop'a "yeni kare" dedirtip YOLO'yu bayat/siyah
+    // buffer üzerinde çalıştırabilirdi. DXGI'siz müşteri PC'lerinde (RDP/exclusive-fullscreen) GDI
+    // ANA yol olduğundan bu önemli.
+    private bool _lastFrameWasNew = true;
+    private bool _loggedCaptureFailureOnce;
 
     public string BackendName => "GDI";
     public int CaptureX     => 0;
     public int CaptureY     => 0;
     public int FullScreenW  => GetSystemMetrics(0);
     public int FullScreenH  => GetSystemMetrics(1);
-    public bool LastFrameWasNew => true;   // GDI BitBlt daima güncel ekranı kopyalar → her kare "yeni"
+    public bool LastFrameWasNew => _lastFrameWasNew;
 
     public Bitmap Capture()
     {
@@ -40,11 +47,24 @@ public sealed class GdiScreenSource : IScreenSource
         using var g = Graphics.FromImage(_buffer);
         nint hdcDst = g.GetHdc();
         nint hdcSrc = GetDC(nint.Zero);
-        try   { BitBlt(hdcDst, 0, 0, w, h, hdcSrc, 0, 0, SRCCOPY); }
+        bool ok = false;
+        try
+        {
+            if (hdcSrc != nint.Zero)
+                ok = BitBlt(hdcDst, 0, 0, w, h, hdcSrc, 0, 0, SRCCOPY);
+        }
         finally
         {
             g.ReleaseHdc(hdcDst);
-            ReleaseDC(nint.Zero, hdcSrc);
+            if (hdcSrc != nint.Zero) ReleaseDC(nint.Zero, hdcSrc);
+        }
+
+        _lastFrameWasNew = ok;
+        if (!ok && !_loggedCaptureFailureOnce)
+        {
+            _loggedCaptureFailureOnce = true;
+            Program.Log("[GDI] GetDC/BitBlt başarısız — bu ve sonraki başarısız karelerde " +
+                        "LastFrameWasNew=false döner (bayat/siyah buffer inference'a gitmez).");
         }
         return _buffer;
     }
