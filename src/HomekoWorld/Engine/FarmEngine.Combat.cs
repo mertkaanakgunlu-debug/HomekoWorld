@@ -176,6 +176,11 @@ public sealed partial class FarmEngine
         _lastEngagedTrackId = target.TrackId; // kill sonrası MobTracker.MarkDead için kilitli iz kimliği
         bool walkHeld     = false;
         bool comboFiring  = false;
+        // 14.tur (2.3 — dış denetim bulgusu): tek-vuruş kill kuralının kanıtı engageStarted DEĞİL
+        // (non-archer'da baştan true — kombo hiç atılmadan da true'ydu, combo=null'da bile) —
+        // GERÇEKTEN en az bir FireAsync çağrıldı mı? Yanlış-Killed artık S3 kill-borcunu da
+        // kirletiyordu (beklenen-canlı erken 0'a iner → hareketsiz CANLI moblar bastırılır).
+        bool comboFiredOnce = false;
         bool engageStarted = !archerApproach; // archer dışı: yaklaşma yok → hemen kombo
         // Ölüm tespiti ZAMAN-tabanlı: HP barı (HSV ROI) bu kadar ms KESİNTİSİZ "kırmızı yok" okursa öldü.
         // Tick'ten BAĞIMSIZ (WtmTick 15/50 fark etmez). Tek titrek HSV karesinde yanlış-ölüm → canlı mob'u
@@ -277,7 +282,10 @@ public sealed partial class FarmEngine
             // kill-tetiği gecikiyor, (b) ceset MarkDead'siz kalıp yeniden problanıyor (cesede-tıklama beslemesi).
             // Çalıntı/deselect aynı imzayı verebilir ama solo spotta nadir; yanlış-pozitifte canlı mob geçici
             // hedeflenemez kalır ve kamera-flip churn'üyle kendini toparlar (7.tur gerekçesiyle tutarlı).
-            if (engageStarted)
+            // 14.tur (2.3): şart artık comboFiredOnce da istiyor — "kombo ateşlendi" iddiası gerçek kanıt
+            // (eskiden non-archer engageStarted=true yeterliydi; combo seçili değilken/hiç atılmamışken
+            // pencere kaybı da Killed sayılıp kill sayacı + S3 borcu kirlenebiliyordu → artık Lost).
+            if (engageStarted && comboFiredOnce)
                 return Finish(EngageResult.Killed, via + " + tek-vuruş (hasar örneklenemedi, kombo ateşlendi)");
             return Finish(EngageResult.Lost, via + " ama HASAR GÖRÜLMEDİ → kill sayılmaz (çalıntı/deselect/arıza?)");
         }
@@ -577,7 +585,8 @@ public sealed partial class FarmEngine
                 if (canFire)
                 {
                     _combo.FireAsync(combo!);
-                    comboFiring = true;
+                    comboFiring    = true;
+                    comboFiredOnce = true; // 14.tur (2.3): tek-vuruş kill kanıtı — gerçek ateşleme oldu
                     StatusChanged?.Invoke(this, $"Kombo: {combo!.Name}");
                 }
 

@@ -435,10 +435,14 @@ public sealed partial class FarmEngine
                     await CancelClickMovementAsync(ct);
 
                 // Mob hâlâ sahnede mi? — tıkladığımız TAZE konuma göre kontrol et.
+                // 14.tur (2.2 — dış denetim bulgusu): KİMLİK-önce + ölü/guardian DIŞI. Eski hâli yalnız
+                // tür+80px idi: komşu CESET/guardian "mob hâlâ orada" dedirtip ikinci denemeyi ve sonunda
+                // ceset-varsayımı yolunu (tıklanan CANLI ize yanlış MarkDead dahil) besleyebiliyordu.
                 var snap = _latestDetections;
                 bool mobStillThere = snap is not null && snap.Dets.Any(d =>
-                    d.ClassId == target.ClassId &&
-                    d.DistanceTo(liveTarget.Center) < 80f);
+                    !d.Dead && !d.Guardian &&
+                    (d.TrackId == liveTarget.TrackId ||
+                     (d.ClassId == target.ClassId && d.DistanceTo(liveTarget.Center) < 80f)));
 
                 if (!mobStillThere)
                 {
@@ -712,9 +716,14 @@ public sealed partial class FarmEngine
 
             if (Inferrer is not null)
             {
+                // 14.tur (2.2 — dış denetim bulgusu): KİMLİK-önce + ölü/guardian DIŞI — yoğun sürüde
+                // komşu ceset erken-çıkışı (çalıntı/despawn tespiti) bastırıp tam bütçeyi yaktırıyor,
+                // sonucu gereksiz ceset-varsayımına itiyordu.
                 var snap = _latestDetections;
                 bool stillThere = snap is not null && snap.Dets.Any(d =>
-                    d.ClassId == target.ClassId && d.DistanceTo(target.Center) < AcqMatchRadiusPx);
+                    !d.Dead && !d.Guardian &&
+                    (d.TrackId == target.TrackId ||
+                     (d.ClassId == target.ClassId && d.DistanceTo(target.Center) < AcqMatchRadiusPx)));
                 if (stillThere) lostSinceMs = -1;
                 else
                 {

@@ -84,8 +84,11 @@ public sealed class MobTracker
     public int   DeadLingerMs { get; set; } = 12_000;
     /// <summary>Ölü iz'in bu yarıçapı (px, merkez) içinde doğan YENİ (aynı tür) iz de "ölü" sayılır. Mob ölünce
     /// düşme animasyonu + ~85px düşüş bbox'ı değiştirip IoU'yu koparır → ceset yeni kimlik alır; bu köprü onu
-    /// yine "ölü" tutar (tekrar tıklama bitsin). Çok büyük tutma: yakın respawn'ı yanlışlıkla elemesin.</summary>
-    public int   DeadInheritRadiusPx { get; set; } = 110;
+    /// yine "ölü" tutar (tekrar tıklama bitsin). Çok büyük tutma: yakın respawn'ı yanlışlıkla elemesin.
+    /// 14.tur: 110→130 — 2026-07-13 canlı logda mirasların d=106-109px SINIR vakaları görüldü (110'u kılpayı
+    /// geçenler ceset-varsayımı üretiyordu). Geri-alma: 110. Canlı testte miras-DEAD + ceset-varsayım sayısı
+    /// birlikte izlenmeli (respawn yanlış-ölü riski artarsa geri dön).</summary>
+    public int   DeadInheritRadiusPx { get; set; } = 130;
 
     /// <summary>İsteğe bağlı teşhis günlüğü (null = kapalı). FarmEngine bunu Program.Log'a bağlar; YALNIZ seyrek
     /// olaylar yazılır (miras-DEAD tetiklendi: yeni doğan kutu yakındaki ölü izin "ölü" damgasını devraldı) → spam yok.</summary>
@@ -406,7 +409,14 @@ public sealed class MobTracker
             for (int k = _tracks.Count - 1; k >= 0; k--)
             {
                 var t = _tracks[k];
-                bool matchedNow = k < trackMatched.Length && trackMatched[k];
+                // 14.tur (2.1 — dış denetim bulgusu): k >= trackMatched.Length olan izler BU karenin
+                // adım-3'ünde DOĞDU (dizi eşleme başında, doğumlardan önce boyutlandı) → yaşlandırma ve
+                // silmeden MUAF. Eski davranış onları matchedNow=false sayıyordu: miras-DEAD iz eski
+                // DeadAtMs'iyle (>DeadLingerMs) doğduğu karede siliniyor, ceset sonraki karede miras
+                // bulamayıp CANLI doğuyordu (2026-07-13 canlı kanıt: kill→36ms sonra olu-track=0 →
+                // trk=11 ceset-varsayımı; ceset despawn 18sn > DeadLingerMs 12sn → pencere gerçek).
+                if (k >= trackMatched.Length) continue;
+                bool matchedNow = trackMatched[k];
                 if (t.Dead && nowMs - t.DeadAtMs > DeadLingerMs && !matchedNow)
                 {
                     _tracks.RemoveAt(k); continue;
