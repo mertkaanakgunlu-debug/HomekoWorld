@@ -4,16 +4,16 @@
 > güncellenir. Amaç: memory dosyalarındaki tarihçeyi tekrar tekrar okumadan bağlamı tek dosyadan almak.
 > Kısa tut (~150 satır tavan): burası GÜNCEL DURUM özetidir, tarihçe memory'de/git log'da.
 
-**Son güncelleme:** 2026-07-13 (15.tur — **Faz 6'nın canlı testi yapıldı, İKİ YENİ kök neden bulunup
-düzeltildi, "[Random] Wild Tyon" sorusu KULLANICI TARAFINDAN NETLEŞTİRİLDİ**. Kullanıcı Faz 6'yı publish
-edip test etti: "ilk başlarda hiç saldırmadı, tek tek seçti ama kombo başlamadı, sonra normale döndü; HUD
-'hedef taze karede yok' diyordu." Log+telemetry+replay (bugünkü 7 oturum, 20:04-20:35) derinlemesine
-incelendi (bkz [[farm-targeting-issues]] 15.tur). **İKİ kod düzeltmesi yapıldı + build/test YEŞİL +
-COMMIT+PUSH `711ef3f`** (henüz publish/canlı-test YOK). Yol boyunca bulunan "[Random] Wild Tyon" ismi
-guardian mi etkinlik-etiketi mi belirsizliği kullanıcıya soruldu → **cevap: isim HER İKİ türde de aynı,
-tek ayırt edici İSİM RENGİ (kırmızı=guardian, değilse=normal) — mevcut renk-tabanlı sistem zaten DOĞRU
-tasarım, guardian referans renklerine DOKUNULMADI.** Bu, bugün eklenen debounce fix'inin (tek-kare kırmızı
-flaşı elemek) tam olarak doğru ve yeterli çözüm olduğunu doğruluyor.)
+**Son güncelleme:** 2026-07-13 (15.tur — **Faz 6'nın canlı testinden İKİ YENİ kök neden bulunup düzeltildi,
+"[Random] Wild Tyon" sorusu netleşti, düzeltmeler CANLI TEST EDİLDİ ("son test başarılı göründü" — kullanıcı)
+VE HER İKİ installer (CUDA+DirectML) YENİDEN DERLENİP DAĞITIMA HAZIR HÂLE GETİRİLDİ.** Zincir: kullanıcı
+Faz 6'yı test etti ("ilk başlarda hiç saldırmadı… HUD 'hedef taze karede yok' diyordu") → log+telemetry+
+replay analiz edildi (bkz [[farm-targeting-issues]] 15.tur) → 2 kod düzeltmesi (taze-karede-yok artık
+tıklamayı iptal etmiyor + guardian kırmızı-flaş debounce) → "[Random] Wild Tyon" belirsizliği kullanıcıya
+soruldu, cevap: isim aynı, tek ayırt edici RENK — mevcut sistem doğru, dokunulmadı → **publish edilip canlı
+test edildi, kullanıcı "başarılı" dedi** → `release.ps1` ile CUDA+DirectML publish + iki installer derlendi
+(yol boyunca `release.ps1`'de gerçek bir bug bulunup düzeltildi — bkz altta). Commit'ler: `711ef3f`(fix)
+`8b3bd44`(handoff) `f5d974b`(release.ps1 fix), hepsi PUSH'LANDI.)
 
 ---
 
@@ -78,24 +78,30 @@ bulunan tek-kare kırmızı-flaş sorunuydu (bkz yukarı, KÖK NEDEN 2) — debo
 hesaplıyor (`TargetBarState.NameClass` vb.); `FarmEngine.Targeting` seçim otoritesini çerçeve YAPISINA
 bağlıyor. Bu katman DOĞRU/kalıcı — 15.tur yalnız ÜSTÜNE debounce + YOLO-bağımsızlık ekledi, kaldırmadı.
 
-- Git: main = origin/main. 15.tur commit'i PUSH'LANDI (`711ef3f`).
-- Versiyon 1.0.2 hâlâ tek-kaynak; installer'lar 13/14/15.tur commit'lerini İÇERMİYOR.
+### Dağıtım (15.tur sonu) — installer'lar YENİDEN DERLENDİ, güncel
+Kullanıcı publish edip aynı spotta canlı test etti: "son test başarılı göründü" → `release.ps1` tam
+zincir (CUDA+DirectML publish + iki ISCC installer) çalıştırıldı. **Yol boyunca `release.ps1`'de gerçek
+bir bug bulundu:** `_build-post.bat`'ı GÖRECELİ isimle çağırıyordu; arka-planda/etkileşimsiz PowerShell
+host'unda `Set-Location` sonrası `Environment.CurrentDirectory` senkron güncellenmediğinden alt-süreç
+(`cmd.exe`) dosyayı bulamayıp "tanınmıyor" hatasıyla yarım kalıyordu (ilk deneme başarısız oldu, exit 1).
+**FIX:** `Join-Path $repoRoot "_build-post.bat"` ile tam yol (`f5d974b`) — ikinci deneme baştan sona
+YEŞİL geçti. **Üretilen installer'lar (`Output\`):**
+- `HomekoWorld_Kurulum_NVIDIA.exe` — 164 MB, SHA-256 `AE712E1AD8FF9E923B0B3B015238424D81743BA73B7C940D7B508606C0CB0BB7`
+- `HomekoWorld_Kurulum_DirectML.exe` — 92.7 MB, SHA-256 `D2D292563D5E41FE6045674B1B94D1C0891266D7543A7DF0BC0FA1407D40DB94`
+
+İkisi de sürüm 1.0.2, commit `8b3bd44` kaynaklı (15.tur'un iki targeting-fix'ini + `[Random] Wild Tyon`
+netleştirmesini içeriyor — `release.ps1` fix'i `f5d974b` yalnız script'i etkiler, exe içeriğini değiştirmez).
+
+- Git: main = origin/main. Commit'ler: `711ef3f` `8b3bd44` `f5d974b` — hepsi PUSH'LANDI.
+- Versiyon 1.0.2 hâlâ tek-kaynak; installer'lar artık 15.tur'a kadar GÜNCEL.
 
 ## 4. AÇIK KONULAR / SIRADAKİ ADIMLAR (öncelik sırasıyla)
 
-1. **ANA GÜNDEM — 15.tur fix'lerinin canlı testi (henüz yapılmadı).** Publish (Build-Cuda, `release.ps1`
-   veya elle, exe kapalı) → aynı spotta oturum. Beklenenler:
-   - "Hedef taze karede yok" HUD mesajı ARTIK GÖRÜLMEMELİ (tıklama artık iptal edilmiyor).
-   - İlk birkaç saniyede "hiç saldırmama" deseni BİTMELİ (debounce fresh-selection kırmızı flaşını atlar).
-   - `[Farm] Guardian kontrol: sonuç=Guardian (2/2 yeniden-örnek doğruladı)` satırı yalnız ISRARLA kırmızı
-     kalan hedeflerde görülmeli; "ilk-okuma=Guardian ama yeniden-örnek(...)=Normal" satırı sık görülüyorsa
-     15.tur teşhisi (flaş) doğrulanmış olur.
-   - `guardian-red` oranı düşmeli (önceki gün bazı oturumlarda %50-70'e varıyordu).
-   - Gerçek guardian hâlâ doğru atlanmalı (regresyon yok — debounce yalnız ISRARLI kırmızıyı hükümlü sayar).
-2. **CUDA hash-pinning (backlog):** gerçek zip dosyalarının SHA-256'sı olmadan gömülü sabit yazılamazdı.
-3. **prefer_nhwc gerçek ölçümü (backlog):** `tools/yolo_trainer/replay_benchmark.py` henüz YAZILMADI.
-4. Müşteri dağıtım testi: installer'lar hâlâ eski commit'leri içeriyor — test onayından sonra.
-5. Otonom v2 (BEKLEMEDE — kullanıcı: acelesi yok).
+1. **CUDA hash-pinning (backlog):** gerçek zip dosyalarının SHA-256'sı olmadan gömülü sabit yazılamazdı.
+2. **prefer_nhwc gerçek ölçümü (backlog):** `tools/yolo_trainer/replay_benchmark.py` henüz YAZILMADI.
+3. Müşteriye installer dağıtımı: `Output\HomekoWorld_Kurulum_NVIDIA.exe`/`_DirectML.exe` hazır — kullanıcı
+   ne zaman/nasıl dağıtacağına karar verir (kod tarafında engel yok).
+4. Otonom v2 (BEKLEMEDE — kullanıcı: acelesi yok).
 
 ## 5. KRİTİK KOMUTLAR / KURALLAR
 
