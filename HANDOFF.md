@@ -4,10 +4,11 @@
 > güncellenir. Amaç: memory dosyalarındaki tarihçeyi tekrar tekrar okumadan bağlamı tek dosyadan almak.
 > Kısa tut (~150 satır tavan): burası GÜNCEL DURUM özetidir, tarihçe memory'de/git log'da.
 
-**Son güncelleme:** 2026-07-13 (14.tur — iki dış ChatGPT 5.6 denetimi kaynak koda karşı doğrulandı,
-13.tur'un ilk canlı testi (archer, 94sn) analiz edildi, Faz 1-5 + 7-8 UYGULANDI+PUSH'LANDI. Faz 6
-canlı-test-verisine bağlı, henüz publish/test edilmedi. Plan dosyası:
-~/.claude/plans/bu-bilgiler-nda-yapaca-m-z-ticklish-feigenbaum.md)
+**Son güncelleme:** 2026-07-13 (14.tur devam — **Faz 6 (guardian same-frame yeniden yazımı) UYGULANDI**.
+Kullanıcı, 14.tur Faz 1-5'i publish edip test etti; "normal moba saldırmıyor/atlıyor" davranışı SÜRDÜ →
+3. ChatGPT 5.6 review'ü (bug/mimari) kaynak koda karşı doğrulandı (5/5 bulgu gerçek), tam GPT yeniden
+yazımı seçildi ve kodlandı. Build+9 test YEŞİL. Henüz publish/canlı-test YOK. Plan dosyası:
+~/.claude/plans/c-users-mertk-desktop-chatgpt-5-6-revie-snuggly-wolf.md)
 
 ---
 
@@ -69,7 +70,24 @@ yanlış bulgular (overlay-capture, render-coalescing — zaten 13.turda çözü
 - **Faz 8 — deneysel:** `prefer_nhwc` anahtarı eklendi (varsayılan KAPALI) — `replay_benchmark.py`
   aracı `tools/yolo_trainer/` altında henüz YAZILMADI, gerçek A/B ölçümü YAPILAMADI.
 
-**Faz 6 (freshness gate + HP-onay DXGI birincilliği) KOŞULLU — Faz 1-5 canlı testinden SONRA.**
+### Faz 6 (2026-07-13) — guardian SAME-FRAME yeniden yazımı UYGULANDI (canlı test BEKLİYOR)
+14.tur Faz 1-5'in canlı testinde davranış sürünce kök neden threshold değil **karar sırası/kare
+bütünlüğü** olarak teşhis edildi (guardian, HP-yapısından KOPUK + RENK-YALNIZ + AYRI/gecikmeli GDI
+karesinde okunuyordu). Çözüm:
+- **`WtmVision.ScanTargetBar`** artık isim guardian sınıfını HP-yapısıyla **AYNI DXGI karesinde**, yapının
+  offset'inde hesaplar (`ReadNameplateClassFromFrame` → `ClassifyNameCore` unsafe; `TargetBarState`e
+  `NameClass/NameTextPx/NameGuardianVotes/NameUsedRefHue/NameDomHue/NameDomFrac` eklendi). Kök neden
+  kapandı: offset=0 duyuru-şeridi imkânsız (offset yapıdan), seçim-anı kırmızı vurgu yok (DXGI karesi saf).
+- **`FarmEngine.Targeting`:** `PollHpBarAsync`+`CheckGuardian`(GDI) → `WaitForSelectedTargetAsync` (seçim
+  otoritesi=çerçeve YAPISI, `CapturedAtMs>=clickIssuedAt` freshness) + `CheckGuardianAndReturnAsync` **saf
+  karar** (ekran/GDI/offset-arama YOK). Guardian HÜKMÜ yalnız ref-hue ile (fallback-kırmızı asla hüküm
+  vermez→saldır). Yapı-teyitsiz kısa-atlama + belirsizlikte RecordAcqFailure KALDIRILDI (GPT #2/#4).
+- **Deployment guard (`FarmEngine.cs`):** çerçeve şablonu kalibre DEĞİL + guardian açık → belirgin uyarı +
+  renk-alive fallback (guardian pasif). Shipped config'de şablon HAZIR gelir.
+- **Test:** `tests/.../GuardianClassificationTests.cs` (4 test) — mor=Normal, kırmızı=Guardian, ve KÖK NEDEN
+  kilidi: isim +57'de(yapı)→Normal, offset=0 duyuru-şeridi→yanlış Guardian. Tüm suite 9/9 yeşil.
+- ⏳ **BEKLEYEN:** publish (Build-Cuda/`release.ps1`, exe kapalı) → aynı spotta ~2dk canlı test. Risk:
+  yapı-teyit gecikmesi (~1 DXGI karesi); `AnnounceShiftY` gözlenen +57 kaymasıyla eşleşmeli.
 
 - Git: main = origin/main. 14.tur commit'leri: `5144012`(F1) `c0ffe3e`+temizlik(F2) → F3/F4/F5/F7/F8
   (sırayla push'landı, `git log --oneline -10` ile görülebilir).
@@ -77,14 +95,15 @@ yanlış bulgular (overlay-capture, render-coalescing — zaten 13.turda çözü
 
 ## 4. AÇIK KONULAR / SIRADAKİ ADIMLAR (öncelik sırasıyla)
 
-1. **ANA GÜNDEM — Faz 1-5+7-8 canlı testi (henüz yapılmadı).** Publish (Build-Cuda, `release.ps1`
+1. **ANA GÜNDEM — Faz 1-6 + 7-8 canlı testi (henüz yapılmadı).** Publish (Build-Cuda, `release.ps1`
    veya elle) → aynı spotta ~2dk oturum. Beklenenler:
-   - **Guardian-red** 35→≤10 (yalnız gerçek kırmızı-isimliler kalmalı); mor-normal moba 30sn-bl
-     YAZILMAMALI (`topHue=` mor iken Guardian satırı = hâlâ hata).
-   - **Geçiş medyanı** 8129ms→≤2500ms.
+   - **Guardian-red** 35→≤10; `[Farm] Guardian kontrol` satırında `topHue=`MOR iken sonuç=Guardian
+     ARTIK OLMAMALI; mor-normal moba iz-damga/30sn-bl YAZILMAMALI (Faz 6 kök-neden düzeltmesi).
+   - `sonuç=Guardian` yalnız gerçek kırmızı-isimli + `mod=ref-hue`; `mod=fallback-kırmızı` → hüküm YOK.
+   - **Geçiş medyanı** 8129ms→≤2500ms; atlama davranışı bitmeli, `ClicksConfirmed/ClicksIssued` yükselmeli.
    - **Ceset-varsayımı** 5→≤2 (MobTracker düzeltmesi + 130px yarıçapı).
-   - **HUD yüzdesi** artık `ClicksConfirmed/ClicksIssued` — eski `%` ile DOĞRUDAN kıyaslanamaz.
-   - `telemetry/*.jsonl` dosyasının oluştuğu + dolu olduğu kontrol edilmeli (ilk gerçek kullanım).
+   - `telemetry/*.jsonl`: `guardian_block` yalnız gerçek ref-hue hükümlerinde (`acq_attempt`).
+   - Gerçek guardian (5 normal + 1 guardian spotu) doğru atlanmalı — regresyon yok.
 2. **Kullanıcı ayarı (kod dışı, test ÖNCESİ yapılmalı):** bu spot için `RegionMobCount=7` → **5**
    (kullanıcı teyidi: 5 normal + 1 guardian). S3 nüfus muhasebesi şu ana kadar hiç tetiklenmedi.
 3. Test sonucuna göre: Faz 6 (freshness gate + DXGI-birincil HP-onay) değerlendirilir; eşik ince-ayarı

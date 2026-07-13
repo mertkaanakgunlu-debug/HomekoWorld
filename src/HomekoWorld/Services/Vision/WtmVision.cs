@@ -14,7 +14,18 @@ public readonly record struct TargetBarState(
     int   OffsetY,            // duyuru offseti: yapı bulunduysa yapıdan, yoksa renk taramasından
     int   Red, int Dark, int Total, float DarkFrac, float FillFrac,
     bool  RedAlive,           // BarPresent kararı (legacy canlı + doluluk/hasar ölçümü)
-    long  StampMs);
+    long  StampMs,
+    // ── 14.tur (Faz 6): SAME-FRAME isim sınıflandırması ──────────────────────────────────────────
+    // Guardian kararı ARTIK ayrı/gecikmeli bir GDI okumasından değil, HP-yapısıyla AYNI DXGI karesinde,
+    // yapının verdiği OffsetY'de hesaplanan bu alandan verilir (kök neden: offset=0 duyuru-şeridi +
+    // seçim-anı geçici kırmızı vurgu, ikisi de çapraz-kare/renk-yalnız okumadan geliyordu). Yalnız
+    // StructurePresent iken doldurulur; aksi hâlde NameClass=Unknown (pencere kapalı / seçili değil).
+    WtmVision.NameplateClass NameClass = WtmVision.NameplateClass.Unknown,
+    int   NameTextPx        = 0,     // sınıflandırmaya giren "renkli yazı" piksel sayısı (payda)
+    int   NameGuardianVotes = 0,     // guardian oyu veren piksel sayısı (pay)
+    bool  NameUsedRefHue    = false, // referans-renk modu mu (kalibre normal+guardian) — hüküm ŞARTI
+    float NameDomHue        = -1f,   // bandın ham dominant hue'su (teşhis: mor isim / kırmızı vurgu / turuncu şerit)
+    float NameDomFrac       = 0f);
 
 public static class WtmVision
 {
@@ -202,8 +213,20 @@ public static class WtmVision
             }
         }
 
+        // 14.tur (Faz 6): SAME-FRAME isim sınıflandırması. Yapı AÇIK (pencere seçili) + isim bandı kalibre
+        // ise ismi AYNI `frame`'den, yapının verdiği `offsetY`'de sınıflandır. Bu, guardian kararının kök
+        // nedenlerini yapısal olarak çözer: (a) offset artık yapıdan (duyuru-şeridi offset=0 imkânsız),
+        // (b) isim DXGI karesinden okunur (seçim-anı geçici kırmızı vurgu bu karede yok — saf mor). Yalnız
+        // present iken çalışır → maliyet yok/seçili olmayan karede yok. Guardian kapalıysa hiç hesaplanmaz.
+        var nameClass = NameplateClass.Unknown;
+        int   nTextPx = 0, nVotes = 0; bool nRefHue = false; float nDomHue = -1f, nDomFrac = 0f;
+        if (present && s.GuardianDetectionEnabled && (s.IsNameBandCalibrated || s.IsTargetHpColorCalibrated))
+            nameClass = ReadNameplateClassFromFrame(frame, s, offsetY,
+                out nTextPx, out nVotes, out nRefHue, out nDomHue, out nDomFrac);
+
         var tb = new TargetBarState(known, present, score, offsetY,
-            ls.red, ls.dark, ls.total, ls.darkFrac, ls.fillFrac, redAlive, LastBarScanAtMs);
+            ls.red, ls.dark, ls.total, ls.darkFrac, ls.fillFrac, redAlive, LastBarScanAtMs,
+            nameClass, nTextPx, nVotes, nRefHue, nDomHue, nDomFrac);
         LastTargetBar = tb;
         return tb;
     }
@@ -594,7 +617,32 @@ public static class WtmVision
         out int textPixels, out int guardianVotes, out bool usedRefHue, out float domHue, out float domFrac)
     {
         textPixels = 0; guardianVotes = 0; usedRefHue = false; domHue = -1f; domFrac = 0f;
-        // Tarama dikdörtgenini seç (master px): önce çizilen bant, yoksa ofset fallback.
+        if (!TryGetNameBandRectMapped(s, out var r)) return NameplateClass.Unknown;
+        // GDI yolu (frame=null): kendi CaptureRegion'ını yapar. Faz 6'dan sonra guardian kararı bunu
+        // KULLANMAZ (same-frame ReadNameplateClassFromFrame'e taşındı); bu overload kalibrasyon/test UI
+        // için korunur.
+        return ClassifyNameRect(null, r.X, r.Y + barOffsetY, r.Width, r.Height, s,
+            out textPixels, out guardianVotes, out usedRefHue, out domHue, out domFrac);
+    }
+
+    /// <summary>14.tur (Faz 6): SAME-FRAME nameplate sınıflandırması — ismi ayrı bir GDI yakalamasından
+    /// DEĞİL, ScanTargetBar'ın elindeki DXGI <paramref name="frame"/>'inden okur. Guardian kararının kök
+    /// nedenlerini kapatır: offset yapıdan gelir (duyuru-şeridi offset=0 imkânsız) ve isim, seçim-anı
+    /// geçici kırmızı vurgunun HENÜZ olmadığı DXGI karesinden (saf mor) okunur. `frame` tam-ekran olmalı
+    /// (ScanTargetBar yalnız roiX==0&&roiY==0'da çağrılır → frame koord == ekran koord).</summary>
+    public static NameplateClass ReadNameplateClassFromFrame(Bitmap frame, WtmSettings s, int barOffsetY,
+        out int textPixels, out int guardianVotes, out bool usedRefHue, out float domHue, out float domFrac)
+    {
+        textPixels = 0; guardianVotes = 0; usedRefHue = false; domHue = -1f; domFrac = 0f;
+        if (!TryGetNameBandRectMapped(s, out var r)) return NameplateClass.Unknown;
+        return ClassifyNameRect(frame, r.X, r.Y + barOffsetY, r.Width, r.Height, s,
+            out textPixels, out guardianVotes, out usedRefHue, out domHue, out domFrac);
+    }
+
+    /// <summary>İsim bandı tarama dikdörtgenini (ekran px, offset UYGULANMADAN) seçer: önce çizilen NameBand,
+    /// yoksa HpColorScanY + NameplateOffsetY fallback bandı. Geçerli değilse false.</summary>
+    private static bool TryGetNameBandRectMapped(WtmSettings s, out Rectangle mapped)
+    {
         int rx, ry, rw, rh;
         if (s.IsNameBandCalibrated)
         {
@@ -609,21 +657,21 @@ public static class WtmVision
         }
         else
         {
-            return NameplateClass.Unknown;
+            mapped = Rectangle.Empty;
+            return false;
         }
-        if (rw <= 0 || rh <= 0 || ry <= 0) return NameplateClass.Unknown;
-
+        if (rw <= 0 || rh <= 0 || ry <= 0) { mapped = Rectangle.Empty; return false; }
         // Master → geçerli ekran (anchor-aware). İsim bandı top-center çapasına oturur.
-        var r = ResolutionMapper.Map(rx, ry, rw, rh);
-        // KÖK NEDEN (2026-06-22): isim, HP barıyla AYNI miktar kayar. Eskiden NameBand VE NameBand+Δy ikisi de
-        // sınıflandırılıp OR'lanıyordu → duyuru KAPALIYKEN +Δy bandı tam KIRMIZI HP barına denk gelip ("kırmızı
-        // isim=guardian") HER mobu koruma sanıyor, engage HİÇ olmuyordu. DÜZELTME: ismi, barın GERÇEKTE bulunduğu
-        // offset'te (barOffsetY: 0=duyuru yok, +Δy=duyuru var) TEK konumda sınıflandır → HP barıyla çakışma biter,
-        // guardian hem duyuru açık hem kapalıyken doğru çalışır.
-        return ClassifyNameRect(r.X, r.Y + barOffsetY, r.Width, r.Height, s, out textPixels, out guardianVotes, out usedRefHue, out domHue, out domFrac);
+        // KÖK NEDEN (2026-06-22): isim, HP barıyla AYNI miktar kayar → çağıran barOffsetY'yi (0/+Δy) TEK
+        // konumda uygular (eski NameBand VE NameBand+Δy OR'u duyuru kapalıyken kırmızı bara denk gelip
+        // her mobu guardian sanıyordu).
+        mapped = ResolutionMapper.Map(rx, ry, rw, rh);
+        return true;
     }
 
-    /// <summary>Verilen ekran dikdörtgenini yakalar ve HSV ile nameplate sınıfı döndürür.</summary>
+    /// <summary>Verilen dikdörtgeni sınıflandırır. <paramref name="frame"/> null ise kendi CaptureRegion'ını
+    /// yapar (GDI/legacy yol); non-null ise o tam-ekran karesinin alt-dikdörtgeninden (yeni yakalama YOK)
+    /// okur (Faz 6 same-frame yolu). Piksel mantığı ortaktır (<see cref="ClassifyNameCore"/>).</summary>
     /// <remarks>
     /// İKİ MOD:
     ///  (A) Referans-renk (tercih): kullanıcı Normal + Koruma isim renklerini kalibre ettiyse,
@@ -633,11 +681,47 @@ public static class WtmVision
     ///      için sabit "kırmızı=koruma" mantığı her mobu koruma sanıyordu — KÖK NEDEN buydu).
     ///  (B) Fallback (referanslar yoksa/doygun değilse): eski sabit kırmızı-hue bandı.
     /// </remarks>
-    private static NameplateClass ClassifyNameRect(int rx, int ry, int rw, int rh, WtmSettings s,
+    private static unsafe NameplateClass ClassifyNameRect(Bitmap? frame, int rx, int ry, int rw, int rh, WtmSettings s,
         out int textPixels, out int guardianVotes, out bool usedRefHue, out float domHue, out float domFrac)
     {
         textPixels = 0; guardianVotes = 0; usedRefHue = false; domHue = -1f; domFrac = 0f;
         if (rw <= 0 || rh <= 0 || ry < 0) return NameplateClass.Unknown;
+
+        if (frame is null)
+        {
+            using var bmp = CaptureRegion(rx, ry, rw, rh);
+            var data = bmp.LockBits(new Rectangle(0, 0, rw, rh), ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
+            try
+            {
+                return ClassifyNameCore((byte*)data.Scan0, data.Stride, rw, rh, s,
+                    out textPixels, out guardianVotes, out usedRefHue, out domHue, out domFrac);
+            }
+            finally { bmp.UnlockBits(data); }
+        }
+        else
+        {
+            // frame tam-ekran → rect frame koordinatı; sınırlara kırp (CountRedHsvFromFrame ile aynı).
+            if (rx < 0) rx = 0;
+            if (ry < 0) ry = 0;
+            if (rx + rw > frame.Width)  rw = frame.Width  - rx;
+            if (ry + rh > frame.Height) rh = frame.Height - ry;
+            if (rw <= 0 || rh <= 0) return NameplateClass.Unknown;
+            var data = frame.LockBits(new Rectangle(rx, ry, rw, rh), ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
+            try
+            {
+                return ClassifyNameCore((byte*)data.Scan0, data.Stride, rw, rh, s,
+                    out textPixels, out guardianVotes, out usedRefHue, out domHue, out domFrac);
+            }
+            finally { frame.UnlockBits(data); }
+        }
+    }
+
+    /// <summary>Kilitli bir BGRA bölgesi (Scan0+stride, rw×rh) üzerinde nameplate sınıf mantığı — GDI ve
+    /// frame yollarının ORTAK çekirdeği. Yakalama/kilit stratejisi çağıranda; burada yalnız piksel kararı.</summary>
+    private static unsafe NameplateClass ClassifyNameCore(byte* basePtr, int stride, int rw, int rh, WtmSettings s,
+        out int textPixels, out int guardianVotes, out bool usedRefHue, out float domHue, out float domFrac)
+    {
+        textPixels = 0; guardianVotes = 0; domHue = -1f; domFrac = 0f;
 
         // 14.tur: bandın HAM renk profili (10°lik 36 kova) — MaxDist elemesinden ÖNCE doldurulur ki
         // "bant o an neyi görüyordu" (mor isim / kırmızı vurgu / duyuru turuncusu) logdan okunsun.
@@ -651,56 +735,40 @@ public static class WtmVision
                          && HueDist(normalHue, guardianHue) >= 15f; // ayırt edilebilir iki renk
         usedRefHue = useRefHue;
 
-        using var bmp  = CaptureRegion(rx, ry, rw, rh);
-        var       rect = new Rectangle(0, 0, rw, rh);
-        var       data = bmp.LockBits(rect, ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
-
-        try
+        // BGRA byte sırası: px[0]=B, px[1]=G, px[2]=R
+        for (int y = 0; y < rh; y++)
         {
-            int stride = Math.Abs(data.Stride);
-            int needed = stride * rh;
-            if (_nameBandBuf is null || _nameBandBuf.Length < needed)
-                _nameBandBuf = new byte[needed];
-            var buf = _nameBandBuf;
-            Marshal.Copy(data.Scan0, buf, 0, needed);
-
-            // BGRA byte sırası: pos+0=B, pos+1=G, pos+2=R, pos+3=A
-            for (int y = 0; y < rh; y++)
+            byte* rowp = basePtr + (long)y * stride;
+            for (int x = 0; x < rw; x++)
             {
-                int row = y * stride;
-                for (int x = 0; x < rw; x++)
+                byte* px = rowp + x * 4;
+                RgbToHsv(px[2], px[1], px[0], out float hue, out float sat, out float val);
+                if (val < s.NameplateMinVal) continue; // siyah çerçeve/gölge/koyu arka plan
+                if (sat < s.NameplateMinSat) continue; // beyaz/gri → renkli yazı değil
+
+                hueHist[Math.Clamp((int)(hue / 10f), 0, 35)]++; // 14.tur: ham profil (eleme öncesi)
+                histTotal++;
+
+                if (useRefHue)
                 {
-                    int pos = row + x * 4;
-                    byte b = buf[pos], g = buf[pos + 1], r = buf[pos + 2];
-                    RgbToHsv(r, g, b, out float hue, out float sat, out float val);
-                    if (val < s.NameplateMinVal) continue; // siyah çerçeve/gölge/koyu arka plan
-                    if (sat < s.NameplateMinSat) continue; // beyaz/gri → renkli yazı değil
-
-                    hueHist[Math.Clamp((int)(hue / 10f), 0, 35)]++; // 14.tur: ham profil (eleme öncesi)
-                    histTotal++;
-
-                    if (useRefHue)
-                    {
-                        // 10.tur-c: piksel ikisinin EN YAKININA göre bile makul mesafede değilse
-                        // (arka-plan/parıltı/efekt — isim rengi DEĞİL) hiç sayma; payda gürültüyle şişip
-                        // guardian oranını sulandırmasın (canlı-log kanıtı: piksel sabit ~%86 dolu ama
-                        // guardian-oy 0↔2512 sıçrıyordu — bant isim-dışı büyük bir öğeyi de kapsıyordu).
-                        float dNormal   = HueDist(hue, normalHue);
-                        float dGuardian = HueDist(hue, guardianHue);
-                        if (Math.Min(dNormal, dGuardian) > s.NameplateRefHueMaxDist) continue;
-                        textPixels++;
-                        if (dGuardian < dNormal) guardianVotes++;
-                    }
-                    else
-                    {
-                        textPixels++;
-                        if (hue <= s.NameplateRedHueLo || hue >= s.NameplateRedHueHi)
-                            guardianVotes++;   // fallback: sabit kırmızı bandı
-                    }
+                    // 10.tur-c: piksel ikisinin EN YAKININA göre bile makul mesafede değilse
+                    // (arka-plan/parıltı/efekt — isim rengi DEĞİL) hiç sayma; payda gürültüyle şişip
+                    // guardian oranını sulandırmasın (canlı-log kanıtı: piksel sabit ~%86 dolu ama
+                    // guardian-oy 0↔2512 sıçrıyordu — bant isim-dışı büyük bir öğeyi de kapsıyordu).
+                    float dNormal   = HueDist(hue, normalHue);
+                    float dGuardian = HueDist(hue, guardianHue);
+                    if (Math.Min(dNormal, dGuardian) > s.NameplateRefHueMaxDist) continue;
+                    textPixels++;
+                    if (dGuardian < dNormal) guardianVotes++;
+                }
+                else
+                {
+                    textPixels++;
+                    if (hue <= s.NameplateRedHueLo || hue >= s.NameplateRedHueHi)
+                        guardianVotes++;   // fallback: sabit kırmızı bandı
                 }
             }
         }
-        finally { bmp.UnlockBits(data); }
 
         // 14.tur: dominant kova → domHue (kova merkezi) + domFrac (renkli piksellere oranı).
         if (histTotal > 0)
@@ -729,8 +797,6 @@ public static class WtmVision
         return d > 180f ? 360f - d : d;
     }
 
-    // Bant taraması için yeniden kullanılan buffer — her çağrıda heap allocation önler.
-    [ThreadStatic] private static byte[]? _nameBandBuf;
 
     // ── ML HP bar altyapısı — ROI yakalama + temporal smoothing ─────────────
 

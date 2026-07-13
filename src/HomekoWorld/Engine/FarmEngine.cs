@@ -445,6 +445,16 @@ public sealed partial class FarmEngine
             Program.Log($"[Farm] V4 çerçeve şablonu aktif: {_frameTemplates.Count} örnek " +
                         $"@({pr.X},{pr.Y} {pr.Width}×{pr.Height}) eşik={wtmV4.TargetFrameMatchThreshold:F2}");
         }
+        else if (wtmV4.GuardianDetectionEnabled)
+        {
+            // 14.tur (Faz 6): guardian/seçim otoritesi çerçeve YAPISINA taşındı. Şablon kalibre değilse
+            // seçim renk-alive fallback'ine düşer ve GUARDIAN TESPİTİ ÇALIŞMAZ (same-frame isim sınıfı
+            // yalnız yapı AÇIKken hesaplanır). Shipped config'de şablon HAZIR gelir; bu uyarı yalnız
+            // kalibre-edilmemiş müşteri PC'sinde görünür → sessiz "guardian'a vurma" yerine görünür sinyal.
+            Program.Log("[Farm] ⚠ V4 çerçeve şablonu KALİBRE DEĞİL — yapı-tabanlı seçim/guardian PASİF, " +
+                        "renk-alive fallback'ine düşülüyor (koruma mobu ayırt edilemez).");
+            StatusChanged?.Invoke(this, "⚠ Çerçeve şablonu kalibre değil — guardian pasif (renk fallback)");
+        }
 
         // Object tracker'ı sıfırla + ayarlardan eşikleri uygula (yeni oturum = temiz izler).
         _tracker.Reset();
