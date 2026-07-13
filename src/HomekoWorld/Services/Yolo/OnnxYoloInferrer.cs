@@ -71,6 +71,12 @@ public sealed class OnnxYoloInferrer : IYoloInferrer, IDisposable
         set => _iouThresh = Math.Clamp(value, 0.20f, 0.80f);
     }
 
+    /// <summary>14.tur (Faz 8, DENEYSEL): CUDA EP'ye prefer_nhwc geçirilsin mi (bkz OrtEpFactory.Create
+    /// dokümantasyonu — ölçülmeden varsayılan false). ConfThreshold/IouThreshold'un AKSİNE dinamik
+    /// DEĞİL: yalnız bir sonraki <see cref="Load"/> (→BuildSession) çağrısında etkili olur — zaten
+    /// kurulu bir session'ın EP ayarını çalışırken değiştirmez. Load()'dan ÖNCE set edilmeli.</summary>
+    public bool PreferNhwc { get; set; }
+
     // ── P2: çok-slot tensor havuzu (pipelining) ───────────────────────────────
     // Eskiden tek _tensorBuf (seri). Pipeline'da üretici (PreprocessInto) ve tüketici (InferSlot)
     // FARKLI slotlarda eşzamanlı çalışır → çakışma yok. Slot sahipliğini FarmEngine yönetir (free-pool +
@@ -175,7 +181,7 @@ public sealed class OnnxYoloInferrer : IYoloInferrer, IDisposable
         // sızıntıydı.
         try
         {
-            using var opts = OrtEpFactory.Create(backend, out _epUsed);
+            using var opts = OrtEpFactory.Create(backend, out _epUsed, PreferNhwc);
             _session = new InferenceSession(_onnxPath, opts);
             HomekoWorld.Program.Log($"[YOLO] Execution provider: {_epUsed}");
             LogModelDiag();

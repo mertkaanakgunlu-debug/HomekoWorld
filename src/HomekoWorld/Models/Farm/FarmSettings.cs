@@ -160,6 +160,12 @@ public class FarmSettings
     /// (NVIDIA TensorRT/CUDA yalnız ayrı 'Cuda' build flavor'ında — HOMEKO_CUDA.)
     /// </summary>
     public InferenceBackend InferenceBackend { get; set; } = InferenceBackend.Auto;
+
+    /// <summary>14.tur (Faz 8, DENEYSEL — yalnız HOMEKO_CUDA build'inde etkili): CUDA EP'ye
+    /// prefer_nhwc=1 geçirilsin mi. Varsayılan false = mevcut davranış birebir korunur. Bu ayar
+    /// UI'da GÖSTERİLMEZ (ölçülmeden açılan bir bayrak kullanıcıyı yanıltmasın) — yalnız gerçek bir
+    /// A/B kıyası (bkz OnnxYoloInferrer.PreferNhwc dokümantasyonu) sonrası kod/varsayılan güncellenmeli.</summary>
+    public bool CudaPreferNhwc { get; set; } = false;
     public int    FaceTargetRetapMs        { get; set; } = 150;
     /// <summary>
     /// Angaje kilidi GÜVENLİK zaman aşımı (ms): bu süre boyunca menzile girilemezse kombo

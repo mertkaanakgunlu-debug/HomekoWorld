@@ -315,6 +315,9 @@ public partial class MainViewModel
         {
             FarmStatus = "Model yükleniyor…";
             var inferrer = new OnnxYoloInferrer();
+            // 14.tur (Faz 8, deneysel): Load()'dan ÖNCE — BuildSession() bunu okur, Load() sonrası
+            // set etmek zaten kurulu session'ı DEĞİŞTİRMEZ (bkz PreferNhwc dokümantasyonu).
+            inferrer.PreferNhwc = _state.Farm.CudaPreferNhwc;
             // classNames: mobs.json sıralı isimleri
             var names = _mobLibrary.Mobs.OrderBy(m => m.Id).Select(m => m.NameEn).ToList();
             inferrer.Load(value, names.Count > 0 ? names : null, _state.Farm.ModelInputSize, _state.Farm.InferenceBackend);

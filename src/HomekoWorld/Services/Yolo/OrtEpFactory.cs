@@ -64,7 +64,14 @@ public static class OrtEpFactory
     /// Verilen tercihe göre <see cref="SessionOptions"/> üretir; gerçekte kurulan EP adını <paramref name="epUsed"/>'a yazar.
     /// Hiçbir koşulda fırlatmaz (GPU EP eklenemezse CPU'ya düşer).
     /// </summary>
-    public static SessionOptions Create(InferenceBackend backend, out string epUsed)
+    /// <param name="preferNhwc">14.tur (Faz 8, DENEYSEL): true → CUDA EP'ye prefer_nhwc=1 geçirilir.
+    /// ORT 1.20+ convolution ağırlıklı modellerde tensor-core dostu NHWC yolunu tercih edebilir AMA ek
+    /// transpose operatörleri oluşursa tersine de dönebilir. VARSAYILAN false (mevcut davranış birebir
+    /// korunur) — bu ayar yalnız ÖLÇÜLMÜŞ bir A/B kıyası (GPU run p50/p95 + kutu eşleşmesi, aynı replay
+    /// üzerinde) sonrası kalıcı açılmalı. Bu turda ölçüm aracı (replay_benchmark.py, tools/yolo_trainer/
+    /// altında planlanmıştı) henüz YAZILMADI — gerçek A/B bu commit'e dahil DEĞİL, yalnız deneye izin
+    /// veren anahtar eklendi (bkz HANDOFF Faz E notu).</param>
+    public static SessionOptions Create(InferenceBackend backend, out string epUsed, bool preferNhwc = false)
     {
         var opts = new SessionOptions 
         { 
@@ -95,6 +102,7 @@ public static class OrtEpFactory
                     ["cudnn_conv_algo_search"]       = "EXHAUSTIVE",     // sabit şekil → en hızlı conv (warmup soğurur)
                     ["cudnn_conv_use_max_workspace"] = "1",             // cuDNN daha hızlı algoritma seçebilsin
                     ["do_copy_in_default_stream"]    = "1",             // H2D/D2H kopyaları compute stream'inde → senkron
+                    ["prefer_nhwc"]                  = preferNhwc ? "1" : "0", // 14.tur (Faz 8, deneysel — ölçülmeden açılmadı)
                 });
                 opts.AppendExecutionProvider_CUDA(cudaOpts); // ayarlar append'te kopyalanır → cudaOpts dispose edilebilir
                 epUsed = "CUDA";
