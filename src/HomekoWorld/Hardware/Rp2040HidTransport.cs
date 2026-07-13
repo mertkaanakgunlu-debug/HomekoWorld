@@ -285,6 +285,12 @@ public sealed class Rp2040HidTransport : IKeyDeviceTransport
     }
 
     // ── Fare ────────────────────────────────────────────────────────────────
+
+    /// <summary>14.tur (Faz 3.3): true = tek büyük relative-delta + doğrulama (yeni, varsayılan);
+    /// false = yalnız eski 120px-adım/2ms servo döngüsü (geri-alma — FarmSettings.AtomicMouseMove'dan
+    /// TransportRouter üzerinden set edilir, farm Start()'ta).</summary>
+    public bool AtomicMouseMove { get; set; } = true;
+
     /// <summary>
     /// Fareyi ekran pikseline taşır — relative HID + closed-loop homing.
     /// Gerçek imleci (GetCursorPos) hedefe servolar → her çözünürlük/DPI/monitör,
@@ -298,6 +304,15 @@ public sealed class Rp2040HidTransport : IKeyDeviceTransport
         if (_stream is null) return;
         if (_savedAccel is null) DisableAcceleration();   // ilk harekette accel'i kapat
         const int tol = 2, maxStep = 120, maxIters = 40;
+
+        // 14.tur (Faz 3.3): protokol ZATEN tek raporda i16 delta taşıyor ve firmware >127'yi kendi
+        // 1ms HID raporlarına bölüyor (bkz SendMouseRel yorumu) — eski 120px/2ms PC-tarafı servo
+        // döngüsü firmware'in zaten yaptığı işi tekrarlıyordu (dış denetim tespiti). Kapalı-döngü
+        // son-doğrulama KORUNUR (DPI/pointer-acceleration/müşteri-PC dayanıklılığı için tek atımlık
+        // "gönder ve umut et" YETERSİZ) — yalnız normal yolda gereksiz ara-adımlar elenir.
+        if (AtomicMouseMove && await TryAtomicMoveAsync(x, y, tol, ct).ConfigureAwait(false))
+            return;
+
         for (int i = 0; i < maxIters && !ct.IsCancellationRequested; i++)
         {
             if (!GetCursorPos(out var p)) break;
@@ -307,6 +322,32 @@ public sealed class Rp2040HidTransport : IKeyDeviceTransport
             try { await Task.Delay(2, ct).ConfigureAwait(false); }   // imleç güncellensin
             catch (OperationCanceledException) { return; }
         }
+    }
+
+    /// <summary>Tek tam-delta raporu + tahmini bekleme + doğrulama, en fazla 2 düzeltme adımıyla.
+    /// Döner: true = hedefe ulaşıldı (tol içinde) VEYA iptal edildi (çağıran zaten dönecek);
+    /// false = 2 düzeltmeden sonra hâlâ tol dışında → çağıran eski servo döngüsüne düşer (güvenlik ağı).</summary>
+    private async Task<bool> TryAtomicMoveAsync(int x, int y, int tol, CancellationToken ct)
+    {
+        if (!GetCursorPos(out var p0)) return false;
+        int dx = x - p0.X, dy = y - p0.Y;
+        if (Math.Abs(dx) <= tol && Math.Abs(dy) <= tol) return true;   // zaten hedefte
+
+        for (int correction = 0; correction <= 2; correction++)
+        {
+            SendMouseRel(dx, dy);   // firmware >127'yi 1ms HID raporlarına parçalar
+            int maxAxis = Math.Max(Math.Abs(dx), Math.Abs(dy));
+            int reports = (int)Math.Ceiling(maxAxis / 127.0);
+            int waitMs  = Math.Max(3, (int)Math.Ceiling(reports * 1.5) + 2); // rapor-başı ~1.5ms + gönderim payı
+
+            try { await Task.Delay(waitMs, ct).ConfigureAwait(false); }
+            catch (OperationCanceledException) { return true; }   // iptal — çağıran zaten dönecek
+
+            if (!GetCursorPos(out var p)) return false;
+            dx = x - p.X; dy = y - p.Y;
+            if (Math.Abs(dx) <= tol && Math.Abs(dy) <= tol) return true;
+        }
+        return false;
     }
 
     public Task MoveRelAsync(int dx, int dy, CancellationToken ct = default)

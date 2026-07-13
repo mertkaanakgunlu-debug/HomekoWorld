@@ -199,6 +199,15 @@ public class FarmSettings
     /// </summary>
     public int    ClickPostDelayMs         { get; set; } = 0;
 
+    /// <summary>
+    /// 14.tur (Faz 3.3): RP2040 fare hareketini tek büyük relative-delta raporuyla gönderir
+    /// (protokol zaten destekliyor — OpMouseRel[dx:i16,dy:i16], firmware &gt;127'yi kendi böler)
+    /// + tahmini bekleme + tek doğrulama + gerekirse ≤2 düzeltme adımı; eski 120px-adım/2ms/40-iterasyon
+    /// servo döngüsü yalnız bu YETMEZSE (hâlâ tol dışındaysa) fallback olarak çalışır. true = varsayılan
+    /// (yeni yol); false = geri-alma (yalnız eski servo döngüsü — jitter/DPI şüphesinde).
+    /// </summary>
+    public bool   AtomicMouseMove          { get; set; } = true;
+
     // ── Kamera-hareket kapısı (13.tur / S5) ───────────────────────────────────
     /// <summary>
     /// Global sahne-akışı (px/ms) bu eşiğin ÜSTÜNDEyken tıklama ertelenir. Veri (2026-07-11

@@ -126,6 +126,7 @@ public sealed partial class FarmEngine
 
                     _latestDetections = new DetectionSnapshot(
                         frameId, dets, snapW, snapH, capStart, NowMs(), barState);
+                    SignalNewSnapshot();   // 14.tur (Faz 3.2): FarmLoop'u anında uyandır
 
                     PublishOverlay(dets, s, snapW, snapH);
 
@@ -401,6 +402,7 @@ public sealed partial class FarmEngine
 
                     _latestDetections = new DetectionSnapshot(
                         item.FrameId, dets, snapW, snapH, item.CapturedAtMs, NowMs(), item.Bar);
+                    SignalNewSnapshot();   // 14.tur (Faz 3.2): FarmLoop'u anında uyandır
                     PublishOverlay(dets, _appState.Farm, snapW, snapH);
 
                     if (item.ReplayClone is { } clone)

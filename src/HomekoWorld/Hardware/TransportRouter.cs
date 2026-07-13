@@ -72,6 +72,10 @@ public sealed class TransportRouter : IKeyDeviceTransport
     // Faz 9: RP2040'ı BOOTSEL'e sokar (app-içi firmware güncelleme).
     public Task RebootRp2040ToBootloaderAsync() => _rp2040.RebootToBootloaderAsync();
 
+    // 14.tur (Faz 3.3): FarmSettings.AtomicMouseMove'u RP2040 transport'una uygular (aktif mod
+    // Wifi/Local olsa da zararsız — yalnız Rp2040HidTransport.MoveAbsAsync bu bayrağı okur).
+    public bool Rp2040AtomicMouseMove { set => _rp2040.AtomicMouseMove = value; }
+
     // ── IKeyDeviceTransport forwarding ────────────────────────────────────────
 
     public Task<bool> ConnectAsync(string host, int port, CancellationToken ct = default)

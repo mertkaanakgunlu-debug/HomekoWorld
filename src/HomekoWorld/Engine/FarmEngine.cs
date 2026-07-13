@@ -213,6 +213,20 @@ public sealed partial class FarmEngine
     private PipeItem?                   _pending;                  // latest-wins mailbox (≤1)
     private readonly AutoResetEvent     _pipeSignal = new(false);  // tüketici uyandırma
 
+    // 14.tur (Faz 3.2): event-driven scanning. FarmLoop eskiden her tick sonunda sabit 30ms
+    // bekliyordu — yeni snapshot beklemenin HEMEN başında gelirse karar katmanı ~30ms'e kadar
+    // boşuna bekliyordu (ort. yarım tick ≈15ms). _latestDetections'ı yazan İKİ yol (DetectionLoop
+    // seri, InferConsumeLoop pipelined) yazımdan hemen sonra bu sinyali verir; FarmLoop 50ms
+    // fallback'li WaitAsync ile bekler (Roaming/Banking/sinyal-kaçırma durumlarında canlılık
+    // korunur — üst sınır eski 30ms tavanına yakın). Latest-wins: (0,1) kapasiteli, CurrentCount==0
+    // iken Release (üretici tek-thread olduğundan — seri/pipelined ayrık moddur — yarış yok).
+    private readonly SemaphoreSlim      _snapSignal = new(0, 1);
+
+    private void SignalNewSnapshot()
+    {
+        if (_snapSignal.CurrentCount == 0) _snapSignal.Release();
+    }
+
     // Faz B (frame identity): her inference'a monotonik FrameId + gerçek zaman damgaları.
     //  • FrameId       : tespit thread'inin ürettiği kare sayacı (replay/eşleştirme için).
     //  • CapturedAtMs  : ekran yakalamasının BAŞLADIĞI an → "frame age at click" = NowMs - CapturedAtMs
@@ -428,6 +442,7 @@ public sealed partial class FarmEngine
         // 15 kare → 750ms). İz/ceset ömrü artık tespit FPS'inden bağımsız — FPS artışı ömrü kısaltmaz.
         _tracker.MaxAgeMs     = Math.Max(200, _appState.Farm.TrackMaxAgeFrames * 50);
         _tracker.Log          = Program.Log;   // teşhis: seyrek tracker olayları (miras-DEAD / sicrama-yoksay)
+        _router.Rp2040AtomicMouseMove = _appState.Farm.AtomicMouseMove; // 14.tur (Faz 3.3)
 
         // Hedef-geçiş telemetri sıfırlama + oturum-başlangıç konfigürasyon özeti (2026-07-03):
         // fine-tuning için o oturumda geçerli eşikler tek satırda; sınıf+hareket modu da yazılır ki

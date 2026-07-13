@@ -43,7 +43,10 @@ public sealed partial class FarmEngine
             try
             {
                 await TickAsync(s, ct);
-                await Task.Delay(30, ct);   // 50ms → 30ms: ~33 FPS tarama
+                // 14.tur (Faz 3.2): sabit 30ms yerine yeni-snapshot sinyali (event-driven) — 50ms
+                // fallback timeout eski tavana yakın bir üst sınır olarak canlılığı korur (bkz
+                // FarmEngine.cs _snapSignal dokümantasyonu).
+                await _snapSignal.WaitAsync(50, ct);
             }
             catch (OperationCanceledException)
             {

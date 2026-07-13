@@ -1,6 +1,9 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Text;
+using System.Threading;
 using System.Windows;
 using System.Windows.Threading;
 
@@ -14,6 +17,20 @@ public static class Program
     private static readonly string LogFile = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.Desktop),
         "HomekoWorld_log.txt");
+
+    // ── 14.tur (Faz 3.1): async log writer ────────────────────────────────────────────────────
+    // ESKİ: her Log() çağrısı senkron File.AppendAllText (aç-yaz-kapat) yapıyordu. Hedefleme sıcak
+    // yolunda tık başına 1-3 satır yazılıyor (Targeting/Combat/tarama-teshis) — disk/antivirüs/dosya
+    // cache'i geciktiğinde farm thread'i de bekliyordu (ortalama FPS'i değil, P95/P99 tıklama
+    // gecikmesini rastgele sıçratıyordu; müşteri PC'lerinde antivirüs daha da belirgin olabilir).
+    // YENİ: kuyruğa yaz (asla bloklamaz) → tek arka-plan writer thread'i batch halinde diske yazar.
+    private const int LogQueueCapacity = 2048;
+    private const int LogBatchLines    = 32;
+    private const int LogBatchMs       = 100;
+    private static readonly BlockingCollection<string> _logQueue = new(LogQueueCapacity);
+    private static Thread? _logWriterThread;
+    private static long _logDropped;      // Interlocked — kuyruk dolduğunda düşen (en eski) satır sayısı
+    private static int  _writerStopped;   // Interlocked guard — StopLogWriter idempotent olsun
 
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool SetDllDirectory(string lpPathName);
@@ -36,7 +53,8 @@ public static class Program
 
         // Log rotasyonu: detaylı telemetri (2026-07-03) dosyayı saatte ~2-4MB büyütebilir — sınırsız
         // büyüme yerine her açılışta >2MB ise .prev'e devril (tek nesil yeter: önceki oturum incelenebilir).
-        bool rotated = RotateLogIfLarge();
+        bool rotated = RotateLogIfLarge();   // rotasyon writer başlamadan ÖNCE (dosya taşınacaksa açık olmamalı)
+        StartLogWriter();
 
         Log("=== Uygulama başlatılıyor ===");
         if (rotated) Log("[Log] önceki günlük döndürüldü (>2MB) → HomekoWorld_log.prev.txt");
@@ -44,6 +62,7 @@ public static class Program
         AppDomain.CurrentDomain.UnhandledException += (_, e) =>
         {
             Log($"[FATAL] {e.ExceptionObject}");
+            StopLogWriter();   // çökmeden önce kuyruktaki satırlar diske insin (MessageBox bekletebilir)
             MessageBox.Show(e.ExceptionObject?.ToString(), "Kritik Hata",
                 MessageBoxButton.OK, MessageBoxImage.Error);
         };
@@ -66,18 +85,84 @@ public static class Program
         }
         finally
         {
+            StopLogWriter();   // kapanışta flush garantisi (queue.CompleteAdding + writer thread Join)
             timeEndPeriod(1);
         }
     }
 
     public static void Log(string msg)
     {
+        string line = $"[{DateTime.Now:HH:mm:ss.fff}] {msg}";
         try
         {
-            File.AppendAllText(LogFile,
-                $"[{DateTime.Now:HH:mm:ss.fff}] {msg}{Environment.NewLine}");
+            if (_logQueue.TryAdd(line)) return;
+            // Kuyruk dolu (writer disk/AV'da takıldı ya da hiç başlamadı) → en eski satırı düşür,
+            // yeniyi ekle (drop-oldest: en taze teşhis en değerlisi). Nadiren gerçekleşir (2048
+            // kapasite, tick başına birkaç satır); zararı yalnız eski bir log satırının kaybı.
+            if (_logQueue.TryTake(out _)) Interlocked.Increment(ref _logDropped);
+            _logQueue.TryAdd(line);
         }
-        catch { }
+        catch (InvalidOperationException)
+        {
+            // CompleteAdding sonrası (kapanış sırası) gelen geç bir Log çağrısı — sessizce yok say.
+        }
+    }
+
+    private static void StartLogWriter()
+    {
+        _logWriterThread = new Thread(LogWriterLoop)
+            { IsBackground = true, Priority = ThreadPriority.BelowNormal, Name = "LogWriter" };
+        _logWriterThread.Start();
+    }
+
+    /// <summary>Kuyruğu kapatır ve writer thread'in kalan satırları yazıp çıkmasını bekler (en fazla
+    /// 2sn). İdempotent — hem UnhandledException hem Main.finally çağırabilir, ikinci çağrı no-op.</summary>
+    private static void StopLogWriter()
+    {
+        if (Interlocked.Exchange(ref _writerStopped, 1) != 0) return;
+        try { _logQueue.CompleteAdding(); } catch { }
+        try { _logWriterThread?.Join(2000); } catch { }
+    }
+
+    private static void LogWriterLoop()
+    {
+        StreamWriter? writer;
+        try { writer = new StreamWriter(LogFile, append: true) { AutoFlush = false }; }
+        catch { writer = null; }   // dosya açılamadıysa (kilit/izin) — bu oturumda log diske düşmez
+
+        var sb  = new StringBuilder(4096);
+        int     batched = 0;
+        var     sw      = Stopwatch.StartNew();
+        try
+        {
+            // BlockingCollection tükenene kadar (CompleteAdding + kuyruk boşalana kadar) döner.
+            // TryTake(100ms) hem yeni satır bekler hem de LogBatchMs zaman-aşımı flush'ını mümkün kılar.
+            while (!_logQueue.IsCompleted)
+            {
+                if (_logQueue.TryTake(out var line, LogBatchMs))
+                {
+                    sb.Append(line).Append(Environment.NewLine);
+                    batched++;
+                }
+                if (batched > 0 && (batched >= LogBatchLines || sw.ElapsedMilliseconds >= LogBatchMs))
+                {
+                    FlushBatch(writer, sb);
+                    batched = 0;
+                    sw.Restart();
+                }
+            }
+            if (batched > 0) FlushBatch(writer, sb);
+        }
+        finally { writer?.Dispose(); }
+    }
+
+    private static void FlushBatch(StreamWriter? writer, StringBuilder sb)
+    {
+        if (writer is not null)
+        {
+            try { writer.Write(sb.ToString()); writer.Flush(); } catch { }
+        }
+        sb.Clear();
     }
 
     /// <summary>Açılışta günlük >2MB ise HomekoWorld_log.prev.txt'e taşır (öncekinin üstüne yazar).
