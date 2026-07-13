@@ -4,13 +4,16 @@
 > güncellenir. Amaç: memory dosyalarındaki tarihçeyi tekrar tekrar okumadan bağlamı tek dosyadan almak.
 > Kısa tut (~150 satır tavan): burası GÜNCEL DURUM özetidir, tarihçe memory'de/git log'da.
 
-**Son güncelleme:** 2026-07-13 (15.tur — **Faz 6'nın canlı testi yapıldı, YENİ kök nedenler bulundu +
-düzeltildi**. Kullanıcı Faz 6'yı publish edip test etti: "ilk başlarda hiç saldırmadı, tek tek seçti ama
-kombo başlamadı, sonra normale döndü; HUD 'hedef taze karede yok' diyordu." Log+telemetry+replay (bugünkü
-7 oturum, 20:04-20:35) derinlemesine incelendi (bkz [[farm-targeting-issues]] 15.tur). **İKİ kod düzeltmesi
-yapıldı + build/test YEŞİL (henüz publish/canlı-test YOK)**, ayrıca **kritik bir oyun-bilgisi belirsizliği
-bulundu ve kullanıcıya soruldu** (aşağıya bak — "[Random] Wild Tyon" ismi guardian mi yoksa etkinlik-
-etiketi mi belli değil, replay kanıtı önceki 2026-07-09 teşhisiyle çelişiyor).)
+**Son güncelleme:** 2026-07-13 (15.tur — **Faz 6'nın canlı testi yapıldı, İKİ YENİ kök neden bulunup
+düzeltildi, "[Random] Wild Tyon" sorusu KULLANICI TARAFINDAN NETLEŞTİRİLDİ**. Kullanıcı Faz 6'yı publish
+edip test etti: "ilk başlarda hiç saldırmadı, tek tek seçti ama kombo başlamadı, sonra normale döndü; HUD
+'hedef taze karede yok' diyordu." Log+telemetry+replay (bugünkü 7 oturum, 20:04-20:35) derinlemesine
+incelendi (bkz [[farm-targeting-issues]] 15.tur). **İKİ kod düzeltmesi yapıldı + build/test YEŞİL +
+COMMIT+PUSH `711ef3f`** (henüz publish/canlı-test YOK). Yol boyunca bulunan "[Random] Wild Tyon" ismi
+guardian mi etkinlik-etiketi mi belirsizliği kullanıcıya soruldu → **cevap: isim HER İKİ türde de aynı,
+tek ayırt edici İSİM RENGİ (kırmızı=guardian, değilse=normal) — mevcut renk-tabanlı sistem zaten DOĞRU
+tasarım, guardian referans renklerine DOKUNULMADI.** Bu, bugün eklenen debounce fix'inin (tek-kare kırmızı
+flaşı elemek) tam olarak doğru ve yeterli çözüm olduğunu doğruluyor.)
 
 ---
 
@@ -61,47 +64,38 @@ kök neden** bulundu ve **İKİSİ DE düzeltildi** (build+9 test YEŞİL, henü
    ısrarla Guardian derse hükmediliyor (eski 14.tur'da kaldırılan çoklu-örnek fikri, artık yalnız Guardian
    dalında/az maliyetle geri geldi).
 
-### 🔴 KRİTİK AÇIK SORU — "[Random] Wild Tyon" ismi guardian mı, etkinlik-etiketi mi? (kullanıcıya soruldu)
-Replay'lerde (bugünkü ekran görüntüleri) tek seferde 5 GÖRSEL OLARAK ÖZDEŞ Tyon aynı ekranda görüldü,
-farklı zamanlarda 9+ FARKLI trackId/pozisyonda "[Random] Wild Tyon" ismi bazen KIRMIZI (guardian-hüküm)
-bazen BEYAZ (saldır) okundu — ekranın üstünde bir duyuru/kural şeridi (`hkw.gg/kural...`) vardı. Bu,
-**2026-07-09 (10.tur-d) tarihli DOĞRULANMIŞ teşhisle ÇELİŞİYOR**: o gün kullanıcı bilerek TEK guardian'ın
-yanında test etmiş ve ismin gerçekten "[Random] Wild Tyon" olduğunu görsel olarak onaylamıştı. Bugünkü
-kanıt (aynı anda birden çok, ekranın farklı yerlerinde) tek bir sabit guardian'la uyuşmuyor — ya sunucuda
-şu an geçici bir "Wild/Random" etkinliği VAR (birçok Tyon'u geçici olarak bu isimle/renkle etiketliyor,
-hepsi VURULABİLİR) ya da bu spotta gerçekten birden fazla guardian var. **Koda DOKUNULMADI** (guardian
-rengi/eşiği/mantığı aynı bırakıldı) — bu net cevap gerektirir, yanlış tarafa karar vermek ya gerçek
-guardian'a saldırtır ya da etkinlik boyunca farm'ı tamamen durdurur. Kullanıcıya soruldu, cevap BEKLENİYOR.
+### ✅ ÇÖZÜLDÜ — "[Random] Wild Tyon" ismi guardian mı, etkinlik-etiketi mi?
+Replay'lerde aynı anda 5 görsel-özdeş Tyon, farklı trackId'lerde aynı "[Random] Wild Tyon" ismini bazen
+KIRMIZI bazen BEYAZ taşıyor görülmüştü — 2026-07-09 (10.tur-d) tarihli tekil-guardian teşhisiyle çelişir
+gibi durdu. **Kullanıcı netleştirdi: isim HER İKİ türde de aynı ("[Random] Wild Tyon" normal bir mob adı),
+tek ayırt edici İSİM RENGİ — kırmızıysa guardian, değilse normal.** Yani mevcut renk-tabanlı sistem
+(referans hue karşılaştırması) zaten doğru tasarım; guardian referans renklerine (NormalNameR/G/B,
+GuardianNameR/G/B) DOKUNULMADI/dokunulmayacak. Bugünkü guardian-red patlaması muhtemelen tam da 15.tur'da
+bulunan tek-kare kırmızı-flaş sorunuydu (bkz yukarı, KÖK NEDEN 2) — debounce fix bunu hedefliyor.
 
 ### Faz 6 (14.tur, hâlâ yürürlükte) — guardian SAME-FRAME + yapı-otoritesi
 `WtmVision.ScanTargetBar` isim guardian sınıfını HP-yapısıyla AYNI DXGI karesinde, yapının offset'inde
 hesaplıyor (`TargetBarState.NameClass` vb.); `FarmEngine.Targeting` seçim otoritesini çerçeve YAPISINA
 bağlıyor. Bu katman DOĞRU/kalıcı — 15.tur yalnız ÜSTÜNE debounce + YOLO-bağımsızlık ekledi, kaldırmadı.
 
-- Git: main = origin/main. 15.tur değişiklikleri HENÜZ COMMIT EDİLMEDİ (kullanıcı onayı + Wild-Tyon
-  cevabı bekleniyor — guardian debounce'un davranışı cevaba göre ayarlanabilir).
+- Git: main = origin/main. 15.tur commit'i PUSH'LANDI (`711ef3f`).
 - Versiyon 1.0.2 hâlâ tek-kaynak; installer'lar 13/14/15.tur commit'lerini İÇERMİYOR.
 
 ## 4. AÇIK KONULAR / SIRADAKİ ADIMLAR (öncelik sırasıyla)
 
-1. **ANA GÜNDEM — kullanıcının "[Random] Wild Tyon" sorusuna cevabı bekleniyor** (yukarı bakınız). Cevaba
-   göre: (a) "etkinlik etiketi, hepsi vurulabilir" → guardian ref-hue rengi büyük ihtimalle yeniden
-   kalibre edilmeli (ya da etkinlik-farkındalı bir istisna eklenmeli), (b) "gerçek guardian, atlanmalı" →
-   kod DEĞİŞMEZ, yalnız 15.tur'un debounce+YOLO-bağımsızlık fix'leri canlı testte doğrulanır.
-2. **15.tur fix'lerinin canlı testi (henüz yapılmadı).** Publish (Build-Cuda, `release.ps1` veya elle,
-   exe kapalı) → aynı spotta oturum. Beklenenler:
+1. **ANA GÜNDEM — 15.tur fix'lerinin canlı testi (henüz yapılmadı).** Publish (Build-Cuda, `release.ps1`
+   veya elle, exe kapalı) → aynı spotta oturum. Beklenenler:
    - "Hedef taze karede yok" HUD mesajı ARTIK GÖRÜLMEMELİ (tıklama artık iptal edilmiyor).
    - İlk birkaç saniyede "hiç saldırmama" deseni BİTMELİ (debounce fresh-selection kırmızı flaşını atlar).
    - `[Farm] Guardian kontrol: sonuç=Guardian (2/2 yeniden-örnek doğruladı)` satırı yalnız ISRARLA kırmızı
      kalan hedeflerde görülmeli; "ilk-okuma=Guardian ama yeniden-örnek(...)=Normal" satırı sık görülüyorsa
      15.tur teşhisi (flaş) doğrulanmış olur.
    - `guardian-red` oranı düşmeli (önceki gün bazı oturumlarda %50-70'e varıyordu).
-3. **Kullanıcı ayarı (kod dışı, test ÖNCESİ):** bu spot için `RegionMobCount` doğru mu — Wild-Tyon
-   cevabına göre 5 normal+1 guardian varsayımı değişebilir.
-4. **CUDA hash-pinning (backlog):** gerçek zip dosyalarının SHA-256'sı olmadan gömülü sabit yazılamazdı.
-5. **prefer_nhwc gerçek ölçümü (backlog):** `tools/yolo_trainer/replay_benchmark.py` henüz YAZILMADI.
-6. Müşteri dağıtım testi: installer'lar hâlâ eski commit'leri içeriyor — test onayından sonra.
-7. Otonom v2 (BEKLEMEDE — kullanıcı: acelesi yok).
+   - Gerçek guardian hâlâ doğru atlanmalı (regresyon yok — debounce yalnız ISRARLI kırmızıyı hükümlü sayar).
+2. **CUDA hash-pinning (backlog):** gerçek zip dosyalarının SHA-256'sı olmadan gömülü sabit yazılamazdı.
+3. **prefer_nhwc gerçek ölçümü (backlog):** `tools/yolo_trainer/replay_benchmark.py` henüz YAZILMADI.
+4. Müşteri dağıtım testi: installer'lar hâlâ eski commit'leri içeriyor — test onayından sonra.
+5. Otonom v2 (BEKLEMEDE — kullanıcı: acelesi yok).
 
 ## 5. KRİTİK KOMUTLAR / KURALLAR
 
