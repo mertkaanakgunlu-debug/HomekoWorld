@@ -68,7 +68,8 @@ function Publish-Variant($variant, $outDir) {
     if ($LASTEXITCODE -ne 0) { Write-Fail "$variant publish basarisiz (exit $LASTEXITCODE)." }
 
     Write-Host "Post-build (model/DLL kopyala+dogrula): $outDir"
-    & cmd.exe /c "`"_build-post.bat`" `"$outDir`""
+    $postBat = Join-Path $repoRoot "_build-post.bat"
+    & cmd.exe /c "`"$postBat`" `"$outDir`""
     if ($LASTEXITCODE -ne 0) { Write-Fail "$variant _build-post.bat basarisiz (exit $LASTEXITCODE)." }
 }
 
