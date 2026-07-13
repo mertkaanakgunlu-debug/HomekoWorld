@@ -582,15 +582,18 @@ public static class WtmVision
     /// FARKLI (daha yeni/daha eski) bir tick'in offset'ini okuyabiliyordu — duyuru açılır/kapanır anında isim
     /// YANLIŞ konumda aranıp koruma mobu "normal" sanılıyordu (atlanmıyor, vuruluyordu).</summary>
     public static NameplateClass ReadNameplateClass(WtmSettings s, int barOffsetY)
-        => ReadNameplateClass(s, barOffsetY, out _, out _, out _);
+        => ReadNameplateClass(s, barOffsetY, out _, out _, out _, out _, out _);
 
     /// <summary>Tanılamalı sürüm — <paramref name="textPixels"/>/<paramref name="guardianVotes"/>/
     /// <paramref name="usedRefHue"/> loglanabilsin diye (10.tur: bir sonraki yanlış-Normal/yanlış-Guardian
-    /// vak'asında kanıt tahmin etmek yerine ölçülsün).</summary>
+    /// vak'asında kanıt tahmin etmek yerine ölçülsün). 14.tur: <paramref name="domHue"/>/<paramref name="domFrac"/>
+    /// bandın DOMİNANT rengini de verir (MaxDist elemesinden ÖNCEKİ ham içerik) — "bant o an NEYİ okuyordu"
+    /// sorusu (isim mi, duyuru şeridi mi, vurgu mu) logdan tek bakışta cevaplansın (2026-07-13 analizi
+    /// piksel-arkeolojisi gerektirmişti).</summary>
     public static NameplateClass ReadNameplateClass(WtmSettings s, int barOffsetY,
-        out int textPixels, out int guardianVotes, out bool usedRefHue)
+        out int textPixels, out int guardianVotes, out bool usedRefHue, out float domHue, out float domFrac)
     {
-        textPixels = 0; guardianVotes = 0; usedRefHue = false;
+        textPixels = 0; guardianVotes = 0; usedRefHue = false; domHue = -1f; domFrac = 0f;
         // Tarama dikdörtgenini seç (master px): önce çizilen bant, yoksa ofset fallback.
         int rx, ry, rw, rh;
         if (s.IsNameBandCalibrated)
@@ -617,7 +620,7 @@ public static class WtmVision
         // isim=guardian") HER mobu koruma sanıyor, engage HİÇ olmuyordu. DÜZELTME: ismi, barın GERÇEKTE bulunduğu
         // offset'te (barOffsetY: 0=duyuru yok, +Δy=duyuru var) TEK konumda sınıflandır → HP barıyla çakışma biter,
         // guardian hem duyuru açık hem kapalıyken doğru çalışır.
-        return ClassifyNameRect(r.X, r.Y + barOffsetY, r.Width, r.Height, s, out textPixels, out guardianVotes, out usedRefHue);
+        return ClassifyNameRect(r.X, r.Y + barOffsetY, r.Width, r.Height, s, out textPixels, out guardianVotes, out usedRefHue, out domHue, out domFrac);
     }
 
     /// <summary>Verilen ekran dikdörtgenini yakalar ve HSV ile nameplate sınıfı döndürür.</summary>
@@ -631,10 +634,15 @@ public static class WtmVision
     ///  (B) Fallback (referanslar yoksa/doygun değilse): eski sabit kırmızı-hue bandı.
     /// </remarks>
     private static NameplateClass ClassifyNameRect(int rx, int ry, int rw, int rh, WtmSettings s,
-        out int textPixels, out int guardianVotes, out bool usedRefHue)
+        out int textPixels, out int guardianVotes, out bool usedRefHue, out float domHue, out float domFrac)
     {
-        textPixels = 0; guardianVotes = 0; usedRefHue = false;
+        textPixels = 0; guardianVotes = 0; usedRefHue = false; domHue = -1f; domFrac = 0f;
         if (rw <= 0 || rh <= 0 || ry < 0) return NameplateClass.Unknown;
+
+        // 14.tur: bandın HAM renk profili (10°lik 36 kova) — MaxDist elemesinden ÖNCE doldurulur ki
+        // "bant o an neyi görüyordu" (mor isim / kırmızı vurgu / duyuru turuncusu) logdan okunsun.
+        Span<int> hueHist = stackalloc int[36];
+        int histTotal = 0;
 
         // Referans hue'ları hesapla — her iki referans da YETERİNCE DOYGUN olmalı (gri ref → anlamsız hue).
         RgbToHsv(s.NormalNameR,   s.NormalNameG,   s.NormalNameB,   out float normalHue,   out float normalSat,   out _);
@@ -668,6 +676,9 @@ public static class WtmVision
                     if (val < s.NameplateMinVal) continue; // siyah çerçeve/gölge/koyu arka plan
                     if (sat < s.NameplateMinSat) continue; // beyaz/gri → renkli yazı değil
 
+                    hueHist[Math.Clamp((int)(hue / 10f), 0, 35)]++; // 14.tur: ham profil (eleme öncesi)
+                    histTotal++;
+
                     if (useRefHue)
                     {
                         // 10.tur-c: piksel ikisinin EN YAKININA göre bile makul mesafede değilse
@@ -690,6 +701,16 @@ public static class WtmVision
             }
         }
         finally { bmp.UnlockBits(data); }
+
+        // 14.tur: dominant kova → domHue (kova merkezi) + domFrac (renkli piksellere oranı).
+        if (histTotal > 0)
+        {
+            int bestBucket = 0;
+            for (int i = 1; i < 36; i++)
+                if (hueHist[i] > hueHist[bestBucket]) bestBucket = i;
+            domHue  = bestBucket * 10f + 5f;
+            domFrac = (float)hueHist[bestBucket] / histTotal;
+        }
 
         // Yeterli koruma-oyu oranı → Guardian (normal mobu yanlış atlamamak için eşikli).
         if (guardianVotes >= s.NameplateRedMinPx && textPixels > 0 &&

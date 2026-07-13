@@ -30,6 +30,17 @@ public sealed partial class FarmEngine
     // bütçeyi kullanır (simetrik `denemeler` telemetrisi; tek ayar düğmesi).
     private const int   AcqHpPollBudgetMs  = 450;
 
+    // ── 14.tur (Faz 1): guardian çoklu-örnek okuması ─────────────────────────────────────────────
+    // Kanıt (2026-07-13 replay piksel analizi): seçim ANINDA isim geçici KIRMIZI vurgu alabiliyor —
+    // DXGI karesi saf MOR isim gösterirken ~200ms sonraki tek GDI okuması %94-100 guardian oyu ölçtü
+    // (kare 4661/7194 ↔ log oy=2471/2472). Tek-anlık okuma bu vurguya denk gelirse mor-NORMAL mob
+    // 30sn bl + iz-damga yiyordu (63 denemenin 35'i guardian-red, geçiş medyanı 1093→8129ms).
+    // Kural: örneklerden HERHANGİ biri Normal → mob NORMALdir (vurgu geçici; gerçek guardian'ın adı
+    // her örnekte kırmızı kalır). Maliyet yalnız Guardian-görünümlü ilk örnekte (+2×80ms); Normal
+    // ilk örnekte erken biter (başarılı yol ~0 ek).
+    private const int GuardianSampleCount = 3;
+    private const int GuardianSampleGapMs = 80;
+
     // ── Scanning ──────────────────────────────────────────────────────────────
 
     private async Task ScanningTickAsync(
@@ -577,11 +588,56 @@ public sealed partial class FarmEngine
             var gSw = System.Diagnostics.Stopwatch.StartNew();
             // 10.tur: tanılamalı overload — textPixels/guardianVotes/usedRefHue HER dalda loglanır, bir
             // sonraki yanlış-Normal/yanlış-Guardian vak'asında kanıt tahmin etmek yerine ölçülsün.
+            // 14.tur: topHue (bandın ham dominant rengi) + Guardian ilk-okuması ÇOKLU ÖRNEKLE teyit
+            // edilir (bkz GuardianSampleCount notu) — seçim-anı kırmızı vurgu tek okumayı kirletiyordu.
             var nameClass = WtmVision.ReadNameplateClass(_appState.Wtm, barOffsetY,
-                out int gTextPx, out int gVotes, out bool gUsedRefHue);
-            string gDiag = $"piksel={gTextPx} oy={gVotes} mod={(gUsedRefHue ? "ref-hue" : "fallback-kirmizi")}";
+                out int gTextPx, out int gVotes, out bool gUsedRefHue, out float gDomHue, out float gDomFrac);
+            string samples = nameClass switch
+            {
+                WtmVision.NameplateClass.Guardian => "G",
+                WtmVision.NameplateClass.Normal   => "N",
+                _                                 => "U",
+            };
+            for (int gi = 1; gi < GuardianSampleCount && nameClass == WtmVision.NameplateClass.Guardian; gi++)
+            {
+                await Task.Delay(GuardianSampleGapMs, ct);
+                var again = WtmVision.ReadNameplateClass(_appState.Wtm, barOffsetY,
+                    out gTextPx, out gVotes, out gUsedRefHue, out gDomHue, out gDomFrac);
+                samples += again switch
+                {
+                    WtmVision.NameplateClass.Guardian => "G",
+                    WtmVision.NameplateClass.Normal   => "N",
+                    _                                 => "U",
+                };
+                if (again == WtmVision.NameplateClass.Normal)
+                    nameClass = WtmVision.NameplateClass.Normal; // vurgu geçti → mob normal
+                // Unknown ara-örnek: Guardian'ı teyit SAYILMAZ ama Normal'e de çevirmez — döngü sürer;
+                // GuardianSampleCount örnekte hiç Normal görülmediyse ilk karar (Guardian) kalır.
+            }
+            string gDiag = $"piksel={gTextPx} oy={gVotes} mod={(gUsedRefHue ? "ref-hue" : "fallback-kirmizi")} " +
+                           $"örnekler=[{samples}] topHue={(gDomHue < 0 ? "yok" : $"{gDomHue:0}°(%{gDomFrac * 100:0})")}";
             if (nameClass == WtmVision.NameplateClass.Guardian)
             {
+                // 14.tur (Faz 1): offset GÜVEN kapısı — barOffsetY yapı-şablonuyla teyitli değilse bant
+                // İSMİ DEĞİL başka bir şeyi okuyor olabilir (2026-07-13 kanıtı: offset=0 gelen okumalar
+                // KALICI kayan duyuru şeridinin turuncu dekorundan oy topladı — kare 35 simülasyonu log
+                // ile birebir; pencere bu ekranda fiilen hep +57'de). Teyitsizken KALICI hüküm
+                // (MarkGuardian + 30sn bl + GuardianBlocks) YOK: kısa atlama → yapı teyidi gelen sonraki
+                // denemede gerçek karar verilir. Gerçek guardian başına maliyet ~1 kısa tur.
+                var snapG = _latestDetections;
+                bool offsetTrusted = snapG?.Bar is { } gBar && NowMs() - snapG.PublishedAtMs < 300 &&
+                                     gBar.StructureKnown && gBar.StructurePresent;
+                if (!offsetTrusted)
+                {
+                    Program.Log($"[Farm] Guardian kontrol: offset={barOffsetY} sonuç=ŞÜPHELİ(yapı-teyitsiz) {gDiag} " +
+                                $"süre={gSw.ElapsedMilliseconds}ms → kısa-bl {MissReselectSkipMs}ms" +
+                                $"@({(int)target.Center.X},{(int)target.Center.Y}) — iz-damga/30sn-bl YOK");
+                    StatusChanged?.Invoke(this, "İsim bandı doğrulanamadı — güvenli kısa atlama");
+                    await CancelClickMovementAsync(ct);
+                    _deadBlacklist.Add((target.Center, NowMs() + MissReselectSkipMs));
+                    RecordAcqFailure(target.TrackId);
+                    return false;
+                }
                 // 2026-07-03: verdict artık İZE de damgalanır (MarkGuardian) — yalnız-konumsal blacklist
                 // yürüyen guardian'ı 60px dışında kaçırıp aynı izi 4× arka arkaya kontrol ettiriyordu
                 // (canlı log trk=98). İz-damga mob ekranda kaldıkça kalıcı; konumsal liste churn yedeği.
