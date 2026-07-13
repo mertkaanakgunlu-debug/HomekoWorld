@@ -206,6 +206,10 @@ public sealed partial class FarmEngine
     private volatile Detection?         _currentTargetForOverlay; // combat'te saldırılan hedef (overlay vurgusu)
     private Thread?                     _detThread;
     private volatile ReplayRecorder?    _replay; // Faz B: açıkken kayıt; null = kapalı (DetectionLoop okur)
+    // 14.tur (Faz 4.3): ms-telemetri JSONL — HER oturumda otomatik açık (Replay'in aksine kullanıcı
+    // seçimine bağlı değil; kayıt boyutu küçük/düz-metin, disk maliyeti önemsiz). FarmLoop task
+    // zincirinden yazılır (kilit gerekmez) — Detection thread'leri _telemetryWriter'a dokunmaz.
+    private Services.Telemetry.TelemetryJsonlWriter? _telemetryWriter;
     // P2: pipelined inference — üretici (capture+preprocess) ∥ tüketici (GPU Run+post) ayrı thread.
     private Thread?                     _captureThread;            // üretici (yalnız pipelined modda)
     private readonly object             _pipeLock   = new();
@@ -478,6 +482,18 @@ public sealed partial class FarmEngine
                     $"her={Math.Max(1, _appState.ClanBank.CheckEveryKills)}kill " +
                     $"doluluk-eşiği=%{(int)(_appState.ClanBank.FullThreshold * 100)}");
 
+        // 14.tur (Faz 4.3): ms-telemetri JSONL — her oturumda otomatik (bkz field dokümantasyonu).
+        try
+        {
+            _telemetryWriter = new Services.Telemetry.TelemetryJsonlWriter(AppContext.BaseDirectory);
+            Program.Log($"[Farm] Telemetri JSONL → {_telemetryWriter.SessionPath}");
+        }
+        catch (Exception ex)
+        {
+            Program.Log($"[Farm] Telemetri JSONL başlatılamadı: {ex.Message}");
+            _telemetryWriter = null;
+        }
+
         // Faz B: replay recorder (yalnız açıksa) — DetectionLoop başlamadan ÖNCE kurulmalı.
         _replay = null;
         if (_appState.Farm.ReplayEnabled)
@@ -572,6 +588,11 @@ public sealed partial class FarmEngine
             catch (Exception ex) { Program.Log($"[Farm] Replay kapatma hatası: {ex.Message}"); }
         }
 
+        // 14.tur (Faz 4.3): telemetri yazıcısını kapat — kuyruktaki olaylar diske insin (2sn üst sınır).
+        var telemetryWriter = _telemetryWriter;
+        _telemetryWriter = null;
+        try { telemetryWriter?.Dispose(); } catch (Exception ex) { Program.Log($"[Farm] Telemetri kapatma hatası: {ex.Message}"); }
+
         cts?.Dispose();
 
         _combo.CancelAll();
@@ -602,6 +623,9 @@ public sealed partial class FarmEngine
                           $"min={sorted[0]} max={sorted[^1]} (n={sorted.Count})";
         }
         int successPct = t.AcqAttempts > 0 ? (int)(100.0 * t.AcqSuccesses / t.AcqAttempts) : 0;
+        // 14.tur (Faz 4.1, denetim P1-8): ayrık tık-isabet yüzdesi — guardian kararından BAĞIMSIZ
+        // "tıklama fiziksel olarak isabet etti mi" sorusunun saf cevabı (eski successPct'in aksine).
+        int clickPct = t.ClicksIssued > 0 ? (int)(100.0 * t.ClicksConfirmed / t.ClicksIssued) : 0;
         string dur = $"{t.SessionMs / 60000}:{(t.SessionMs / 1000) % 60:00}";
         string gateStats = _gateDeferrals > 0
             ? $"ertelenen={_gateDeferrals} ort={_gateDeferredMsTotal / _gateDeferrals}ms vazgeç={_gateGiveUps}"
@@ -609,7 +633,9 @@ public sealed partial class FarmEngine
         Program.Log($"[Farm] oturum-özeti: süre={dur} kill={t.Kills} lost={t.Losts} " +
                     $"lostfast={t.LostFasts} timeout={t.Timeouts} | hedef-alma: deneme={t.AcqAttempts} " +
                     $"başarı={t.AcqSuccesses} (%{successPct}) guardian-red={t.GuardianBlocks} " +
-                    $"diriliş={t.Resurrections} | geçiş: {switchStats} | kapı: {gateStats} | " +
+                    $"diriliş={t.Resurrections} | tık: gönderilen={t.ClicksIssued} isabet={t.ClicksConfirmed} " +
+                    $"(%{clickPct}) tıksız-kayıp={t.NoClickFreshMiss} doğrulanamadı={t.HpValidationFailed} " +
+                    $"ceset-varsayım={t.CorpseAssumptions} | geçiş: {switchStats} | kapı: {gateStats} | " +
                     $"banka: {t.BankRuns} çalışma, {t.BankItemsMoved} eşya");
     }
 

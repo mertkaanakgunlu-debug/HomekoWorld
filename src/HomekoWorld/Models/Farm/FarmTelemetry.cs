@@ -44,6 +44,29 @@ public sealed class FarmTelemetry
     public int AcqSuccesses   { get; set; }
     /// <summary>Guardian nedeniyle reddedilen hedef sayısı.</summary>
     public int GuardianBlocks { get; set; }
+
+    // ── 14.tur (Faz 4.1): ayrık tıklama sayaçları — dış denetim P1-8 düzeltmesi. Eski AcqAttempts/
+    // AcqSuccesses "başarısız tıklamanın tersi" DEĞİLDİ: AcqAttempts tık atılmadan (taze-karede-yok,
+    // kapı-vazgeç) da artıyordu; guardian-red'de tıklama+HP onayı BAŞARILIYKEN AcqSuccesses artmıyordu
+    // (2026-07-13 canlı kanıt: 63 denemenin 35'i guardian-red — ham "%9" iken gerçek tık-isabeti %84
+    // idi). Yeni sayaçlar "tıklama fiziksel olarak isabet etti mi" sorusunu guardian kararından AYRIK
+    // tutar; AcqAttempts/AcqSuccesses geriye-dönük kıyas için KORUNUR (davranışları değişmedi). ──
+    /// <summary>Gerçekten gönderilen (ClickAsync çağrılan) tıklama sayısı.</summary>
+    public int ClicksIssued { get; set; }
+    /// <summary>HP bar doğrulaması BAŞARILI olan tıklama sayısı — guardian kararından BAĞIMSIZ
+    /// ("tıklama isabet etti mi" sorusunun saf cevabı). HUD'un ana yüzdesi bu/ClicksIssued'dır.</summary>
+    public int ClicksConfirmed { get; set; }
+    /// <summary>Tıklama hiç atılmadan çıkılan deneme sayısı (taze-karede-yok + kamera-kapısı vazgeç) —
+    /// AcqAttempts içinde ama fiilen hiç tık gitmemiş alt-küme.</summary>
+    public int NoClickFreshMiss { get; set; }
+    /// <summary>Kamera-hareket kapısı bütçesi dolup vazgeçilen hedef sayısı (oturum-özetindeki
+    /// "kapı: vazgeç=" ile aynı kaynak — HUD'da da görünür olsun diye telemetriye taşınır).</summary>
+    public int GateGiveUps { get; set; }
+    /// <summary>Tıklandı ama HP doğrulanamadı sınıfı (iz-titremesi + HP-bar-kalibrasyonsuz +
+    /// guardian-offset-teyitsiz) — "tık gitti, sonuç belirsiz kaldı" grubu.</summary>
+    public int HpValidationFailed { get; set; }
+    /// <summary>Ceset-varsayımı sayısı (2 tık HP üretmedi → muhtemel ceset/seçilemez hedef).</summary>
+    public int CorpseAssumptions { get; set; }
     /// <summary>MobTracker hareket-dirilişi sayısı. 7.tur (2026-07-04): diriliş mekanizması KALDIRILDI —
     /// bu alan artık hep 0 (oturum-özeti formatı bozulmasın diye tutuluyor; 0 = mekanizma kapalı doğrulaması).</summary>
     public int Resurrections  { get; set; }
@@ -68,6 +91,8 @@ public sealed class FarmTelemetry
         LastKeyTapped = "";
         Losts = LostFasts = Timeouts = 0;
         AcqAttempts = AcqSuccesses = GuardianBlocks = Resurrections = 0;
+        ClicksIssued = ClicksConfirmed = NoClickFreshMiss = GateGiveUps = 0;
+        HpValidationFailed = CorpseAssumptions = 0;
         BankRuns = BankItemsMoved = 0;
         SwitchTimesMs.Clear();
         SwitchAvgMs = 0;

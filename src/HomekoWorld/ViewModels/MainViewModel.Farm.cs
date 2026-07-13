@@ -176,8 +176,12 @@ public partial class MainViewModel
 
             // Canlı oturum metrikleri (ürün metriği: başarısız tıklama olmasın) — oturum-özeti
             // beklemeden HUD'dan izlenir. Sayaçlar stop sonrası da kalır (son testin sonucu okunur).
-            FarmAcqRatio    = $"{t.AcqSuccesses}/{t.AcqAttempts}";
-            FarmAcqPct      = t.AcqAttempts > 0 ? (int)(100.0 * t.AcqSuccesses / t.AcqAttempts) : 0;
+            // 14.tur (Faz 4.1): ClicksConfirmed/ClicksIssued — "tıklama isabet etti mi" sorusunun
+            // guardian kararından BAĞIMSIZ saf cevabı (dış denetim P1-8 düzeltmesi; eski AcqSuccesses/
+            // AcqAttempts guardian-red'i ve tık-atılmadan-çıkışı da "başarısızlık" sayıyordu — 2026-07-13
+            // canlı testte ham %9 iken gerçek tık-isabeti %84 idi).
+            FarmAcqRatio    = $"{t.ClicksConfirmed}/{t.ClicksIssued}";
+            FarmAcqPct      = t.ClicksIssued > 0 ? (int)(100.0 * t.ClicksConfirmed / t.ClicksIssued) : 0;
             FarmGuardianRed = t.GuardianBlocks;
             FarmLostTotal   = t.Losts + t.LostFasts + t.Timeouts;
             FarmSwitchAvg   = t.SwitchAvgMs > 0

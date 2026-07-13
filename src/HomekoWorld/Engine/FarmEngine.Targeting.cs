@@ -86,8 +86,11 @@ public sealed partial class FarmEngine
                 if (before > filteredCandidates.Count && now - _lastPopGateLogMs >= 1000)
                 {
                     _lastPopGateLogMs = now;
+                    int suppressed = before - filteredCandidates.Count;
                     Program.Log($"[Farm] nüfus-kapısı: beklenen-canlı=0 (borç={popDebt}/{s.RegionMobCount}) — " +
-                                $"{before - filteredCandidates.Count} hareketsiz aday bastırıldı (hareketli muaf)");
+                                $"{suppressed} hareketsiz aday bastırıldı (hareketli muaf)");
+                    _telemetryWriter?.Offer(FormattableString.Invariant(
+                        $"{{\"t\":\"pop_gate\",\"ts\":{now},\"borc\":{popDebt},\"bolgeMob\":{s.RegionMobCount},\"bastirilan\":{suppressed}}}"));
                 }
             }
         }
@@ -320,6 +323,18 @@ public sealed partial class FarmEngine
             float gateFlow     = -1f;
             bool  gateCounted  = false;
 
+            // 14.tur (Faz 4.3): acq_attempt JSONL olayı — TargetAsync'in HER çıkış noktasında bir kez
+            // çağrılır (kesit: karar→mouse-down→HP-onay). Ayrık sayaç ayrımının ham veri kaynağı.
+            void EmitAcq(string result, string reason)
+            {
+                var writer = _telemetryWriter;
+                if (writer is null) return;
+                // FormattableString.Invariant yalnız TEK bir interpolated-string literalını kabul eder
+                // ('+' ile birleştirilmiş parçalar derleme-zamanında düz string'e indirgenir) — tek satır.
+                writer.Offer(FormattableString.Invariant(
+                    $"{{\"t\":\"acq_attempt\",\"ts\":{NowMs()},\"trk\":{lastLiveTrackId},\"result\":\"{result}\",\"reason\":\"{reason}\",\"durMs\":{acqSw.ElapsedMilliseconds},\"kaymaPxMs\":{gateFlow:F2},\"kapiMs\":{gateWaitedMs},\"frameAgeMs\":{Telemetry.FrameAgeAtClickMs}}}"));
+            }
+
             for (int i = 0; i < yoloOffsets.Length; i++)
             {
                 ct.ThrowIfCancellationRequested();
@@ -343,13 +358,23 @@ public sealed partial class FarmEngine
                         if (gateWaitedMs >= s.MotionGateMaxWaitMs)
                         {
                             _gateGiveUps++;
+                            Telemetry.GateGiveUps++;         // 14.tur (Faz 4.1)
+                            Telemetry.NoClickFreshMiss++;    // tıklama hiç atılmadı
                             StatusChanged?.Invoke(this, "Kamera hareketli — tıklama ertelendi, yeniden taranıyor");
                             Program.Log($"[Farm] hedef-bırakıldı trk={lastLiveTrackId}: kamera-akış " +
                                         $"(kayma={gateFlow:0.00}px/ms{(flow.quiet ? "+quiet" : "")}, " +
                                         $"bekleme={gateWaitedMs}ms) — bl YOK");
+                            EmitAcq("gate_giveup", "kamera-akis");
                             return false;
                         }
-                        if (!gateCounted) { gateCounted = true; _gateDeferrals++; }
+                        if (!gateCounted)
+                        {
+                            gateCounted = true; _gateDeferrals++;
+                            // 14.tur (Faz 4.3): gate_defer — bu denemede EN AZ bir kez ertelendi (spam
+                            // olmasın diye yalnız İLK ertelemede, poll döngüsünün her turunda değil).
+                            _telemetryWriter?.Offer(FormattableString.Invariant(
+                                $"{{\"t\":\"gate_defer\",\"ts\":{NowMs()},\"trk\":{lastLiveTrackId},\"kaymaPxMs\":{gateFlow:F2}}}"));
+                        }
                         long w0 = NowMs();
                         await Task.Delay(15, ct);
                         long wd = Math.Max(1, NowMs() - w0);
@@ -384,9 +409,11 @@ public sealed partial class FarmEngine
                 }
                 if (liveTarget is null)
                 {
+                    Telemetry.NoClickFreshMiss++;   // 14.tur (Faz 4.1): tıklama hiç atılmadı
                     StatusChanged?.Invoke(this, "Hedef taze karede yok — tıklama atlandı, yeniden tarıyor");
                     Program.Log($"[Farm] hedef-bırakıldı trk={target.TrackId}: taze-karede-yok " +
                                 $"(deneme {i + 1}/2, {acqSw.ElapsedMilliseconds}ms, kayma={gateFlow:0.00}px/ms) — bl YOK");
+                    EmitAcq("no_click_fresh_miss", "taze-karede-yok");
                     return false;
                 }
                 lastLiveCenter  = liveTarget.Center;
@@ -404,6 +431,7 @@ public sealed partial class FarmEngine
                 await _router.MoveAbsAsync(cx, cy, ct);
                 await Task.Delay(s.ClickPreDelayMs, ct);
                 await _router.ClickAsync(MouseButton.Left, ct);
+                Telemetry.ClicksIssued++;   // 14.tur (Faz 4.1): gerçekten gönderilen tıklama
                 await Task.Delay(s.ClickPostDelayMs, ct);
 
                 var hpPoll = hpBarCalibrated ? await PollHpBarAsync(liveTarget, ct) : (alive: false, barOffsetY: 0, yoloLost: false);
@@ -413,17 +441,26 @@ public sealed partial class FarmEngine
                     // (guardian sonucundan BAĞIMSIZ — tıklama/HP-tespiti burada zaten BAŞARILI oldu; guardian
                     // reddi ayrı, zaten yeterli bir mekanizmayla ele alınıyor — bkz MarkGuardian/guardianBlacklist).
                     RecordAcqSuccess(liveTarget.TrackId);
+                    // 14.tur (Faz 4.1, denetim P1-8): "tıklama isabet etti mi" sorusunun saf cevabı —
+                    // guardian kararından BAĞIMSIZ (guardian-red'de de tıklama fiziksel olarak isabet etti).
+                    Telemetry.ClicksConfirmed++;
                     attempts.Add($"{offName}:hp-canlı({acqSw.ElapsedMilliseconds - attStart}ms)");
                     bool ok = await CheckGuardianAndReturnAsync(liveTarget, hpPoll.barOffsetY, ct);
                     if (ok)
+                    {
                         Program.Log($"[Farm] hedef-alındı trk={liveTarget.TrackId} offset={offName}({i + 1}/2) " +
                                     $"süre={acqSw.ElapsedMilliseconds}ms kare-yaşı={Telemetry.FrameAgeAtClickMs}ms " +
                                     $"kayma={gateFlow:0.00}px/ms" +
                                     $"{(gateWaitedMs > 0 ? $" kapı-bekleme={gateWaitedMs}ms" : "")} " +
                                     $"denemeler=[{string.Join(",", attempts)}]");
+                        EmitAcq("confirmed", offName);
+                    }
                     else
+                    {
                         Program.Log($"[Farm] hedef-bırakıldı trk={liveTarget.TrackId}: guardian-kapısı " +
                                     $"(süre={acqSw.ElapsedMilliseconds}ms, kayma={gateFlow:0.00}px/ms)");
+                        EmitAcq("guardian_block", "guardian-kapisi");
+                    }
                     return ok;
                 }
                 if (hpPoll.yoloLost) anyYoloLost = true;
@@ -462,6 +499,7 @@ public sealed partial class FarmEngine
                                 $"(denemeler=[{string.Join(",", attempts)}], {acqSw.ElapsedMilliseconds}ms, " +
                                 $"kayma={gateFlow:0.00}px/ms) — " +
                                 $"bl {missBlMs}ms{(missRep > 1 ? $" (nokta tekrar #{missRep} → escalation)" : "")}");
+                    EmitAcq("post_click_lost", "tik-sonrasi-kayip");
                     return false;
                 }
 
@@ -481,11 +519,13 @@ public sealed partial class FarmEngine
                     // CANLI mobu bu yola sokup 2×blacklist + MarkDead ile ceset damgalatıyordu (18:47 log:
                     // miras-DEAD "B-belirtisi" zinciri → canlı mob atlama). Yalnız KISA atla; iz damgalama YOK.
                     _deadBlacklist.Add((lastLiveCenter, NowMs() + MissReselectSkipMs));
+                    Telemetry.HpValidationFailed++;   // 14.tur (Faz 4.1): tık gitti, doğrulama belirsiz kaldı
                     StatusChanged?.Invoke(this, "Hedef doğrulanamadı (iz kayboldu) — kısa atlanıyor");
                     Program.Log($"[Farm] hedef-bırakıldı trk={lastLiveTrackId}: iz-titremesi " +
                                 $"(denemeler=[{string.Join(",", attempts)}], {acqSw.ElapsedMilliseconds}ms, " +
                                 $"kayma={gateFlow:0.00}px/ms) — " +
                                 $"bl {MissReselectSkipMs}ms, iz-damga YOK");
+                    EmitAcq("hp_validation_failed", "iz-titremesi");
                 }
                 else
                 {
@@ -504,19 +544,23 @@ public sealed partial class FarmEngine
                     // 9.tur: damga TIKLANAN ize (lastLiveTrackId) — eski target.TrackId, iz churn'ünde hiç
                     // tıklanmamış izi damgalayıp gerçek cesedi "canlı aday" bırakıyordu.
                     _tracker.MarkDead(lastLiveTrackId, MobTracker.DeadSource.Assumed);
+                    Telemetry.CorpseAssumptions++;   // 14.tur (Faz 4.1)
                     StatusChanged?.Invoke(this, "Hedef seçilemedi (ölü/ceset?) — atlanıyor");
                     Program.Log($"[Farm] hedef-bırakıldı trk={lastLiveTrackId}: ceset-varsayımı (2 tık HP üretmedi, " +
                                 $"denemeler=[{string.Join(",", attempts)}], {acqSw.ElapsedMilliseconds}ms, " +
                                 $"kayma={gateFlow:0.00}px/ms) — " +
                                 $"bl {corpseBlMs}ms ×2nokta + iz-damga(varsayım)" +
                                 $"{(corpseRep > 1 ? $" (nokta tekrar #{corpseRep} → escalation)" : "")}");
+                    EmitAcq("corpse_assumed", "ceset-varsayimi");
                 }
             }
             else
             {
+                Telemetry.HpValidationFailed++;   // 14.tur (Faz 4.1): kalibrasyonsuz — doğrulama imkansız
                 StatusChanged?.Invoke(this, "⚠ HP bar kalibrasyonu yok — hedef doğrulanamadı");
                 Program.Log($"[Farm] hedef-bırakıldı trk={lastLiveTrackId}: HP-bar-kalibrasyonsuz " +
                             $"(denemeler=[{string.Join(",", attempts)}], {acqSw.ElapsedMilliseconds}ms)");
+                EmitAcq("no_hp_calibration", "hp-bar-kalibrasyonsuz");
             }
             // 2026-07-04 (P2b): iz-titremesi/ceset-varsayımı/HP-bar-kalibrasyonsuz — üçü de tıklama-SONRASI
             // başarısızlık (taze-karede-yok HARİÇ — o tıklama ÖNCESİ, ayrı bir yol, sayaca dahil değil).
@@ -633,6 +677,7 @@ public sealed partial class FarmEngine
                                      gBar.StructureKnown && gBar.StructurePresent;
                 if (!offsetTrusted)
                 {
+                    Telemetry.HpValidationFailed++;   // 14.tur (Faz 4.1): tık isabet etti, doğrulama belirsiz
                     Program.Log($"[Farm] Guardian kontrol: offset={barOffsetY} sonuç=ŞÜPHELİ(yapı-teyitsiz) {gDiag} " +
                                 $"süre={gSw.ElapsedMilliseconds}ms → kısa-bl {MissReselectSkipMs}ms" +
                                 $"@({(int)target.Center.X},{(int)target.Center.Y}) — iz-damga/30sn-bl YOK");

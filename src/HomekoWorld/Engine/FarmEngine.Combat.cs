@@ -269,6 +269,9 @@ public sealed partial class FarmEngine
                         $"kırmızı[max={maxRedSeen} min={(minRedSeen == int.MaxValue ? -1 : minRedSeen)}] " +
                         $"trk={currentTarget.TrackId} mesafe={(int)currentTarget.DistanceTo(charCenter)}px " +
                         $"kombo={comboState}");
+            // 14.tur (Faz 4.3): engage_end JSONL olayı — kesit: kill/lost sonucu + süre + hasar-aralığı.
+            _telemetryWriter?.Offer(FormattableString.Invariant(
+                $"{{\"t\":\"engage_end\",\"ts\":{NowMs()},\"trk\":{currentTarget.TrackId},\"result\":\"{r}\",\"durMs\":{sw.ElapsedMilliseconds},\"redMax\":{maxRedSeen},\"redMin\":{(minRedSeen == int.MaxValue ? -1 : minRedSeen)}}}"));
             return r;
         }
         EngageResult FinishDeath(string via)

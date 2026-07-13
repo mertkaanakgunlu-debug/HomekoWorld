@@ -200,7 +200,7 @@
         <!-- Canlı oturum metrikleri (2026-07-10): ürün metriği HUD'dan izlensin —
              oturum-özeti satırı yalnız kapanışta loglanıyordu. -->
         <TextBlock FontSize="9" Foreground="#99E8DCC0" Margin="0,0,0,6" TextWrapping="Wrap"
-                   ToolTip="🎯 Hedef-alma başarısı: yüzde (başarılı/deneme) — başarısız tıklama oranının tersi&#x0a;🛡 Guardian nedeniyle reddedilen hedef&#x0a;Geçiş: kill→yeni hedef ort. süresi&#x0a;Kayıp: angajman kaybı (lost+lostfast+timeout)">
+                   ToolTip="🎯 Tık-isabet oranı: yüzde (isabet/gönderilen) — guardian kararından bağımsız, saf 'tıklama hedefine ulaştı mı' ölçümü&#x0a;🛡 Guardian nedeniyle reddedilen hedef&#x0a;Geçiş: kill→yeni hedef ort. süresi&#x0a;Kayıp: angajman kaybı (lost+lostfast+timeout)">
           <Run Text="🎯 %"/><Run Text="{Binding FarmAcqPct, Mode=OneWay, FallbackValue=0}" FontWeight="SemiBold" Foreground="#FFD4A44A"/><Run Text=" ("/><Run Text="{Binding FarmAcqRatio, Mode=OneWay}"/><Run Text=")  ·  🛡 "/><Run Text="{Binding FarmGuardianRed, Mode=OneWay, FallbackValue=0}"/><Run Text="  ·  geçiş "/><Run Text="{Binding FarmSwitchAvg, Mode=OneWay}"/><Run Text="  ·  kayıp "/><Run Text="{Binding FarmLostTotal, Mode=OneWay, FallbackValue=0}"/>
         </TextBlock>
 
