@@ -4,11 +4,13 @@
 > güncellenir. Amaç: memory dosyalarındaki tarihçeyi tekrar tekrar okumadan bağlamı tek dosyadan almak.
 > Kısa tut (~150 satır tavan): burası GÜNCEL DURUM özetidir, tarihçe memory'de/git log'da.
 
-**Son güncelleme:** 2026-07-13 (14.tur devam — **Faz 6 (guardian same-frame yeniden yazımı) UYGULANDI**.
-Kullanıcı, 14.tur Faz 1-5'i publish edip test etti; "normal moba saldırmıyor/atlıyor" davranışı SÜRDÜ →
-3. ChatGPT 5.6 review'ü (bug/mimari) kaynak koda karşı doğrulandı (5/5 bulgu gerçek), tam GPT yeniden
-yazımı seçildi ve kodlandı. Build+9 test YEŞİL. Henüz publish/canlı-test YOK. Plan dosyası:
-~/.claude/plans/c-users-mertk-desktop-chatgpt-5-6-revie-snuggly-wolf.md)
+**Son güncelleme:** 2026-07-13 (15.tur — **Faz 6'nın canlı testi yapıldı, YENİ kök nedenler bulundu +
+düzeltildi**. Kullanıcı Faz 6'yı publish edip test etti: "ilk başlarda hiç saldırmadı, tek tek seçti ama
+kombo başlamadı, sonra normale döndü; HUD 'hedef taze karede yok' diyordu." Log+telemetry+replay (bugünkü
+7 oturum, 20:04-20:35) derinlemesine incelendi (bkz [[farm-targeting-issues]] 15.tur). **İKİ kod düzeltmesi
+yapıldı + build/test YEŞİL (henüz publish/canlı-test YOK)**, ayrıca **kritik bir oyun-bilgisi belirsizliği
+bulundu ve kullanıcıya soruldu** (aşağıya bak — "[Random] Wild Tyon" ismi guardian mi yoksa etkinlik-
+etiketi mi belli değil, replay kanıtı önceki 2026-07-09 teşhisiyle çelişiyor).)
 
 ---
 
@@ -35,87 +37,70 @@ fps sayısı değil.**
 
 ## 3. GÜNCEL DURUM (2026-07-13 itibarıyla)
 
-### 13.tur P1-P5 paketinin İLK canlı testi (archer, 2026-07-13 06:18, 94sn, replay+log)
-- ✅ Tık-kayıp 25→3, alım süresi ~144ms medyan, overlay-açık fps 67-73, replay temiz — S5/P3/P4/P5
-  ÇALIŞIYOR.
-- ⚠️ Ceset-varsayımı 9→5 (hedef ≤2'ye inmedi) — 14.tur'da kök neden bulundu (bkz aşağı).
-- 🔴 **O günün ana bulgusu: guardian yanlış-pozitifleri** — 63 denemenin 35'i guardian-red (%56).
-  Ham "%9 başarı" bu karışımın eseri; gerçek tık-isabeti %84 idi (63'ün 49'u tık attı, 41'i HP
-  doğruladı). Replay piksel analiziyle KANITLANDI: (a) `barOffsetY=0` okumaları bu sunucudaki kalıcı
-  kayan duyuru şeridini tarıyordu (pencere fiilen hep +57'de), (b) seçim-anı geçici kırmızı vurgu
-  tek-GDI-okumasını kirletiyordu (DXGI'de saf mor isim, ~200ms sonraki GDI oy=%94-100).
+### 15.tur — Faz 6'nın İLK canlı testi analiz edildi (archer, 7 kısa oturum 20:04-20:35, log+7 replay+telemetry)
+Kullanıcı raporu: "ilk başlarda hiçbir moba saldırmadı, hepsini tek tek seçti ama kombo başlatmadı; bir
+süre sonra normal çalıştı; HUD 'hedef taze karede yok' diyordu." Log (`guardian-red` oturum başına
+%20-70! bazı oturumlarda `deneme=44 guardian-red=31`) + replay kareleri (PowerShell `System.Drawing` ile
+piksel/HSV elle analiz edildi, bkz [[farm-targeting-issues]] 15.tur) derinlemesine incelendi. **İKİ AYRI
+kök neden** bulundu ve **İKİSİ DE düzeltildi** (build+9 test YEŞİL, henüz publish/canlı-test YOK):
 
-### 14.tur: iki dış ChatGPT 5.6 denetimi doğrulandı + düzeltmeler uygulandı
-Rapor 1 (bug/mimari) ve Rapor 2 (performans) kaynak koda karşı satır satır kontrol edildi. Bayat/
-yanlış bulgular (overlay-capture, render-coalescing — zaten 13.turda çözülmüştü) elendi. **Faz 1-5 +
-7-8 UYGULANDI, BUILD+TEST YEŞİL, HEPSİ PUSH'LANDI** (henüz publish/canlı-test YOK):
+1. **"Hedef taze karede yok" kullanıcının teşhis ettiği gibi gereksiz bir iptal noktasıydı.**
+   `TargetAsync`'te tıklamadan HEMEN önce YOLO'nun adayı yeniden bulması ZORUNLU tutuluyordu (bulamazsa
+   tıklama hiç atılmadan `return false` — "seçti gibi görünüp saldırmadı" hissi buradan geliyordu) +
+   `WaitForSelectedTargetAsync` içinde ayrıca 320ms'lik bir "YOLO izi kayboldu" erken-çıkışı vardı (HP-bar
+   YAPISI'nın kendi 450ms bütçesini bitirmeden pes ediyordu). **FIX (`FarmEngine.Targeting.cs`):** YOLO
+   adayı yeniden bulamazsa artık SON BİLİNEN konuma yine de tıklıyor (sentetik `Detection`, `WithOffset`);
+   `WaitForSelectedTargetAsync` artık YOLO'dan TAMAMEN bağımsız, her zaman tam 450ms bütçeyi kullanıyor —
+   hüküm tamamen HP-bar YAPISI + isim rengine bırakıldı (kullanıcının istediği kural: "çerçeve bulunduysa +
+   isim kırmızı değilse saldır").
+2. **Guardian yanlış-pozitifi YENİDEN bulundu — Faz 6'nın "same-frame = seçim-vurgusu yok" varsayımı
+   EKSİKTİ.** Replay piksel kanıtı: AYNI mob tam-HP'de (yeni seçilmiş) KIRMIZI isimle, hasar aldıktan
+   sonra (mor/beyaz) NORMAL renkte okunuyordu — vurgu tek-kareyle sınırlı değilmiş, bir süre sürebiliyormuş.
+   **FIX (`CheckGuardianAndReturnAsync`):** ilk okuma Guardian derse artık hemen hükmetmiyor — 2 bağımsız
+   GDI yeniden-örneği (~110ms arayla); herhangi biri Normal derse saldırıya döner, yalnız TÜM örnekler
+   ısrarla Guardian derse hükmediliyor (eski 14.tur'da kaldırılan çoklu-örnek fikri, artık yalnız Guardian
+   dalında/az maliyetle geri geldi).
 
-- **Faz 1 (`5144012`) — guardian güvenilirliği:** 3-örnekli vurgu-bağışık okuma (herhangi biri Normal
-  → Normal) + yapı-teyitsiz offset'te kısa-bl (30sn-bl/iz-damga YOK) + `topHue` tanılaması.
-- **Faz 2 (`c0ffe3e`+temizlik) — tutarlılık:** MobTracker **gerçek bug** düzeltildi (inherited-dead
-  iz, `trackMatched` dizisi dışında kaldığından doğduğu karede siliniyordu — ceset temiz kimlikle
-  canlı doğuyordu); `DeadInheritRadiusPx` 110→130; `mobStillThere`/`PollHpBar` TrackId-önce +
-  `!Dead && !Guardian`; tek-vuruş kill kuralı `comboFiredOnce` şartlı. İlk test altyapısı (xunit, 5 senaryo).
-- **Faz 3 — gecikme paketi:** async log writer (senkron `File.AppendAllText` → bounded-queue+batch);
-  event-driven scanning (`Task.Delay(30)` → `SemaphoreSlim` sinyali, 50ms fallback); RP2040 atomik
-  hareket (tek-delta+doğrulama, eski 120px/2ms servo fallback'e düştü — `AtomicMouseMove` anahtarı).
-- **Faz 4 — telemetri:** `ClicksIssued/ClicksConfirmed/...` ayrık sayaçlar (HUD yüzdesi artık
-  guardian'dan BAĞIMSIZ tık-isabeti); `telemetry/*.jsonl` (acq_attempt/engage_end/pop_gate/gate_defer).
-- **Faz 5 — hijyen:** ReplayRecorder dispose-yarışı (worker abandon → queue'ya dokunma); GDI
-  BitBlt hata kontrolü; SessionOptions dispose; farm-çalışırken model-swap kilidi; FarmLoopAsync
-  artık `_farmTask`'ta bekleniyor.
-- **Faz 7 — dağıtım:** CUDA zip'lerine staging+doğrulama+`.dll`-allowlist+çakışma-kontrolü (SHA-256
-  YOK — gerçek hash indirmeden bilinmiyor, backlog); `.iss`'ler `ISCC /DAppVer=` alabiliyor;
-  `release.ps1` (elle çalıştırılır).
-- **Faz 8 — deneysel:** `prefer_nhwc` anahtarı eklendi (varsayılan KAPALI) — `replay_benchmark.py`
-  aracı `tools/yolo_trainer/` altında henüz YAZILMADI, gerçek A/B ölçümü YAPILAMADI.
+### 🔴 KRİTİK AÇIK SORU — "[Random] Wild Tyon" ismi guardian mı, etkinlik-etiketi mi? (kullanıcıya soruldu)
+Replay'lerde (bugünkü ekran görüntüleri) tek seferde 5 GÖRSEL OLARAK ÖZDEŞ Tyon aynı ekranda görüldü,
+farklı zamanlarda 9+ FARKLI trackId/pozisyonda "[Random] Wild Tyon" ismi bazen KIRMIZI (guardian-hüküm)
+bazen BEYAZ (saldır) okundu — ekranın üstünde bir duyuru/kural şeridi (`hkw.gg/kural...`) vardı. Bu,
+**2026-07-09 (10.tur-d) tarihli DOĞRULANMIŞ teşhisle ÇELİŞİYOR**: o gün kullanıcı bilerek TEK guardian'ın
+yanında test etmiş ve ismin gerçekten "[Random] Wild Tyon" olduğunu görsel olarak onaylamıştı. Bugünkü
+kanıt (aynı anda birden çok, ekranın farklı yerlerinde) tek bir sabit guardian'la uyuşmuyor — ya sunucuda
+şu an geçici bir "Wild/Random" etkinliği VAR (birçok Tyon'u geçici olarak bu isimle/renkle etiketliyor,
+hepsi VURULABİLİR) ya da bu spotta gerçekten birden fazla guardian var. **Koda DOKUNULMADI** (guardian
+rengi/eşiği/mantığı aynı bırakıldı) — bu net cevap gerektirir, yanlış tarafa karar vermek ya gerçek
+guardian'a saldırtır ya da etkinlik boyunca farm'ı tamamen durdurur. Kullanıcıya soruldu, cevap BEKLENİYOR.
 
-### Faz 6 (2026-07-13) — guardian SAME-FRAME yeniden yazımı UYGULANDI (canlı test BEKLİYOR)
-14.tur Faz 1-5'in canlı testinde davranış sürünce kök neden threshold değil **karar sırası/kare
-bütünlüğü** olarak teşhis edildi (guardian, HP-yapısından KOPUK + RENK-YALNIZ + AYRI/gecikmeli GDI
-karesinde okunuyordu). Çözüm:
-- **`WtmVision.ScanTargetBar`** artık isim guardian sınıfını HP-yapısıyla **AYNI DXGI karesinde**, yapının
-  offset'inde hesaplar (`ReadNameplateClassFromFrame` → `ClassifyNameCore` unsafe; `TargetBarState`e
-  `NameClass/NameTextPx/NameGuardianVotes/NameUsedRefHue/NameDomHue/NameDomFrac` eklendi). Kök neden
-  kapandı: offset=0 duyuru-şeridi imkânsız (offset yapıdan), seçim-anı kırmızı vurgu yok (DXGI karesi saf).
-- **`FarmEngine.Targeting`:** `PollHpBarAsync`+`CheckGuardian`(GDI) → `WaitForSelectedTargetAsync` (seçim
-  otoritesi=çerçeve YAPISI, `CapturedAtMs>=clickIssuedAt` freshness) + `CheckGuardianAndReturnAsync` **saf
-  karar** (ekran/GDI/offset-arama YOK). Guardian HÜKMÜ yalnız ref-hue ile (fallback-kırmızı asla hüküm
-  vermez→saldır). Yapı-teyitsiz kısa-atlama + belirsizlikte RecordAcqFailure KALDIRILDI (GPT #2/#4).
-- **Deployment guard (`FarmEngine.cs`):** çerçeve şablonu kalibre DEĞİL + guardian açık → belirgin uyarı +
-  renk-alive fallback (guardian pasif). Shipped config'de şablon HAZIR gelir.
-- **Test:** `tests/.../GuardianClassificationTests.cs` (4 test) — mor=Normal, kırmızı=Guardian, ve KÖK NEDEN
-  kilidi: isim +57'de(yapı)→Normal, offset=0 duyuru-şeridi→yanlış Guardian. Tüm suite 9/9 yeşil.
-- ⏳ **BEKLEYEN:** publish (Build-Cuda/`release.ps1`, exe kapalı) → aynı spotta ~2dk canlı test. Risk:
-  yapı-teyit gecikmesi (~1 DXGI karesi); `AnnounceShiftY` gözlenen +57 kaymasıyla eşleşmeli.
+### Faz 6 (14.tur, hâlâ yürürlükte) — guardian SAME-FRAME + yapı-otoritesi
+`WtmVision.ScanTargetBar` isim guardian sınıfını HP-yapısıyla AYNI DXGI karesinde, yapının offset'inde
+hesaplıyor (`TargetBarState.NameClass` vb.); `FarmEngine.Targeting` seçim otoritesini çerçeve YAPISINA
+bağlıyor. Bu katman DOĞRU/kalıcı — 15.tur yalnız ÜSTÜNE debounce + YOLO-bağımsızlık ekledi, kaldırmadı.
 
-- Git: main = origin/main. 14.tur commit'leri: `5144012`(F1) `c0ffe3e`+temizlik(F2) → F3/F4/F5/F7/F8
-  (sırayla push'landı, `git log --oneline -10` ile görülebilir).
-- Versiyon 1.0.2 hâlâ tek-kaynak; installer'lar 13. VE 14.tur commit'lerini İÇERMİYOR.
+- Git: main = origin/main. 15.tur değişiklikleri HENÜZ COMMIT EDİLMEDİ (kullanıcı onayı + Wild-Tyon
+  cevabı bekleniyor — guardian debounce'un davranışı cevaba göre ayarlanabilir).
+- Versiyon 1.0.2 hâlâ tek-kaynak; installer'lar 13/14/15.tur commit'lerini İÇERMİYOR.
 
 ## 4. AÇIK KONULAR / SIRADAKİ ADIMLAR (öncelik sırasıyla)
 
-1. **ANA GÜNDEM — Faz 1-6 + 7-8 canlı testi (henüz yapılmadı).** Publish (Build-Cuda, `release.ps1`
-   veya elle) → aynı spotta ~2dk oturum. Beklenenler:
-   - **Guardian-red** 35→≤10; `[Farm] Guardian kontrol` satırında `topHue=`MOR iken sonuç=Guardian
-     ARTIK OLMAMALI; mor-normal moba iz-damga/30sn-bl YAZILMAMALI (Faz 6 kök-neden düzeltmesi).
-   - `sonuç=Guardian` yalnız gerçek kırmızı-isimli + `mod=ref-hue`; `mod=fallback-kırmızı` → hüküm YOK.
-   - **Geçiş medyanı** 8129ms→≤2500ms; atlama davranışı bitmeli, `ClicksConfirmed/ClicksIssued` yükselmeli.
-   - **Ceset-varsayımı** 5→≤2 (MobTracker düzeltmesi + 130px yarıçapı).
-   - `telemetry/*.jsonl`: `guardian_block` yalnız gerçek ref-hue hükümlerinde (`acq_attempt`).
-   - Gerçek guardian (5 normal + 1 guardian spotu) doğru atlanmalı — regresyon yok.
-2. **Kullanıcı ayarı (kod dışı, test ÖNCESİ yapılmalı):** bu spot için `RegionMobCount=7` → **5**
-   (kullanıcı teyidi: 5 normal + 1 guardian). S3 nüfus muhasebesi şu ana kadar hiç tetiklenmedi.
-3. Test sonucuna göre: Faz 6 (freshness gate + DXGI-birincil HP-onay) değerlendirilir; eşik ince-ayarı
-   gerekebilir (`MotionGatePxPerMs`, `DeadInheritRadiusPx` — ikisi de düşük risk, geri-alması kolay).
-4. **CUDA hash-pinning (backlog, Faz 7'de bilinçli atlandı):** gerçek zip dosyalarının SHA-256'sı
-   olmadan gömülü sabit yazılamazdı (indirmek açık kullanıcı izni gerektirir). Kullanıcı isterse
-   GitHub'dan zip'leri indirip hash hesaplatabilir, kod `CudaDownloadWindow.xaml.cs`'e eklenir.
-5. **prefer_nhwc gerçek ölçümü (backlog):** `tools/yolo_trainer/` altına bir `replay_benchmark.py`
-   yazılmalı (mevcut replay session'ları üzerinde ONNX Runtime Python API ile GPU p50/p95 + kutu
-   eşleşmesi ölçen script) — bu, HANDOFF Faz E'nin (TensorRT/FP16) de ön-koşulu olabilir.
-6. Müşteri dağıtım testi: installer'lar hâlâ eski commit'leri içeriyor — `release.ps1` ile yeniden
-   derlenmeli (test onayından sonra).
+1. **ANA GÜNDEM — kullanıcının "[Random] Wild Tyon" sorusuna cevabı bekleniyor** (yukarı bakınız). Cevaba
+   göre: (a) "etkinlik etiketi, hepsi vurulabilir" → guardian ref-hue rengi büyük ihtimalle yeniden
+   kalibre edilmeli (ya da etkinlik-farkındalı bir istisna eklenmeli), (b) "gerçek guardian, atlanmalı" →
+   kod DEĞİŞMEZ, yalnız 15.tur'un debounce+YOLO-bağımsızlık fix'leri canlı testte doğrulanır.
+2. **15.tur fix'lerinin canlı testi (henüz yapılmadı).** Publish (Build-Cuda, `release.ps1` veya elle,
+   exe kapalı) → aynı spotta oturum. Beklenenler:
+   - "Hedef taze karede yok" HUD mesajı ARTIK GÖRÜLMEMELİ (tıklama artık iptal edilmiyor).
+   - İlk birkaç saniyede "hiç saldırmama" deseni BİTMELİ (debounce fresh-selection kırmızı flaşını atlar).
+   - `[Farm] Guardian kontrol: sonuç=Guardian (2/2 yeniden-örnek doğruladı)` satırı yalnız ISRARLA kırmızı
+     kalan hedeflerde görülmeli; "ilk-okuma=Guardian ama yeniden-örnek(...)=Normal" satırı sık görülüyorsa
+     15.tur teşhisi (flaş) doğrulanmış olur.
+   - `guardian-red` oranı düşmeli (önceki gün bazı oturumlarda %50-70'e varıyordu).
+3. **Kullanıcı ayarı (kod dışı, test ÖNCESİ):** bu spot için `RegionMobCount` doğru mu — Wild-Tyon
+   cevabına göre 5 normal+1 guardian varsayımı değişebilir.
+4. **CUDA hash-pinning (backlog):** gerçek zip dosyalarının SHA-256'sı olmadan gömülü sabit yazılamazdı.
+5. **prefer_nhwc gerçek ölçümü (backlog):** `tools/yolo_trainer/replay_benchmark.py` henüz YAZILMADI.
+6. Müşteri dağıtım testi: installer'lar hâlâ eski commit'leri içeriyor — test onayından sonra.
 7. Otonom v2 (BEKLEMEDE — kullanıcı: acelesi yok).
 
 ## 5. KRİTİK KOMUTLAR / KURALLAR

@@ -56,7 +56,8 @@ public sealed class FarmTelemetry
     /// <summary>HP bar doğrulaması BAŞARILI olan tıklama sayısı — guardian kararından BAĞIMSIZ
     /// ("tıklama isabet etti mi" sorusunun saf cevabı). HUD'un ana yüzdesi bu/ClicksIssued'dır.</summary>
     public int ClicksConfirmed { get; set; }
-    /// <summary>Tıklama hiç atılmadan çıkılan deneme sayısı (taze-karede-yok + kamera-kapısı vazgeç) —
+    /// <summary>Tıklama hiç atılmadan çıkılan deneme sayısı (yalnız kamera-kapısı vazgeç — 15.tur'da
+    /// taze-karede-yok artık tıklamayı iptal etmiyor, son-bilinen konuma tıklıyor) —
     /// AcqAttempts içinde ama fiilen hiç tık gitmemiş alt-küme.</summary>
     public int NoClickFreshMiss { get; set; }
     /// <summary>Kamera-hareket kapısı bütçesi dolup vazgeçilen hedef sayısı (oturum-özetindeki

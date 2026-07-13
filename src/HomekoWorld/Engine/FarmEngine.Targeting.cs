@@ -12,17 +12,11 @@ namespace HomekoWorld.Engine;
 
 public sealed partial class FarmEngine
 {
-    // ── Hedef-alma YOLO-flicker toleransı (2026-07-04, 6.tur) ────────────────────────────────────────
-    // Kanıt: 57dk canlı log — 2441 hedef-alma denemesinin 1541'i (%63) "tık-sonrası-kayıp", bunların
-    // 1334'ü (%87) İLK offset denemesinde bitti, bunların da 1297'si (%84) `isim:iz-kayıp` — yani
-    // PollHpBarAsync'teki eski 150ms erken-çıkış tetiklendi. Toplam 17.5dk (oturumun %30'u) bu 1541
-    // başarısızlıkta harcandı. 480ms'lik toplam poll bütçesinin yalnız üçte biri kullanılıyordu; geri
-    // kalanı hiç denenmiyordu. Eşik ikiye katlandı (320ms, hâlâ 480ms bütçe içinde), eşleşme yarıçapı
-    // genişletildi (160px) — mob'un poll penceresi boyunca gerçek hareketine tolerans tanır.
-    // DOKUNULMADI: satır ~296-298'deki "tık sonrası mob hâlâ orada mı" 80px kontrolü (farklı semantik —
-    // tam tıklanan noktanın ıskalandığını doğrular, blacklist/escalation'ı besler).
-    private const int   AcqYoloLossGraceMs = 320;  // idi: satır-içi 150
-    private const float AcqMatchRadiusPx   = 160f; // idi: satır-içi 100f (TargetAsync taze-arama + PollHpBarAsync stillThere)
+    // ── Hedef-alma eşleşme yarıçapı (2026-07-04, 6.tur; 15.tur'da YOLO-flicker erken-çıkışı kaldırıldı) ──
+    // AcqMatchRadiusPx, TargetAsync'in taze-arama eşleşmesinde ve WaitForSelectedTargetAsync'in (eski)
+    // stillThere kontrolünde kullanılıyordu. 15.tur: yapı-teyit bekleme artık YOLO'dan bağımsız (bkz
+    // WaitForSelectedTargetAsync), bu sabit yalnız taze-arama eşleşmesinde kalır.
+    private const float AcqMatchRadiusPx = 160f; // idi: satır-içi 100f
     // 9.tur: HP-poll bütçesi DUVAR-SAATİ oldu — eski 16-iterasyon×30ms sayacı "480ms" varsayıyordu ama her
     // iterasyondaki SENKRON GDI yakalaması (~30ms, IsTargetAliveNow içinde) fiilen ~950ms sürdürüyordu
     // (canlı log 2026-07-08: isim:hp-yok(947-1006ms) × 121). Başarılı onay ~230ms tepesinde bimodal →
@@ -30,11 +24,13 @@ public sealed partial class FarmEngine
     // bütçeyi kullanır (simetrik `denemeler` telemetrisi; tek ayar düğmesi).
     private const int   AcqHpPollBudgetMs  = 450;
 
-    // ── 14.tur (Faz 6): guardian çoklu-örnek GDI hack'i KALDIRILDI ───────────────────────────────
-    // Eski 3-örnek okuma, seçim-anı geçici kırmızı vurgunun ayrı/gecikmeli GDI okumasını kirletmesine
-    // karşı bir yamaydı. Faz 6 kök nedeni yapısal olarak çözdü: isim artık HP-yapısıyla AYNI DXGI
-    // karesinde okunuyor (WtmVision.ScanTargetBar → TargetBarState.NameClass) ve o karede isim zaten saf
-    // mor — vurgu yok. Örnekleme/gecikme gereksiz.
+    // ── 14.tur (Faz 6): guardian çoklu-örnek GDI hack'i KALDIRILMIŞTI, 15.tur'da GERİ GELDİ ────────
+    // Faz 6, isim artık HP-yapısıyla AYNI DXGI karesinde okunduğu için ("same-frame") seçim-anı geçici
+    // kırmızı vurgunun bitmiş olacağını varsaydı. 15.tur canlı test + replay piksel kanıtı (2026-07-13)
+    // bu varsayımı çürüttü: vurgu tek-kareyle sınırlı değil — AYNI mob tam-HP'de (yeni seçilmiş) kırmızı,
+    // hasar aldıktan sonra normal renginde okunabiliyor. `CheckGuardianAndReturnAsync` artık İLK okuma
+    // Guardian derse 2 bağımsız GDI yeniden-örneği alıyor (~110ms arayla) — yalnız Guardian dalında,
+    // ortak (saldır) yolda ek gecikme yok.
 
     // ── Scanning ──────────────────────────────────────────────────────────────
 
@@ -298,8 +294,6 @@ public sealed partial class FarmEngine
                 (firstDx, firstDy),  // 2. deneme: keypoint veya isim-offset (fallback)
             ];
 
-            // V3: HP-poll'lerden herhangi biri YOLO-iz-kaybı erken-çıkışıyla bittiyse "kesin ceset" kanıtı yok.
-            bool anyYoloLost = false;
             // 2026-07-04 (P2a): döngü-sonrası blacklist siteleri (iz-titremesi/ceset-varsayımı) için EN SON
             // gerçekten tıklanan konum — `liveTarget` döngü-lokal, döngü dışında scope'ta değil. Bayat
             // `target.Center` yerine bunu kullanmak, hareketli mob için ardışık denemelerin AYNI escalation
@@ -402,14 +396,19 @@ public sealed partial class FarmEngine
                         .OrderBy(d => d.DistanceTo(lastLiveCenter))
                         .FirstOrDefault();
                 }
+                // 15.tur (canlı test kanıtı, 2026-07-13): YOLO'nun bu karede adayı yeniden BULAMAMASI hedefin
+                // orada olmadığı anlamına gelmez — az önce tıklanıp kilitlenmiş bir hedef fiziksel olarak
+                // "kaybolamaz", YOLO yalnız o an kaçırmış olabilir (seçim vurgusu/animasyon/oklüzyon). Taze
+                // eşleşme yoksa SON BİLİNEN konuma (lastLiveCenter, sentetik Detection — kimlik korunur) yine
+                // de tıkla; asıl hüküm HP-bar YAPISI + isim rengidir (CheckGuardianAndReturnAsync) — bu adım
+                // artık tıklamayı asla iptal etmez, yalnız tıklanacak koordinatı seçer.
                 if (liveTarget is null)
                 {
-                    Telemetry.NoClickFreshMiss++;   // 14.tur (Faz 4.1): tıklama hiç atılmadı
-                    StatusChanged?.Invoke(this, "Hedef taze karede yok — tıklama atlandı, yeniden tarıyor");
-                    Program.Log($"[Farm] hedef-bırakıldı trk={target.TrackId}: taze-karede-yok " +
-                                $"(deneme {i + 1}/2, {acqSw.ElapsedMilliseconds}ms, kayma={gateFlow:0.00}px/ms) — bl YOK");
-                    EmitAcq("no_click_fresh_miss", "taze-karede-yok");
-                    return false;
+                    Program.Log($"[Farm] taze-eşleşme-yok trk={lastLiveTrackId}: son-bilinen konuma tıklanıyor " +
+                                $"(deneme {i + 1}/2, {acqSw.ElapsedMilliseconds}ms) — hüküm HP-yapısına bırakıldı");
+                    liveTarget = target.WithOffset(
+                        (int)(lastLiveCenter.X - target.Center.X),
+                        (int)(lastLiveCenter.Y - target.Center.Y)) with { TrackId = lastLiveTrackId };
                 }
                 lastLiveCenter  = liveTarget.Center;
                 lastLiveTrackId = liveTarget.TrackId;
@@ -436,10 +435,10 @@ public sealed partial class FarmEngine
                 // 14.tur (Faz 6): seçim OTORİTESİ = çerçeve yapısı. Tıklamadan SONRAKİ ilk yapı-teyitli DXGI
                 // karesini bekle; o karenin SAME-FRAME isim sınıfını (guardian mı) taşıyan TargetBarState'ini al.
                 // null = seçilemedi (template yok / tık ıskaladı) → guardian HÜKMÜ YOK, aşağıdaki ıska yollarına düş.
-                var sel = hpBarCalibrated
-                    ? await WaitForSelectedTargetAsync(clickIssuedAt, liveTarget, ct)
-                    : (selected: (TargetBarState?)null, yoloLost: false);
-                if (sel.selected is { } selUi)
+                var selBar = hpBarCalibrated
+                    ? await WaitForSelectedTargetAsync(clickIssuedAt, ct)
+                    : null;
+                if (selBar is { } selUi)
                 {
                     // 2026-07-04 (P2b): seçim onaylandı → bu TrackId'nin ardışık-başarısızlık serisi sıfırlanır
                     // (guardian sonucundan BAĞIMSIZ — seçim/HP-tespiti burada zaten BAŞARILI; guardian reddi ayrı).
@@ -465,8 +464,7 @@ public sealed partial class FarmEngine
                     }
                     return ok;
                 }
-                if (sel.yoloLost) anyYoloLost = true;
-                attempts.Add($"{offName}:{(sel.yoloLost ? "iz-kayıp" : "seçilemedi")}({acqSw.ElapsedMilliseconds - attStart}ms)");
+                attempts.Add($"{offName}:seçilemedi({acqSw.ElapsedMilliseconds - attStart}ms)");
 
                 // HP bar yok — karakter hareket ettiyse auto-walk'ı iptal et
                 byte[] postCrop = SampleCharRegionDirect();
@@ -514,47 +512,32 @@ public sealed partial class FarmEngine
             // bir sonraki tarama EN YAKIN DİĞER mob'u seçsin (ölüye tıklama döngüsünü kırar).
             if (hpBarCalibrated)
             {
-                if (anyYoloLost)
-                {
-                    // V3 (2026-07-02): "HP yok" kararlarından biri YOLO-iz-kaybı ERKEN-ÇIKIŞINDAN geldi —
-                    // tam 480ms pencere izlenmedi, bu KESİN ceset kanıtı DEĞİL. Yoğun sürüde iz titremesi
-                    // CANLI mobu bu yola sokup 2×blacklist + MarkDead ile ceset damgalatıyordu (18:47 log:
-                    // miras-DEAD "B-belirtisi" zinciri → canlı mob atlama). Yalnız KISA atla; iz damgalama YOK.
-                    _deadBlacklist.Add((lastLiveCenter, NowMs() + MissReselectSkipMs));
-                    Telemetry.HpValidationFailed++;   // 14.tur (Faz 4.1): tık gitti, doğrulama belirsiz kaldı
-                    StatusChanged?.Invoke(this, "Hedef doğrulanamadı (iz kayboldu) — kısa atlanıyor");
-                    Program.Log($"[Farm] hedef-bırakıldı trk={lastLiveTrackId}: iz-titremesi " +
-                                $"(denemeler=[{string.Join(",", attempts)}], {acqSw.ElapsedMilliseconds}ms, " +
-                                $"kayma={gateFlow:0.00}px/ms) — " +
-                                $"bl {MissReselectSkipMs}ms, iz-damga YOK");
-                    EmitAcq("hp_validation_failed", "iz-titremesi");
-                }
-                else
-                {
-                    // F2: 2 tık da TAM pencere boyunca HP üretmedi → büyük olasılıkla ceset/seçilemez.
-                    // 2026-07-03: süre 2× → 1× (taban zaten 20sn'ye çıktı; 40sn×90px kör bölgeler kill
-                    // sonrası canli=0 boş taramaları besliyordu) + iz-damga VARSAYIM kaynaklı (salt teşhis;
-                    // 7.tur: damga KALICI — canlı mob yanlış damgalanırsa kamera-flip churn'ü telafi eder).
-                    // 2026-07-04: ceset blacklist'i de ESCALATION'lı — aynı ceset/false-positive tekrar tekrar
-                    // ceset-varsayımına düşerse süre 20s→45s→90s katlanır (kronik nokta uzun susar).
-                    long corpseBlMs   = EscalatedBlacklistMs(lastLiveCenter, s.DeadBlacklistMs, out int corpseRep);
-                    long corpseExpire = NowMs() + corpseBlMs;
-                    _deadBlacklist.Add((lastLiveCenter, corpseExpire));
-                    // Düşen ceset kutusunu da kapsa + izi "ölü" damgala (#3): bu track ve yakın doğan ceset
-                    // track'leri (MobTracker.DeadInheritRadiusPx mirası) bir daha aday olmaz.
-                    _deadBlacklist.Add((new PointF(lastLiveCenter.X, lastLiveCenter.Y + CorpseFallOffsetPx), corpseExpire));
-                    // 9.tur: damga TIKLANAN ize (lastLiveTrackId) — eski target.TrackId, iz churn'ünde hiç
-                    // tıklanmamış izi damgalayıp gerçek cesedi "canlı aday" bırakıyordu.
-                    _tracker.MarkDead(lastLiveTrackId, MobTracker.DeadSource.Assumed);
-                    Telemetry.CorpseAssumptions++;   // 14.tur (Faz 4.1)
-                    StatusChanged?.Invoke(this, "Hedef seçilemedi (ölü/ceset?) — atlanıyor");
-                    Program.Log($"[Farm] hedef-bırakıldı trk={lastLiveTrackId}: ceset-varsayımı (2 tık HP üretmedi, " +
-                                $"denemeler=[{string.Join(",", attempts)}], {acqSw.ElapsedMilliseconds}ms, " +
-                                $"kayma={gateFlow:0.00}px/ms) — " +
-                                $"bl {corpseBlMs}ms ×2nokta + iz-damga(varsayım)" +
-                                $"{(corpseRep > 1 ? $" (nokta tekrar #{corpseRep} → escalation)" : "")}");
-                    EmitAcq("corpse_assumed", "ceset-varsayimi");
-                }
+                // F2: 2 tık da TAM pencere boyunca (artık YOLO'dan bağımsız, tam AcqHpPollBudgetMs) HP
+                // üretmedi → büyük olasılıkla ceset/seçilemez. 15.tur: YOLO-iz-kaybı erken-çıkışı kaldırıldığı
+                // için (bkz WaitForSelectedTargetAsync) buraya düşen her deneme artık gerçekten TAM bütçeyi
+                // kullandı — "iz-titremesi" ayrı/daha yumuşak yolu gereksizdi, tek yol kaldı.
+                // 2026-07-03: süre 2× → 1× (taban zaten 20sn'ye çıktı; 40sn×90px kör bölgeler kill
+                // sonrası canli=0 boş taramaları besliyordu) + iz-damga VARSAYIM kaynaklı (salt teşhis;
+                // 7.tur: damga KALICI — canlı mob yanlış damgalanırsa kamera-flip churn'ü telafi eder).
+                // 2026-07-04: ceset blacklist'i de ESCALATION'lı — aynı ceset/false-positive tekrar tekrar
+                // ceset-varsayımına düşerse süre 20s→45s→90s katlanır (kronik nokta uzun susar).
+                long corpseBlMs   = EscalatedBlacklistMs(lastLiveCenter, s.DeadBlacklistMs, out int corpseRep);
+                long corpseExpire = NowMs() + corpseBlMs;
+                _deadBlacklist.Add((lastLiveCenter, corpseExpire));
+                // Düşen ceset kutusunu da kapsa + izi "ölü" damgala (#3): bu track ve yakın doğan ceset
+                // track'leri (MobTracker.DeadInheritRadiusPx mirası) bir daha aday olmaz.
+                _deadBlacklist.Add((new PointF(lastLiveCenter.X, lastLiveCenter.Y + CorpseFallOffsetPx), corpseExpire));
+                // 9.tur: damga TIKLANAN ize (lastLiveTrackId) — eski target.TrackId, iz churn'ünde hiç
+                // tıklanmamış izi damgalayıp gerçek cesedi "canlı aday" bırakıyordu.
+                _tracker.MarkDead(lastLiveTrackId, MobTracker.DeadSource.Assumed);
+                Telemetry.CorpseAssumptions++;   // 14.tur (Faz 4.1)
+                StatusChanged?.Invoke(this, "Hedef seçilemedi (ölü/ceset?) — atlanıyor");
+                Program.Log($"[Farm] hedef-bırakıldı trk={lastLiveTrackId}: ceset-varsayımı (2 tık HP üretmedi, " +
+                            $"denemeler=[{string.Join(",", attempts)}], {acqSw.ElapsedMilliseconds}ms, " +
+                            $"kayma={gateFlow:0.00}px/ms) — " +
+                            $"bl {corpseBlMs}ms ×2nokta + iz-damga(varsayım)" +
+                            $"{(corpseRep > 1 ? $" (nokta tekrar #{corpseRep} → escalation)" : "")}");
+                EmitAcq("corpse_assumed", "ceset-varsayimi");
             }
             else
             {
@@ -596,10 +579,10 @@ public sealed partial class FarmEngine
             await _router.ClickAsync(MouseButton.Left, ct);
             await Task.Delay(200, ct);
 
-            var sel = hpBarCalibrated
-                ? await WaitForSelectedTargetAsync(clickIssuedAt, target, ct)
-                : (selected: (TargetBarState?)null, yoloLost: false);
-            if (sel.selected is { } selUi)
+            var selBar = hpBarCalibrated
+                ? await WaitForSelectedTargetAsync(clickIssuedAt, ct)
+                : null;
+            if (selBar is { } selUi)
                 return await CheckGuardianAndReturnAsync(target, selUi, ct);
 
             if (!hpBarCalibrated)
@@ -625,16 +608,19 @@ public sealed partial class FarmEngine
         await Task.Delay(50, ct);
     }
 
-    /// <summary>14.tur (Faz 6): SAF guardian kararı. Ekran görüntüsü YOK, GDI YOK, offset arama YOK — isim
-    /// sınıfı, çağıranın verdiği <paramref name="ui"/>.NameClass'tan okunur (HP-yapısıyla AYNI DXGI karesinde,
-    /// yapının offset'inde WtmVision.ScanTargetBar tarafından hesaplanmıştı). Bu, iki kök nedeni de kapatır:
-    /// offset artık yapıdan (duyuru-şeridi offset=0 imkânsız) ve isim seçim-anı geçici kırmızı vurgunun
-    /// olmadığı DXGI karesinden okunur.
-    /// Guardian HÜKMÜ yalnız REF-HUE (kalibre normal+guardian renkleri) ile verilir — bu oyunda seçili başlık
-    /// geçici kırmızı olabildiğinden sabit-kırmızı fallback güvenilmez; fallback'te ASLA hüküm verilmez
-    /// (saldır), yalnız loglanır. Koruma ise: iz-damga (MarkGuardian) + konum-bl + W-tap ile hedefi bırak →
-    /// false. Aksi (Normal/Unknown, veya fallback-guardian) → true (saldır). Belirsizlikte RecordAcqFailure
-    /// YOK — seçim/HP zaten onaylandı (GPT #4 çelişkisi giderildi).</summary>
+    /// <summary>14.tur (Faz 6) + 15.tur (debounce): guardian kararı. İsim sınıfı önce çağıranın verdiği
+    /// <paramref name="ui"/>.NameClass'tan okunur (HP-yapısıyla AYNI DXGI karesinde, yapının offset'inde
+    /// WtmVision.ScanTargetBar tarafından hesaplanmıştı).
+    /// 15.tur (canlı test + replay piksel kanıtı, 2026-07-13): Faz 6'nın "same-frame = seçim-vurgusu yok"
+    /// varsayımı EKSİKTİ — replay'de AYNI mob tam-HP'de (yeni seçilmiş) kırmızı, hasar aldıktan sonra
+    /// (mor/beyaz) normal renginde okunuyordu; vurgu tek-kareyle sınırlı değil, bir süre sürebiliyor. İlk
+    /// okuma Guardian derse hemen hükmetme: 2 bağımsız GDI yeniden-örneği (~110ms arayla, ayrı ekran
+    /// yakalaması) — HERHANGİ biri Normal derse vurgu kanıtlanmış demektir → saldır. Guardian yalnız TÜM
+    /// örnekler ISRARLA Guardian derse hükmedilir (gerçek koruma sürekli kırmızıdır, tek-kare/tek-an flaşı
+    /// DEĞİL). Fallback-kırmızı modunda (ref-hue yok) debounce'a gerek yok — zaten hiç hüküm verilmiyor.
+    /// Koruma hükmü: iz-damga (MarkGuardian) + konum-bl + W-tap ile hedefi bırak → false. Aksi (Normal/
+    /// Unknown, veya fallback-guardian, veya vurgu geri-alındı) → true (saldır). Belirsizlikte
+    /// RecordAcqFailure YOK — seçim/HP zaten onaylandı (GPT #4 çelişkisi giderildi).</summary>
     private async Task<bool> CheckGuardianAndReturnAsync(Detection target, TargetBarState ui, CancellationToken ct)
     {
         if (!_appState.Wtm.GuardianDetectionEnabled) return true;
@@ -643,16 +629,33 @@ public sealed partial class FarmEngine
                        $"mod={(ui.NameUsedRefHue ? "ref-hue" : "fallback-kırmızı")} sınıf={ui.NameClass} offset={ui.OffsetY} " +
                        $"topHue={(ui.NameDomHue < 0 ? "yok" : $"{ui.NameDomHue:0}°(%{ui.NameDomFrac * 100:0})")}";
 
-        // Guardian HÜKMÜ: yalnız ref-hue (kalibre iki isim rengi) ayırt ettiyse. Same-frame okuma sayesinde
-        // artık yapı-teyit kapısına gerek yok — isim, yapının AÇIK olduğu (StructurePresent) karede,
-        // yapının offset'inde okunmuştur (WaitForSelectedTargetAsync bunu garanti eder).
-        if (ui.NameClass == WtmVision.NameplateClass.Guardian && ui.NameUsedRefHue)
+        // Guardian HÜKMÜ: yalnız ref-hue (kalibre iki isim rengi) ayırt ettiyse.
+        bool guardianVerdict = ui.NameClass == WtmVision.NameplateClass.Guardian && ui.NameUsedRefHue;
+
+        if (guardianVerdict)
+        {
+            for (int i = 0; i < 2 && guardianVerdict; i++)
+            {
+                await Task.Delay(110, ct);
+                var recheck = WtmVision.ReadNameplateClass(_appState.Wtm, ui.OffsetY,
+                    out int rTextPx, out int rVotes, out bool rRefHue, out float rDomHue, out float rDomFrac);
+                guardianVerdict = recheck == WtmVision.NameplateClass.Guardian && rRefHue;
+                if (!guardianVerdict)
+                    Program.Log($"[Farm] Guardian kontrol: ilk-okuma=Guardian ama yeniden-örnek({i + 1}/2)=" +
+                                $"{recheck} (piksel={rTextPx} oy={rVotes} topHue=" +
+                                $"{(rDomHue < 0 ? "yok" : $"{rDomHue:0}°(%{rDomFrac * 100:0})")}) → seçim-anı vurgu, " +
+                                $"saldırılıyor {gDiag}");
+            }
+        }
+
+        if (guardianVerdict)
         {
             // 2026-07-03: verdict İZE de damgalanır (MarkGuardian) — yürüyen guardian'ı yalnız-konumsal
             // blacklist 60px dışında kaçırıp aynı izi 4× kontrol ettiriyordu (canlı log trk=98). İz-damga
             // mob ekranda kaldıkça kalıcı; konumsal liste churn yedeği.
-            Program.Log($"[Farm] Guardian kontrol: sonuç=Guardian {gDiag} → iz-damga trk={target.TrackId} " +
-                        $"+ konum-bl {GuardianBlacklistDurationMs / 1000}sn@({(int)target.Center.X},{(int)target.Center.Y})");
+            Program.Log($"[Farm] Guardian kontrol: sonuç=Guardian (2/2 yeniden-örnek doğruladı) {gDiag} → " +
+                        $"iz-damga trk={target.TrackId} + konum-bl {GuardianBlacklistDurationMs / 1000}sn@" +
+                        $"({(int)target.Center.X},{(int)target.Center.Y})");
             _switchGuardianBlocks++;
             Telemetry.GuardianBlocks++;
             _tracker.MarkGuardian(target.TrackId);
@@ -671,23 +674,25 @@ public sealed partial class FarmEngine
         return true;
     }
 
-    // ── Seçim onayı (tıklama sonrası) — 14.tur (Faz 6) ───────────────────────────────────────────
+    // ── Seçim onayı (tıklama sonrası) — 14.tur (Faz 6) + 15.tur (YOLO-bağımsız bütçe) ──────────────
     // Eski PollHpBarAsync, seçimi RENK-alive (IsTargetAliveNow: GDI+DXGI renk) ile onaylar, guardian
     // offset'ini ondan taşırdı. Bu, iki guardian kök nedenini besliyordu: (a) renk offset=0 duyuru-şeridini
     // seçebiliyordu, (b) canlılık ile isim okuması AYRI karelerdi. Faz 6: seçim OTORİTESİ = çerçeve YAPISI;
-    // isim guardian sınıfı o yapıyla AYNI DXGI karesinden (TargetBarState.NameClass) gelir.
+    // isim guardian sınıfı o yapıyla AYNI DXGI karesinden (TargetBarState.NameClass) gelir. 15.tur: bekleme
+    // artık YOLO'nun hedefi o an görüp görmediğinden TAMAMEN bağımsız (bkz WaitForSelectedTargetAsync).
     /// <summary>Tıklamadan SONRA üretilmiş İLK yapı-teyitli (çerçeve AÇIK) DXGI karesini bekler; o karenin
     /// SAME-FRAME isim sınıfını taşıyan TargetBarState'ini döner. Çerçeve şablonu kalibre DEĞİLSE (deployment
     /// fallback) eski renk-alive yoluna düşer (guardian PASİF, NameClass=Unknown — bkz StartFarm uyarısı).
     /// <paramref name="clickIssuedAtMs"/>: freshness çapası — CapturedAtMs bundan küçük (tıklama-öncesi)
-    /// kareler ELENIR ki eski hedef penceresi yeni seçim sanılmasın. Döner (selected, yoloLost): selected
-    /// null + yoloLost=true → bekleme sırasında iz despawn/çalıntı (erken bırak; KESİN ceset kanıtı DEĞİL).
-    /// selected null + yoloLost=false → bütçe doldu, yapı hiç teyit edilmedi (tık ıskaladı / seçilemedi).</summary>
-    private async Task<(TargetBarState? selected, bool yoloLost)> WaitForSelectedTargetAsync(
-        long clickIssuedAtMs, Detection target, CancellationToken ct)
+    /// kareler ELENIR ki eski hedef penceresi yeni seçim sanılmasın. null = bütçe doldu, yapı hiç teyit
+    /// edilmedi (tık ıskaladı / seçilemedi).
+    /// 15.tur (canlı test kanıtı, 2026-07-13): YOLO-iz-kaybı erken-çıkışı KALDIRILDI — hedef az önce
+    /// tıklanıp kilitlendiğinden YOLO'nun onu bir an kaçırması (seçim vurgusu/animasyon/oklüzyon) hiçbir
+    /// şey kanıtlamaz; tek otorite HP-bar YAPISIdır, o yüzden bekleme artık YOLO'dan bağımsız olarak
+    /// bütçenin TAMAMINI kullanır (erken pes etmek gerçek/yavaş-teyitli seçimleri boşa harcıyordu).</summary>
+    private async Task<TargetBarState?> WaitForSelectedTargetAsync(long clickIssuedAtMs, CancellationToken ct)
     {
         bool frameCalibrated = _appState.Wtm.IsTargetFrameCalibrated;
-        long lostSinceMs = -1;
         var sw = System.Diagnostics.Stopwatch.StartNew();
         while (sw.ElapsedMilliseconds < AcqHpPollBudgetMs)
         {
@@ -700,35 +705,18 @@ public sealed partial class FarmEngine
                 // çerçeve AÇIK (StructurePresent). İsim sınıfı bu kareyle AYNI (offset yapıdan, isim saf-DXGI).
                 if (snap?.Bar is { } bar && snap.CapturedAtMs >= clickIssuedAtMs &&
                     bar.StructureKnown && bar.StructurePresent)
-                    return (bar, false);
+                    return bar;
             }
             else if (IsTargetAliveNow(out int offY))
             {
                 // Deployment fallback: çerçeve şablonu yok → eski renk-alive. Guardian PASİF (NameClass=Unknown
                 // → CheckGuardian saldırır). Kalibre müşteride bu yola HİÇ düşülmez (StartFarm uyarısı).
-                var synth = new TargetBarState(false, true, -2f, offY, 0, 0, 0, 0f, 0f, true, NowMs());
-                return (synth, false);
+                return new TargetBarState(false, true, -2f, offY, 0, 0, 0, 0f, 0f, true, NowMs());
             }
 
-            // Dev 1 (V3): bekleme sırasında hedef izi merkez yakınında AcqYoloLossGraceMs kaybolursa erken bırak
-            // (steal/despawn). KİMLİK-önce + ölü/guardian DIŞI (yoğun sürüde komşu ceset erken-çıkışı bastırmasın).
-            if (Inferrer is not null)
-            {
-                bool stillThere = snap is not null && snap.Dets.Any(d =>
-                    !d.Dead && !d.Guardian &&
-                    (d.TrackId == target.TrackId ||
-                     (d.ClassId == target.ClassId && d.DistanceTo(target.Center) < AcqMatchRadiusPx)));
-                if (stillThere) lostSinceMs = -1;
-                else
-                {
-                    long now = NowMs();
-                    if (lostSinceMs < 0) lostSinceMs = now;
-                    else if (now - lostSinceMs >= AcqYoloLossGraceMs) return (null, true);   // YOLO kaybı → erken bırak
-                }
-            }
             await Task.Delay(10, ct);
         }
-        return (null, false);
+        return null;
     }
 
     /// <summary>Hedef seçili/canlı mı — GDI canlı (gecikmesiz) VEYA DXGI snapshot (güvenilir/gecikmeli); biri yeterli.
