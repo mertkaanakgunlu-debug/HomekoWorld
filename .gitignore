@@ -3,10 +3,12 @@ tools/yolo_trainer/
 *.pt
 backup/
 
-# C# ve Visual Studio Derlemeleri (src klasörü)
+# C# ve Visual Studio Derlemeleri (src ve tests klasörleri)
 src/**/bin/
 src/**/obj/
 src/**/%TEMP%/
+tests/**/bin/
+tests/**/obj/
 *_wpftmp.csproj
 .vs/
 .publish/
